@@ -1,0 +1,10 @@
+{
+	"appId": "com.klutchh.ethos",
+	"appName": "Ethos Biomechanics",
+	"webDir": "dist",
+	"packageClassList": [
+		"CAPCameraPlugin",
+		"FilesystemPlugin",
+		"HapticsPlugin"
+	]
+}

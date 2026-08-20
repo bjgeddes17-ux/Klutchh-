@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+    <meta name="theme-color" content="#dc2626" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <link rel="manifest" href="./manifest.json" />
+    <title>Klutchh - Elite Sports Video Pose & Biometrics Analyzer</title>
+    <script type="module" crossorigin src="./assets/index-NMnIkMfp.js"></script>
+    <link rel="stylesheet" crossorigin href="./assets/index-C20MeFZ3.css">
+  </head>
+  <body class="bg-zinc-950 text-zinc-100 antialiased selection:bg-red-600 selection:text-white">
+    <div id="root"></div>
+    <script>
+      if ('serviceWorker' in navigator) {
+        window.addEventListener('load', () => {
+          navigator.serviceWorker.register('/sw.js').catch((err) => {
+            console.log('SW registration note:', err);
+          });
+        });
+      }
+    </script>
+  </body>
+</html>
+

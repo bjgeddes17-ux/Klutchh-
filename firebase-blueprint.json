@@ -1,0 +1,69 @@
+{
+  "entities": {
+    "users": {
+      "title": "User Profiles",
+      "description": "Athlete and Coach user profiles",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string" },
+        "email": { "type": "string" },
+        "name": { "type": "string" },
+        "role": { "type": "string" },
+        "clubOrSchool": { "type": "string" },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["uid", "email"]
+    },
+    "savedReports": {
+      "title": "Saved Biometrics Reports",
+      "description": "Saved analysis reports from video analysis",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "userId": { "type": "string" },
+        "title": { "type": "string" },
+        "sportId": { "type": "string" },
+        "sportName": { "type": "string" },
+        "overallScore": { "type": "number" },
+        "overallGrade": { "type": "string" },
+        "authorName": { "type": "string" },
+        "createdAt": { "type": "string" },
+        "aiReport": { "type": "object" }
+      },
+      "required": ["id", "userId", "title", "sportId"]
+    },
+    "trophyCards": {
+      "title": "Athlete Collectible Cards",
+      "description": "Customizable baseball-card style trophies of athletic performance keyframes",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "userId": { "type": "string" },
+        "athleteName": { "type": "string" },
+        "sportId": { "type": "string" },
+        "sportName": { "type": "string" },
+        "movementPhase": { "type": "string" },
+        "grade": { "type": "string" },
+        "score": { "type": "number" },
+        "cardStyle": { "type": "string" },
+        "createdAt": { "type": "string" },
+        "selectedStats": { "type": "array" }
+      },
+      "required": ["id", "userId", "athleteName", "sportId", "cardStyle"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": "users",
+      "description": "User Account details"
+    },
+    "/savedReports/{reportId}": {
+      "schema": "savedReports",
+      "description": "Skeletal biomechanics keyframe reports"
+    },
+    "/trophyCards/{cardId}": {
+      "schema": "trophyCards",
+      "description": "User-designed Athlete Trading cards"
+    }
+  }
+}
