@@ -1,5 +1,7 @@
 import { PoseLandmarker, FilesetResolver } from '@mediapipe/tasks-vision';
 import { MediaPipeLandmark } from '../types';
+import { Capacitor } from '@capacitor/core';
+import { PoseDetection, PoseLandmarkType } from '@capacitor-mlkit/pose-detection';
 
 let poseLandmarker: PoseLandmarker | null = null;
 let isInitializing = false;
@@ -84,6 +86,123 @@ export async function detectPoseForVideoFrame(
   timestampMs: number,
   allowCachedFallback: boolean = true
 ): Promise<PoseDetectionResult> {
+  // 🚀 HYBRID CHECK: If running natively on Android or iOS, use the hardware-accelerated Pose Detector plugin!
+  if (Capacitor.isNativePlatform()) {
+    try {
+      const tempCanvas = document.createElement('canvas');
+      let width = 320;
+      let height = 240;
+      
+      if (videoElement instanceof HTMLVideoElement) {
+        width = videoElement.videoWidth || 320;
+        height = videoElement.videoHeight || 240;
+      } else if (videoElement instanceof HTMLCanvasElement) {
+        width = videoElement.width || 320;
+        height = videoElement.height || 240;
+      }
+
+      tempCanvas.width = width;
+      tempCanvas.height = height;
+      const tempCtx = tempCanvas.getContext('2d');
+      if (tempCtx && videoElement) {
+        tempCtx.drawImage(videoElement, 0, 0, width, height);
+        const base64Frame = tempCanvas.toDataURL('image/jpeg', 0.6); // Compress to 60% quality for maximum throughput speed!
+
+        const result = await PoseDetection.processImage({
+          path: base64Frame,
+        });
+
+        if (result && result.poses && result.poses.length > 0) {
+          const pose = result.poses[0];
+          // Map Native ML Kit landmarks back to the standard 33 MediaPipe Landmarks
+          const mappedLandmarks: MediaPipeLandmark[] = new Array(33).fill(null).map(() => ({
+            x: 0.5,
+            y: 0.5,
+            z: 0,
+            visibility: 0
+          }));
+
+          const LANDMARK_ORDER = [
+            PoseLandmarkType.Nose, // 0
+            PoseLandmarkType.LeftEyeInner, // 1
+            PoseLandmarkType.LeftEye, // 2
+            PoseLandmarkType.LeftEyeOuter, // 3
+            PoseLandmarkType.RightEyeInner, // 4
+            PoseLandmarkType.RightEye, // 5
+            PoseLandmarkType.RightEyeOuter, // 6
+            PoseLandmarkType.LeftEar, // 7
+            PoseLandmarkType.RightEar, // 8
+            PoseLandmarkType.LeftMouth, // 9
+            PoseLandmarkType.RightMouth, // 10
+            PoseLandmarkType.LeftShoulder, // 11
+            PoseLandmarkType.RightShoulder, // 12
+            PoseLandmarkType.LeftElbow, // 13
+            PoseLandmarkType.RightElbow, // 14
+            PoseLandmarkType.LeftWrist, // 15
+            PoseLandmarkType.RightWrist, // 16
+            PoseLandmarkType.LeftPinky, // 17
+            PoseLandmarkType.RightPinky, // 18
+            PoseLandmarkType.LeftIndex, // 19
+            PoseLandmarkType.RightIndex, // 20
+            PoseLandmarkType.LeftThumb, // 21
+            PoseLandmarkType.RightThumb, // 22
+            PoseLandmarkType.LeftHip, // 23
+            PoseLandmarkType.RightHip, // 24
+            PoseLandmarkType.LeftKnee, // 25
+            PoseLandmarkType.RightKnee, // 26
+            PoseLandmarkType.LeftAnkle, // 27
+            PoseLandmarkType.RightAnkle, // 28
+            PoseLandmarkType.LeftHeel, // 29
+            PoseLandmarkType.RightHeel, // 30
+            PoseLandmarkType.LeftFootIndex, // 31
+            PoseLandmarkType.RightFootIndex, // 32
+          ];
+
+          // Map each returned pose landmark by matching its enum type
+          for (const mark of pose.landmarks) {
+            const idx = LANDMARK_ORDER.indexOf(mark.type);
+            if (idx !== -1) {
+              mappedLandmarks[idx] = {
+                // Convert absolute pixels back to [0.0, 1.0] normalized space
+                x: mark.x / width,
+                y: mark.y / height,
+                z: mark.z || 0,
+                visibility: mark.inFrameLikelihood !== undefined ? mark.inFrameLikelihood : 0.9,
+              };
+            }
+          }
+
+          // Apply shin clamp
+          const applyShinClamp = (hipIdx: number, kneeIdx: number, ankleIdx: number) => {
+            const hip = mappedLandmarks[hipIdx];
+            const knee = mappedLandmarks[kneeIdx];
+            const ankle = mappedLandmarks[ankleIdx];
+            if (hip && knee && ankle) {
+              const femurLen = Math.sqrt(Math.pow(knee.x - hip.x, 2) + Math.pow(knee.y - hip.y, 2));
+              const shinLen = Math.sqrt(Math.pow(ankle.x - knee.x, 2) + Math.pow(ankle.y - knee.y, 2));
+              const maxAllowedShin = femurLen * 1.5;
+              if (shinLen > maxAllowedShin && femurLen > 0.05) {
+                const ratio = maxAllowedShin / shinLen;
+                ankle.x = knee.x + (ankle.x - knee.x) * ratio;
+                ankle.y = knee.y + (ankle.y - knee.y) * ratio;
+              }
+            }
+          };
+          applyShinClamp(23, 25, 27);
+          applyShinClamp(24, 26, 28);
+
+          cachedLandmarks = mappedLandmarks;
+          return {
+            landmarks: cachedLandmarks,
+            isRealMediaPipe: true,
+          };
+        }
+      }
+    } catch (err) {
+      console.warn("Native pose detection failed, defaulting to WebAssembly:", err);
+    }
+  }
+
   if (!poseLandmarker && !isInitializing) {
     initializePoseLandmarker();
   }

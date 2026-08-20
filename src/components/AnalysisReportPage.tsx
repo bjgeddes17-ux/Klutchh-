@@ -340,6 +340,61 @@ export const AnalysisReportPage: React.FC<AnalysisReportPageProps> = ({
 
 
 
+  const [swipeStartX, setSwipeStartX] = useState<number | null>(null);
+  const [swipeStartY, setSwipeStartY] = useState<number | null>(null);
+
+  const handleTouchStart = (e: React.TouchEvent) => {
+    const target = e.target as HTMLElement;
+    if (
+      target.tagName === 'INPUT' || 
+      target.tagName === 'BUTTON' || 
+      target.tagName === 'SELECT' || 
+      target.closest('input') || 
+      target.closest('button') || 
+      target.closest('.no-swipe')
+    ) {
+      return;
+    }
+    setSwipeStartX(e.touches[0].clientX);
+    setSwipeStartY(e.touches[0].clientY);
+  };
+
+  const handleTouchEnd = (e: React.TouchEvent) => {
+    if (swipeStartX === null || swipeStartY === null) return;
+    const diffX = e.changedTouches[0].clientX - swipeStartX;
+    const diffY = e.changedTouches[0].clientY - swipeStartY;
+    
+    if (Math.abs(diffX) > Math.abs(diffY) && Math.abs(diffX) > 65 && Math.abs(diffY) < 55) {
+      const tabs: ('overview' | 'game' | 'reflex' | 'smash' | 'cannon' | 'drills' | 'notes' | 'trading_card' | 'trophy_shelf')[] = [
+        'overview', 'smash', 'cannon', 'reflex', 'game', 'drills', 'trading_card', 'notes'
+      ];
+      const currentIndex = tabs.indexOf(activeTab as any);
+      if (currentIndex !== -1) {
+        if (diffX > 0) {
+          if (currentIndex > 0) {
+            setActiveTab(tabs[currentIndex - 1]);
+          }
+        } else {
+          if (currentIndex < tabs.length - 1) {
+            setActiveTab(tabs[currentIndex + 1]);
+          }
+        }
+      }
+    }
+    setSwipeStartX(null);
+    setSwipeStartY(null);
+  };
+
+  const tabContainerRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (tabContainerRef.current) {
+      const activeBtn = tabContainerRef.current.querySelector('[data-active="true"]');
+      if (activeBtn) {
+        activeBtn.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'center' });
+      }
+    }
+  }, [activeTab]);
+
   const onTouchStart = (e: React.TouchEvent) => {
     setTouchEnd(null);
     setTouchStart(e.targetTouches[0].clientX);
@@ -867,7 +922,7 @@ export const AnalysisReportPage: React.FC<AnalysisReportPageProps> = ({
         } catch (e) {}
       }
     };
-  }, [sportRule, sortedFrames, duration, currentTime]);
+  }, [sportRule, sortedFrames]);
 
   // Video scrubber play/pause handler
   const togglePlay = () => {
@@ -1469,7 +1524,7 @@ export const AnalysisReportPage: React.FC<AnalysisReportPageProps> = ({
           )}
 
           {/* Timeline Range Slider */}
-          <div className="relative w-full flex flex-col">
+          <div className="relative w-full flex flex-col py-1.5">
             <input
               type="range"
               min={0}
@@ -1477,7 +1532,7 @@ export const AnalysisReportPage: React.FC<AnalysisReportPageProps> = ({
               step={1 / calibratedFps}
               value={currentTime}
               onChange={(e) => handleSeek(parseFloat(e.target.value))}
-              className="w-full accent-red-600 bg-zinc-800/90 h-2 rounded-lg cursor-pointer shadow-inner"
+              className="w-full accent-red-600 bg-zinc-800/90 h-3.5 rounded-full cursor-pointer shadow-inner [&::-webkit-slider-thumb]:w-6 [&::-webkit-slider-thumb]:h-6 [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-red-600 [&::-webkit-slider-thumb]:border-2 [&::-webkit-slider-thumb]:border-white"
             />
           </div>
 
@@ -1634,7 +1689,7 @@ export const AnalysisReportPage: React.FC<AnalysisReportPageProps> = ({
 
           {/* Section Navigation Tabs & Mode Toggle */}
           <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 border-b border-zinc-800 pb-3">
-            <div className="flex items-center gap-2 overflow-x-auto no-scrollbar">
+            <div ref={tabContainerRef} className="flex items-center flex-nowrap gap-2 overflow-x-auto no-scrollbar w-full">
                     {[
                       { id: 'overview', label: `🎯 ${assignedAthleteName || 'Athlete'}'s Dossier` },
                       { id: 'smash', label: '🥊 Smash Form Flaws' },
@@ -1647,8 +1702,9 @@ export const AnalysisReportPage: React.FC<AnalysisReportPageProps> = ({
                     ].map((tab) => (
                       <button
                         key={tab.id}
+                        data-active={activeTab === tab.id}
                         onClick={() => setActiveTab(tab.id as any)}
-                        className={`px-4 py-2 rounded-xl text-xs font-black uppercase tracking-wider transition-all whitespace-nowrap ${
+                        className={`px-4 py-2 rounded-xl text-xs font-black uppercase tracking-wider transition-all whitespace-nowrap shrink-0 ${
                           activeTab === tab.id
                             ? 'bg-red-600 text-white shadow-md shadow-red-600/20'
                             : 'bg-zinc-900 border border-zinc-800 text-zinc-400 hover:text-white'
@@ -1660,8 +1716,14 @@ export const AnalysisReportPage: React.FC<AnalysisReportPageProps> = ({
             </div>
           </div>
 
-          {/* CARD DECK MODE VIEWER */}
-          {(activeTab as string) === 'overview' && (
+          {/* TAB PANEL VIEWER WITH NATIVE SLIDING GESTURES */}
+          <div 
+            onTouchStart={handleTouchStart}
+            onTouchEnd={handleTouchEnd}
+            className="flex-1 flex flex-col min-h-0"
+          >
+            {/* CARD DECK MODE VIEWER */}
+            {(activeTab as string) === 'overview' && (
             <div className="flex flex-col gap-4">
               {/* Deck Progress & Navigation Bar */}
               <div className="flex items-center justify-between bg-zinc-900/90 border border-zinc-800 p-3 rounded-2xl">
@@ -3303,6 +3365,8 @@ export const AnalysisReportPage: React.FC<AnalysisReportPageProps> = ({
           </div>
         </div>
       )}
+
+      </div>
 
       {/* INTERACTIVE BIOMECHANICAL TELEMETRY EXPLAINER MODAL */}
       {activeExplainerMetric && (

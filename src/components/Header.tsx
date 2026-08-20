@@ -51,6 +51,7 @@ export const Header: React.FC<HeaderProps> = ({
   const [isArchModalOpen, setIsArchModalOpen] = useState(false);
   const [isProfileModalOpen, setIsProfileModalOpen] = useState(false);
   const [isOnline, setIsOnline] = useState(() => typeof navigator !== 'undefined' ? navigator.onLine : true);
+  const [isVisible, setIsVisible] = useState(true);
 
   useEffect(() => {
     const handleOnline = () => setIsOnline(true);
@@ -59,9 +60,24 @@ export const Header: React.FC<HeaderProps> = ({
     window.addEventListener('online', handleOnline);
     window.addEventListener('offline', handleOffline);
 
+    let lastY = window.scrollY;
+    const handleScroll = () => {
+      const currentScrollY = window.scrollY;
+      // Scroll down past 100px: hide. Scroll up: show.
+      if (currentScrollY > lastY && currentScrollY > 100) {
+        setIsVisible(false);
+      } else {
+        setIsVisible(true);
+      }
+      lastY = currentScrollY;
+    };
+
+    window.addEventListener('scroll', handleScroll, { passive: true });
+
     return () => {
       window.removeEventListener('online', handleOnline);
       window.removeEventListener('offline', handleOffline);
+      window.removeEventListener('scroll', handleScroll);
     };
   }, []);
 
@@ -99,7 +115,9 @@ export const Header: React.FC<HeaderProps> = ({
         </div>
       )}
       
-      <header className="bg-zinc-950/95 border-b border-zinc-800/80 text-zinc-100 sticky top-0 z-30 backdrop-blur-md shadow-2xl">
+      <header className={`bg-zinc-950/95 border-b border-zinc-800/80 text-zinc-100 sticky top-0 z-30 backdrop-blur-md shadow-2xl transition-transform duration-300 transform ${
+        isVisible ? 'translate-y-0 opacity-100' : '-translate-y-full opacity-0 pointer-events-none'
+      }`}>
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-3">
           <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
             
