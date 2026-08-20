@@ -163,11 +163,11 @@ export async function detectPoseForVideoFrame(
         const bodyHeight = maxY - minY;
         const bodyWidth = maxX - minX;
 
-        // If body height is smaller than width (e.g. shadow on ground) or not enough points, reject!
-        const isShadowOrHorizontalArtifact = bodyHeight < bodyWidth * 0.8 || bodyHeight < 0.15;
-        const hasEnoughLandmarks = validPointsCount >= 15;
+        // Extremely lenient shadow/horizontal check to support crouches, tackles, and far-away shots
+        const isShadowOrHorizontalArtifact = bodyHeight < bodyWidth * 0.15 || bodyHeight < 0.03;
+        const hasEnoughLandmarks = validPointsCount >= 8;
 
-        // Check vertical order (shoulders 11/12 vs hips 23/24 vs ankles 27/28)
+        // Extremely lenient vertical check to support deep crouches, bending, and horizontal sports movements
         const leftShoulder = rawLandmarks[11];
         const rightShoulder = rawLandmarks[12];
         const leftHip = rawLandmarks[23];
@@ -175,7 +175,7 @@ export async function detectPoseForVideoFrame(
         
         const shouldersY = ((leftShoulder?.y || 0) + (rightShoulder?.y || 0)) / 2;
         const hipsY = ((leftHip?.y || 0) + (rightHip?.y || 0)) / 2;
-        const isUpright = shouldersY < hipsY; // In screen coordinates, smaller Y is higher up
+        const isUpright = shouldersY < hipsY + 0.35; // Support deep crouches and horizontal poses
 
         if (hasEnoughLandmarks && !isShadowOrHorizontalArtifact && isUpright) {
           // ANATOMICAL SHIN CLAMP (Prevents ankles/feet from stretching down into floor shadows)
@@ -230,7 +230,8 @@ export async function detectPoseForVideoFrame(
           }
           const bodyH = maxY - minY;
           const bodyW = maxX - minX;
-          if (validPoints >= 15 && bodyH >= bodyW * 0.8 && bodyH >= 0.15) {
+          // Extremely lenient shadow/horizontal check to support crouches, tackles, and far-away shots
+          if (validPoints >= 8 && bodyH >= bodyW * 0.15 && bodyH >= 0.03) {
             const applyShinClamp = (hipIdx: number, kneeIdx: number, ankleIdx: number) => {
               const hip = rawLandmarks[hipIdx];
               const knee = rawLandmarks[kneeIdx];

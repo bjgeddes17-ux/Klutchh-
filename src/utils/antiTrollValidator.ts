@@ -141,10 +141,11 @@ export function validateKinematicSportFit(
     };
   }
 
-  const validFrames = allSampledLandmarks.filter(f => f.landmarks && f.landmarks.length >= 25);
+  // Filter valid frames with a relaxed threshold of 8 landmarks to capture diverse/occluded poses
+  const validFrames = allSampledLandmarks.filter(f => f.landmarks && f.landmarks.length >= 8);
   const humanRatio = validFrames.length / totalFrames;
 
-  if (humanRatio < 0.15) { // Loosened from 0.35
+  if (validFrames.length === 0 || humanRatio < 0.05) {
     return {
       isValid: false,
       category: 'no_human',
@@ -160,9 +161,9 @@ export function validateKinematicSportFit(
   let framesWithUpperBody = 0;
 
   validFrames.forEach(({ landmarks }) => {
-    const hasUpper = (landmarks[11]?.visibility ?? 1) > 0.2 && (landmarks[12]?.visibility ?? 1) > 0.2; // Loosened from 0.4
-    const hasHips = (landmarks[23]?.visibility ?? 1) > 0.2 && (landmarks[24]?.visibility ?? 1) > 0.2; // Loosened from 0.3
-    const hasKnees = (landmarks[25]?.visibility ?? 1) > 0.2 || (landmarks[26]?.visibility ?? 1) > 0.2; // Loosened from 0.3
+    const hasUpper = (landmarks[11]?.visibility ?? 1) > 0.1 && (landmarks[12]?.visibility ?? 1) > 0.1;
+    const hasHips = (landmarks[23]?.visibility ?? 1) > 0.1 && (landmarks[24]?.visibility ?? 1) > 0.1;
+    const hasKnees = (landmarks[25]?.visibility ?? 1) > 0.1 || (landmarks[26]?.visibility ?? 1) > 0.1;
 
     if (hasUpper) framesWithUpperBody++;
     if (hasHips && hasKnees) framesWithLowerBody++;
@@ -171,16 +172,8 @@ export function validateKinematicSportFit(
   const lowerBodyRatio = framesWithLowerBody / validFrames.length;
   const upperBodyRatio = framesWithUpperBody / validFrames.length;
 
-  if (upperBodyRatio < 0.2) { // Loosened from 0.4
-    return {
-      isValid: false,
-      category: 'incomplete_body',
-      title: 'Incomplete Athlete Framing',
-      message: 'The athlete\'s shoulders and upper torso are cut off. Please frame the camera so the entire body or upper half is visible.',
-      confidenceScore: Math.round(upperBodyRatio * 100)
-    };
-  }
-
+  // We no longer reject on upperBodyRatio because footwork-only or leg-focused athletic videos are highly common in soccer/rugby
+  
   // 3. Motion & Range of Motion (ROM) Check (prevents sleeping / sitting still / stationary videos)
   let maxDisplacement = 0;
   let maxAngleRangeOfMotion = 0;
@@ -224,7 +217,8 @@ export function validateKinematicSportFit(
   const trunkROM = getRange(trunkAngles);
   maxAngleRangeOfMotion = Math.max(elbowROM, kneeROM, trunkROM);
 
-  if (maxDisplacement < 0.015 && maxAngleRangeOfMotion < 5) { // Loosened from 0.035 and 12
+  // Extremely lenient stationary check: only reject absolute frozen/still images or screenshots
+  if (maxDisplacement < 0.005 && maxAngleRangeOfMotion < 1.5) {
     return {
       isValid: false,
       category: 'stationary',
@@ -270,14 +264,16 @@ export function validateKinematicSportFit(
     }
   });
 
-  // Check for distinct sport mismatches
+  // Soft Warnings (isValid: true) instead of hard blocks for mismatched sports
+  // This allows the user to see their skeleton tracking and full analysis anyway!
+  
   // MISMATCH A: Golf Selected, but zero rotational coil and excessive high sprinting or kicking
   if (targetSport === 'golf') {
     if (maxDisplacement > 0.35 && trunkROM < 10 && maxShoulderHipSeparation < 10) {
       return {
-        isValid: false,
+        isValid: true,
         category: 'sport_mismatch',
-        title: 'Sport Movement Mismatch',
+        title: 'Sport Movement Mismatch (Soft Note)',
         message: 'You selected Golf Swing, but high-displacement linear running was detected rather than a rotational golf stance.',
         suggestedSport: 'soccer',
         detectedMotionProfile: 'Linear Running / Sprinting',
@@ -290,9 +286,9 @@ export function validateKinematicSportFit(
   if (targetSport === 'cricket' && selectedPhase?.toLowerCase().includes('bowling')) {
     if (overheadFramePct < 0.05 && elbowROM < 20) {
       return {
-        isValid: false,
+        isValid: true,
         category: 'sport_mismatch',
-        title: 'Technique Mismatch',
+        title: 'Technique Mismatch (Soft Note)',
         message: 'You selected Cricket Bowling, but no high overhead arm delivery or circumduction was detected in this clip.',
         confidenceScore: 80,
         detectedMotionProfile: 'Low Arm Plane Motion'
@@ -304,9 +300,9 @@ export function validateKinematicSportFit(
   if (targetSport === 'tennis' && (selectedPhase?.toLowerCase().includes('serve') || selectedPhase?.toLowerCase().includes('smash'))) {
     if (overheadFramePct < 0.05) {
       return {
-        isValid: false,
+        isValid: true,
         category: 'sport_mismatch',
-        title: 'Technique Mismatch',
+        title: 'Technique Mismatch (Soft Note)',
         message: 'You selected Tennis Serve / Overhead, but the athlete\'s hitting arm remained below shoulder height throughout the clip.',
         suggestedSport: 'tennis',
         detectedMotionProfile: 'Groundstroke / Low Plane Hit',
