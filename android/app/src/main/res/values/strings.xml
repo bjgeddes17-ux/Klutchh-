@@ -1,7 +1,7 @@
 <?xml version='1.0' encoding='utf-8'?>
 <resources>
-    <string name="app_name">Ethos Biomechanics</string>
-    <string name="title_activity_main">Ethos Biomechanics</string>
-    <string name="package_name">com.klutchh.ethos</string>
-    <string name="custom_url_scheme">com.klutchh.ethos</string>
+    <string name="app_name">Klutchh</string>
+    <string name="title_activity_main">Klutchh</string>
+    <string name="package_name">com.klutchh.app</string>
+    <string name="custom_url_scheme">com.klutchh.app</string>
 </resources>

@@ -494,10 +494,19 @@ export const VideoPosePlayer: React.FC<VideoPosePlayerProps> = ({
             )}
           </div>
 
-          <div className="bg-zinc-950/90 backdrop-blur-md border border-zinc-800/80 px-2.5 py-1 rounded-lg text-[10px] font-extrabold text-emerald-400 flex items-center gap-1.5 shadow-md">
-            <Cpu className="w-3 h-3 text-emerald-400" />
-            <span className="uppercase tracking-wider hidden sm:inline">30 FPS Rule Engine Active</span>
-            <span className="uppercase tracking-wider sm:hidden">30 FPS</span>
+          <div className={`bg-zinc-950/95 backdrop-blur-md border ${activeVideoUrl ? 'border-red-500/30' : 'border-zinc-800/80'} px-2.5 py-1 rounded-lg text-[10px] font-extrabold flex items-center gap-1.5 shadow-md`}>
+            {typeof window !== 'undefined' && (window as any).hasOwnProperty('Capacitor') && (window as any).Capacitor?.isNativePlatform?.() ? (
+              <>
+                <Zap className="w-3.5 h-3.5 text-red-500 animate-pulse shrink-0" />
+                <span className="text-red-400 font-black uppercase tracking-wider">⚡ NATIVE HARDWARE ACCEL</span>
+              </>
+            ) : (
+              <>
+                <Cpu className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+                <span className="text-emerald-400 uppercase tracking-wider hidden sm:inline">🌐 WEB CORE (WASM ENGINE)</span>
+                <span className="text-emerald-400 uppercase tracking-wider sm:hidden">🌐 WASM ACTIVE</span>
+              </>
+            )}
           </div>
         </div>
 

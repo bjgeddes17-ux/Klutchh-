@@ -56,7 +56,17 @@ import {
   HardDrive,
   FolderOpen,
   Search,
-  Trophy
+  Trophy,
+  Edit3,
+  Plus,
+  Tag,
+  ChevronDown,
+  ChevronUp,
+  Sliders,
+  Copy,
+  Check,
+  List,
+  LayoutGrid
 } from 'lucide-react';
 import { get } from 'idb-keyval';
 import { drawPoseSkeleton, calculateAngle } from '../utils/geometry';
@@ -183,6 +193,9 @@ export const AnalysisReportPage: React.FC<AnalysisReportPageProps> = ({
   const [assignedAthleteName, setAssignedAthleteName] = useState<string | null>(null);
   const [showExportSuccess, setShowExportSuccess] = useState(false);
   const [activeTab, setActiveTab] = useState<'overview' | 'game' | 'reflex' | 'smash' | 'cannon' | 'drills' | 'notes' | 'trading_card' | 'trophy_shelf'>('overview');
+  const [dossierViewMode, setDossierViewMode] = useState<'all' | 'cards'>('all');
+  const [copiedSummary, setCopiedSummary] = useState(false);
+  const [completedDrills, setCompletedDrills] = useState<Record<string, boolean>>({});
   const [deckCardIndex, setDeckCardIndex] = useState(0);
   const [touchStart, setTouchStart] = useState<number | null>(null);
   const [touchEnd, setTouchEnd] = useState<number | null>(null);
@@ -324,10 +337,145 @@ export const AnalysisReportPage: React.FC<AnalysisReportPageProps> = ({
   const [stabilizedChecks, setStabilizedChecks] = useState<Record<string, boolean>>({});
   const drillSectionRef = useRef<HTMLDivElement>(null);
 
+  // Dynamic keyframe management state for user adjustments
+  const [customKeyframeList, setCustomKeyframeList] = useState<FrameAnalysis[]>(() => {
+    return keyframeList && keyframeList.length > 0 ? keyframeList : [];
+  });
+
+  useEffect(() => {
+    if (keyframeList && keyframeList.length > 0) {
+      setCustomKeyframeList(keyframeList);
+    }
+  }, [keyframeList]);
+
+  const [selectedTagPhase, setSelectedTagPhase] = useState<string>(() => {
+    return (sportRule.phases && sportRule.phases[0]) || 'Movement';
+  });
+  const [showKeyframeManager, setShowKeyframeManager] = useState<boolean>(true);
+
   // Guarantee at least 6 keyframes for analysis report and D3 heatmap visualization
   const safeKeyframeList = useMemo(() => {
-    return ensureMinimumKeyframes(keyframeList || [], [], sportRule, 'grassroots', calibratedFps, 6);
-  }, [keyframeList, sportRule, calibratedFps]);
+    return ensureMinimumKeyframes(customKeyframeList || [], [], sportRule, 'grassroots', calibratedFps, 6);
+  }, [customKeyframeList, sportRule, calibratedFps]);
+
+  const handleUpdateKeyframePhase = (idx: number, newPhase: string) => {
+    setCustomKeyframeList((prev) => {
+      const updated = [...prev];
+      if (updated[idx]) {
+        updated[idx] = {
+          ...updated[idx],
+          detectedPhase: newPhase
+        };
+      }
+      // Update sequence comparison to reflect new actual phase order
+      const updatedActual = updated.map((f) => f.detectedPhase);
+      setLocalSequenceComparison((prevComp) => {
+        const ideal = prevComp?.ideal || sportRule.phases || [];
+        const isCorrect = ideal.length > 0 && ideal.every((p, i) => updatedActual[i] === p);
+        return {
+          ideal,
+          actual: updatedActual,
+          isCorrect,
+          feedback: isCorrect
+            ? 'Kinetic chain firing order matches gold standard model!'
+            : `Sequence alignment: ${updatedActual.join(' → ')}`
+        };
+      });
+      return updated;
+    });
+  };
+
+  const handleSeekToKeyframe = (timestamp: number) => {
+    if (videoRef.current) {
+      videoRef.current.currentTime = timestamp;
+      setCurrentTime(timestamp);
+    }
+  };
+
+  const handleUpdateKeyframeTimestamp = (idx: number, newTimestamp: number) => {
+    const clampedTime = Math.max(0, Math.min(duration || 30, newTimestamp));
+    setCustomKeyframeList((prev) => {
+      const updated = [...prev];
+      if (updated[idx]) {
+        const closestAllFrame = allFrames.find(
+          (f) => Math.abs(f.timestamp - clampedTime) < 0.05
+        );
+        updated[idx] = closestAllFrame
+          ? { ...closestAllFrame, detectedPhase: updated[idx].detectedPhase, timestamp: clampedTime }
+          : { ...updated[idx], timestamp: clampedTime, frameNumber: Math.round(clampedTime * calibratedFps) };
+      }
+      return updated.sort((a, b) => a.timestamp - b.timestamp);
+    });
+    handleSeekToKeyframe(clampedTime);
+  };
+
+  const handleTagCurrentFrameAsPhase = (phaseName: string) => {
+    const currentT = currentTime;
+    const closestFrame = allFrames.find((f) => Math.abs(f.timestamp - currentT) < 0.05);
+
+    let newFrame: FrameAnalysis;
+    if (closestFrame) {
+      newFrame = {
+        ...closestFrame,
+        detectedPhase: phaseName,
+        timestamp: currentT,
+        frameNumber: Math.round(currentT * calibratedFps)
+      };
+    } else {
+      const defaultAngles: Record<string, number> = {};
+      const defaultRuleResults: Record<string, 'optimal' | 'warning' | 'error'> = {};
+      if (sportRule.jointRules) {
+        sportRule.jointRules.forEach((r) => {
+          defaultAngles[r.id] = (r.idealMin + r.idealMax) / 2;
+          defaultRuleResults[r.id] = 'optimal';
+        });
+      }
+      newFrame = {
+        timestamp: currentT,
+        frameNumber: Math.round(currentT * calibratedFps),
+        landmarks: [],
+        angles: defaultAngles,
+        ruleResults: defaultRuleResults,
+        detectedPhase: phaseName,
+        symmetryScore: customSymmetry || 92,
+        kneeSafetyScore: customKneeSafety || 94
+      };
+    }
+
+    setCustomKeyframeList((prev) => {
+      const existingIndex = prev.findIndex((f) => f.detectedPhase === phaseName);
+      let updated: FrameAnalysis[];
+      if (existingIndex !== -1) {
+        updated = [...prev];
+        updated[existingIndex] = newFrame;
+      } else {
+        updated = [...prev, newFrame];
+      }
+      updated.sort((a, b) => a.timestamp - b.timestamp);
+
+      const updatedActual = updated.map((f) => f.detectedPhase);
+      setLocalSequenceComparison((prevComp) => {
+        const ideal = prevComp?.ideal || sportRule.phases || [];
+        const isCorrect = ideal.length > 0 && ideal.every((p, i) => updatedActual[i] === p);
+        return {
+          ideal,
+          actual: updatedActual,
+          isCorrect,
+          feedback: isCorrect
+            ? 'Kinetic chain firing order matches gold standard model!'
+            : `Sequence alignment: ${updatedActual.join(' → ')}`
+        };
+      });
+
+      return updated;
+    });
+  };
+
+  const handleRemoveKeyframe = (idx: number) => {
+    setCustomKeyframeList((prev) => {
+      return prev.filter((_, i) => i !== idx);
+    });
+  };
 
   useEffect(() => {
     if (initialDrillProgress) {
@@ -1109,25 +1257,12 @@ export const AnalysisReportPage: React.FC<AnalysisReportPageProps> = ({
               </div>
             </div>
 
-            <div className="flex flex-col sm:flex-row items-center gap-3 pt-1">
-              <button
-                disabled={isExporting}
-                onClick={handleExportReport}
-                className={`w-full sm:w-auto flex-1 bg-gradient-to-r from-red-600 to-amber-500 hover:from-red-500 hover:to-amber-400 text-white font-black text-xs py-3 px-4 rounded-xl shadow-lg shadow-red-600/20 flex items-center justify-center gap-2 transition-all cursor-pointer ${isExporting ? 'opacity-70 cursor-wait' : ''}`}
-              >
-                {isExporting ? (
-                  <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                ) : (
-                  <Download className="w-4 h-4 text-white" />
-                )}
-                <span>{isExporting ? 'Packaging Video...' : 'Export .klutchh Report File'}</span>
-              </button>
-
+            <div className="flex items-center justify-end pt-1">
               <button
                 onClick={() => setShowStorageNoticeModal(false)}
-                className="w-full sm:w-auto bg-zinc-800 hover:bg-zinc-700 text-zinc-300 hover:text-white font-extrabold text-xs py-3 px-5 rounded-xl border border-zinc-700 transition-all cursor-pointer"
+                className="w-full bg-gradient-to-r from-red-600 to-amber-500 hover:from-red-500 hover:to-amber-400 text-white font-black text-xs py-3 px-6 rounded-xl shadow-lg shadow-red-600/20 flex items-center justify-center gap-2 transition-all cursor-pointer"
               >
-                I Understand, View Report
+                <span>I Understand</span>
               </button>
             </div>
           </div>
@@ -1483,41 +1618,35 @@ export const AnalysisReportPage: React.FC<AnalysisReportPageProps> = ({
         {/* Bottom Overlay Non-Blocking Glassmorphism Scrubber Bar */}
         <div className="absolute inset-x-0 bottom-0 z-30 bg-gradient-to-t from-black via-black/95 to-transparent pt-10 pb-3 px-4 sm:px-6 flex flex-col gap-2">
           
-          {/* Real-Time Telemetry HUD Overlay */}
+          {/* Sleek, Non-Intrusive Telemetry HUD Overlay */}
           {activeFrameMetrics && (
-            <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2.5 bg-zinc-950/85 backdrop-blur-md border border-zinc-800/80 p-2.5 rounded-xl text-[10px] font-mono text-zinc-300 shadow-2xl mb-1 select-none animate-fadeIn">
-              <div className="flex items-center justify-between sm:justify-start gap-2.5">
-                <span className="text-zinc-500 font-bold uppercase tracking-wider text-[9px]">ACTIVE PHASE:</span>
-                <span className="bg-amber-500/10 border border-amber-500/30 text-amber-400 font-extrabold px-2.5 py-0.5 rounded text-[10px] uppercase shadow-sm">
+            <div className="flex items-center justify-between gap-2 bg-zinc-950/80 backdrop-blur-md border border-zinc-800/80 px-2.5 py-1.5 rounded-lg text-[9px] font-mono text-zinc-300 shadow-lg select-none">
+              <div className="flex items-center gap-1.5">
+                <span className="text-zinc-500 font-bold uppercase tracking-wider text-[8px]">PHASE:</span>
+                <span className="bg-amber-500/10 border border-amber-500/30 text-amber-400 font-extrabold px-1.5 py-0.5 rounded text-[9px] uppercase">
                   {activeFrameMetrics.phase}
                 </span>
               </div>
               
-              <div className="grid grid-cols-2 sm:flex items-center gap-x-4 gap-y-1.5 sm:gap-4 flex-1 justify-end sm:justify-around border-t sm:border-t-0 border-zinc-800/40 pt-1.5 sm:pt-0">
-                <div className="flex items-center gap-1.5">
-                  <span className="text-zinc-500 text-[9px] uppercase">TORQUE:</span>
-                  <span className="text-amber-400 font-black text-xs font-mono">{activeFrameMetrics.torque} <span className="text-[9px] text-zinc-500">N·m</span></span>
-                  <div className="w-12 bg-zinc-900 h-1.5 rounded overflow-hidden border border-zinc-800 hidden lg:block">
-                    <div className="bg-amber-400 h-full rounded" style={{ width: `${Math.min(100, (activeFrameMetrics.torque / 15) * 100)}%` }} />
-                  </div>
+              <div className="flex items-center gap-3 text-[9px]">
+                <div className="flex items-center gap-1">
+                  <span className="text-zinc-500 uppercase text-[8px]">TORQUE:</span>
+                  <span className="text-amber-400 font-bold">{activeFrameMetrics.torque} N·m</span>
                 </div>
 
-                <div className="flex items-center gap-1.5">
-                  <span className="text-zinc-500 text-[9px] uppercase">VELOCITY:</span>
-                  <span className="text-emerald-400 font-black text-xs font-mono">{activeFrameMetrics.velocity}<span className="text-[9px] text-zinc-500">°/s</span></span>
-                  <div className="w-12 bg-zinc-900 h-1.5 rounded overflow-hidden border border-zinc-800 hidden lg:block">
-                    <div className="bg-emerald-400 h-full rounded" style={{ width: `${Math.min(100, (activeFrameMetrics.velocity / 600) * 100)}%` }} />
-                  </div>
+                <div className="flex items-center gap-1">
+                  <span className="text-zinc-500 uppercase text-[8px]">VELOCITY:</span>
+                  <span className="text-emerald-400 font-bold">{activeFrameMetrics.velocity}°/s</span>
                 </div>
 
-                <div className="flex items-center gap-1.5">
-                  <span className="text-zinc-500 text-[9px] uppercase">SYMMETRY:</span>
-                  <span className="text-blue-400 font-black text-xs font-mono">{activeFrameMetrics.symmetry}%</span>
+                <div className="flex items-center gap-1">
+                  <span className="text-zinc-500 uppercase text-[8px]">SYM:</span>
+                  <span className="text-blue-400 font-bold">{activeFrameMetrics.symmetry}%</span>
                 </div>
 
-                <div className="flex items-center gap-1.5">
-                  <span className="text-zinc-500 text-[9px] uppercase">ALIGNMENT:</span>
-                  <span className="text-purple-400 font-black text-xs font-mono">{activeFrameMetrics.kneeSafety}%</span>
+                <div className="flex items-center gap-1">
+                  <span className="text-zinc-500 uppercase text-[8px]">ALIGN:</span>
+                  <span className="text-purple-400 font-bold">{activeFrameMetrics.kneeSafety}%</span>
                 </div>
               </div>
             </div>
@@ -1614,6 +1743,124 @@ export const AnalysisReportPage: React.FC<AnalysisReportPageProps> = ({
         </div>
       </div>
 
+      {/* 🎯 INTERACTIVE KEYFRAME PHASE ALIGNMENT & MATCHER TOOLBAR */}
+      <div className="bg-zinc-950/90 border border-zinc-800 p-3.5 rounded-2xl flex flex-col gap-3 shadow-xl max-w-5xl mx-auto w-full">
+        <div className="flex items-center justify-between gap-3 flex-wrap">
+          <div className="flex items-center gap-2">
+            <Bookmark className="w-4 h-4 text-amber-400 fill-current" />
+            <span className="text-xs font-black uppercase tracking-wider text-white">
+              Keyframe Phase Alignment ({customKeyframeList.length})
+            </span>
+            <span className="text-[10px] font-mono text-zinc-400 bg-zinc-900 px-2 py-0.5 rounded border border-zinc-800">
+              Playhead: {currentTime.toFixed(2)}s (#{Math.round(currentTime * calibratedFps)})
+            </span>
+          </div>
+
+          <div className="flex items-center gap-2">
+            {/* Quick Tag Phase Dropdown */}
+            <div className="flex items-center gap-1.5 bg-zinc-900 border border-zinc-700/70 rounded-xl px-2 py-1">
+              <span className="text-[10px] font-bold text-zinc-400 uppercase hidden sm:inline">Set Frame As:</span>
+              <select
+                value={selectedTagPhase}
+                onChange={(e) => setSelectedTagPhase(e.target.value)}
+                className="bg-transparent text-amber-300 font-extrabold text-[11px] outline-none cursor-pointer uppercase"
+              >
+                {(sportRule.phases && sportRule.phases.length > 0 ? sportRule.phases : ['Approach', 'Setup', 'Contact / Strike', 'Release', 'Follow-Through']).map((p) => (
+                  <option key={p} value={p} className="bg-zinc-900 text-white">
+                    {p}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <button
+              onClick={() => handleTagCurrentFrameAsPhase(selectedTagPhase)}
+              className="px-3 py-1.5 bg-amber-500 hover:bg-amber-400 text-zinc-950 font-black text-xs rounded-xl uppercase tracking-wider transition-all flex items-center gap-1 shadow-md shadow-amber-500/10"
+              title="Set current video moment as this keyframe phase"
+            >
+              <Plus className="w-3.5 h-3.5" />
+              <span>Tag Frame</span>
+            </button>
+
+            <button
+              onClick={() => setShowKeyframeManager((prev) => !prev)}
+              className="p-1.5 bg-zinc-900 hover:bg-zinc-800 text-zinc-300 rounded-xl border border-zinc-800 transition-all text-xs"
+              title="Toggle Keyframe List"
+            >
+              {showKeyframeManager ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+            </button>
+          </div>
+        </div>
+
+        {/* Keyframe Cards Horizontal Strip */}
+        {showKeyframeManager && (
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-2.5 pt-2 border-t border-zinc-850">
+            {customKeyframeList.map((frame, idx) => (
+              <div
+                key={idx}
+                className="bg-zinc-900/90 border border-zinc-800 p-2.5 rounded-xl flex flex-col gap-2 relative group hover:border-zinc-700 transition-all text-zinc-200"
+              >
+                <div className="flex items-center justify-between gap-1">
+                  <button
+                    onClick={() => handleSeekToKeyframe(frame.timestamp)}
+                    className="flex items-center gap-1 text-[11px] font-mono font-bold text-zinc-300 hover:text-amber-400 bg-zinc-950 px-2 py-0.5 rounded border border-zinc-800"
+                    title="Jump video playhead to this frame"
+                  >
+                    <Play className="w-2.5 h-2.5 fill-current text-amber-400" />
+                    <span>{frame.timestamp.toFixed(2)}s</span>
+                  </button>
+
+                  <div className="flex items-center gap-1">
+                    <button
+                      onClick={() => handleUpdateKeyframeTimestamp(idx, Math.max(0, frame.timestamp - 0.033))}
+                      className="px-1 py-0.5 text-[9px] bg-zinc-950 text-zinc-400 hover:text-white rounded border border-zinc-800"
+                      title="Nudge frame back 1 step"
+                    >
+                      -1f
+                    </button>
+                    <button
+                      onClick={() => handleUpdateKeyframeTimestamp(idx, frame.timestamp + 0.033)}
+                      className="px-1 py-0.5 text-[9px] bg-zinc-950 text-zinc-400 hover:text-white rounded border border-zinc-800"
+                      title="Nudge frame forward 1 step"
+                    >
+                      +1f
+                    </button>
+                    <button
+                      onClick={() => handleRemoveKeyframe(idx)}
+                      className="p-1 text-zinc-500 hover:text-red-400 transition-colors"
+                      title="Delete Keyframe"
+                    >
+                      <X className="w-3 h-3" />
+                    </button>
+                  </div>
+                </div>
+
+                {/* Change Phase Dropdown */}
+                <div className="flex flex-col gap-0.5">
+                  <span className="text-[8px] font-mono text-zinc-400 uppercase">Assigned Phase:</span>
+                  <select
+                    value={frame.detectedPhase}
+                    onChange={(e) => handleUpdateKeyframePhase(idx, e.target.value)}
+                    className="bg-zinc-950 text-amber-300 font-extrabold text-[10.5px] px-2 py-1 rounded-lg border border-zinc-800 focus:border-amber-500 outline-none uppercase w-full cursor-pointer"
+                  >
+                    {(sportRule.phases && sportRule.phases.length > 0 ? sportRule.phases : ['Approach', 'Setup', 'Contact / Strike', 'Release', 'Follow-Through']).map((p) => (
+                      <option key={p} value={p} className="bg-zinc-900 text-white">
+                        {p}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div className="flex items-center justify-between text-[9px] text-zinc-400 border-t border-zinc-850 pt-1">
+                  <span>Safety: <strong className="text-yellow-400">{frame.kneeSafetyScore || 95}%</strong></span>
+                  <span>Symmetry: <strong className="text-emerald-400">{frame.symmetryScore || 92}%</strong></span>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
       {/* Main Full-Width Analysis Report */}
       <div className="flex flex-col gap-6 mt-2 max-w-5xl mx-auto w-full">
           
@@ -1691,7 +1938,7 @@ export const AnalysisReportPage: React.FC<AnalysisReportPageProps> = ({
           <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 border-b border-zinc-800 pb-3">
             <div ref={tabContainerRef} className="flex items-center flex-nowrap gap-2 overflow-x-auto no-scrollbar w-full">
                     {[
-                      { id: 'overview', label: `🎯 ${assignedAthleteName || 'Athlete'}'s Dossier` },
+                      { id: 'overview', label: `📋 ${assignedAthleteName || 'Athlete'}'s Action Report` },
                       { id: 'smash', label: '🥊 Smash Form Flaws' },
                       { id: 'cannon', label: '🎯 Launch Cannon' },
                       { id: 'reflex', label: '🕹️ Reflex & Release' },
@@ -1722,523 +1969,594 @@ export const AnalysisReportPage: React.FC<AnalysisReportPageProps> = ({
             onTouchEnd={handleTouchEnd}
             className="flex-1 flex flex-col min-h-0"
           >
-            {/* CARD DECK MODE VIEWER */}
+            {/* ACTION REPORT / DOSSIER OVERVIEW */}
             {(activeTab as string) === 'overview' && (
             <div className="flex flex-col gap-4">
-              {/* Deck Progress & Navigation Bar */}
-              <div className="flex items-center justify-between bg-zinc-900/90 border border-zinc-800 p-3 rounded-2xl">
+              
+              {/* TOP ACTION & VIEW SWITCHER BAR */}
+              <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 bg-zinc-900/90 border border-zinc-800 p-3 rounded-2xl">
                 <div className="flex items-center gap-2">
-                  <span className="w-2.5 h-2.5 rounded-full bg-red-500 animate-pulse" />
+                  <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse" />
                   <span className="text-xs font-black uppercase tracking-wider text-white">
-                    Tactical Dossier Card {deckCardIndex + 1} of 5
+                    Athlete Action Report
+                  </span>
+                  <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-red-500/10 text-red-400 border border-red-500/20">
+                    {sportRule.name}
                   </span>
                 </div>
-                <div className="flex items-center gap-1.5">
+
+                <div className="flex items-center flex-wrap gap-2 w-full sm:w-auto justify-between sm:justify-end">
+                  {/* View Mode Toggle: All-In-One vs Step-by-Step Cards */}
+                  <div className="flex items-center bg-zinc-950 border border-zinc-800 p-1 rounded-xl">
+                    <button
+                      onClick={() => setDossierViewMode('all')}
+                      className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-bold transition-all ${
+                        dossierViewMode === 'all'
+                          ? 'bg-red-600 text-white shadow-sm'
+                          : 'text-zinc-400 hover:text-white'
+                      }`}
+                    >
+                      <List className="w-3.5 h-3.5" />
+                      <span>All-In-One</span>
+                    </button>
+                    <button
+                      onClick={() => setDossierViewMode('cards')}
+                      className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-bold transition-all ${
+                        dossierViewMode === 'cards'
+                          ? 'bg-red-600 text-white shadow-sm'
+                          : 'text-zinc-400 hover:text-white'
+                      }`}
+                    >
+                      <LayoutGrid className="w-3.5 h-3.5" />
+                      <span>Step Cards</span>
+                    </button>
+                  </div>
+
+                  {/* Copy Summary Button */}
                   <button
-                    onClick={() => setDeckCardIndex((prev) => (prev > 0 ? prev - 1 : 4))}
-                    className="p-2 rounded-xl bg-zinc-950 border border-zinc-800 text-zinc-300 hover:text-white hover:border-zinc-700 transition-all"
+                    onClick={() => {
+                      const ath = assignedAthleteName || 'Athlete';
+                      const score = ((avgSymmetry + avgKneeSafety) / 20).toFixed(1);
+                      const text = `📋 ${ath}'s ${sportRule.name} Form Report\n⭐ Score: ${score}/10 | Balance: ${avgSymmetry}% | Knee Safety: ${avgKneeSafety}%\n✅ What went well: ${typeof aiReport?.keyStrengths?.[0] === 'string' ? aiReport.keyStrengths[0] : (aiReport?.keyStrengths?.[0] as any)?.title || 'Good balance and timing'}\n🎯 Focus for next practice: ${aiReport?.executiveDossier?.detectedFault?.description || aiReport?.biomechanicInsights?.[0] || 'Keep knee centered over toes'}\n⚡ Generated by Klutchh Academy`;
+                      navigator.clipboard.writeText(text);
+                      setCopiedSummary(true);
+                      setTimeout(() => setCopiedSummary(false), 2500);
+                    }}
+                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-zinc-950 border border-zinc-800 text-zinc-300 hover:text-white hover:border-zinc-700 text-[11px] font-bold transition-all"
                   >
-                    <ChevronLeft className="w-4 h-4" />
+                    {copiedSummary ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
+                    <span>{copiedSummary ? 'Copied!' : 'Copy Summary'}</span>
                   </button>
+
+                  {/* Hear Coach Audio Button */}
                   <button
-                    onClick={() => setDeckCardIndex((prev) => (prev < 4 ? prev + 1 : 0))}
-                    className="p-2 rounded-xl bg-zinc-950 border border-zinc-800 text-zinc-300 hover:text-white hover:border-zinc-700 transition-all"
+                    onClick={() => {
+                      if ('speechSynthesis' in window) {
+                        if (isPlayingAudio) {
+                          window.speechSynthesis.cancel();
+                          setIsPlayingAudio(false);
+                        } else {
+                          const athName = assignedAthleteName || 'Athlete';
+                          const score = ((avgSymmetry + avgKneeSafety) / 20).toFixed(1);
+                          const script = `Hey ${athName}! Coach here. You scored ${score} out of 10 on your ${sportRule.name}! Your balance was at ${avgSymmetry} percent and knee safety at ${avgKneeSafety} percent. ${aiReport?.executiveDossier?.headline || 'Great effort!'} Check out the simple practice drills below to take your game to the next level.`;
+                          const utterance = new SpeechSynthesisUtterance(script);
+                          utterance.rate = 1.0;
+                          utterance.pitch = 1.1;
+                          utterance.onend = () => setIsPlayingAudio(false);
+                          utterance.onerror = () => setIsPlayingAudio(false);
+                          setIsPlayingAudio(true);
+                          window.speechSynthesis.speak(utterance);
+                        }
+                      }
+                    }}
+                    className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl border text-[11px] font-bold transition-all ${
+                      isPlayingAudio
+                        ? 'bg-amber-500/20 border-amber-500/40 text-amber-300 animate-pulse'
+                        : 'bg-zinc-950 border-zinc-800 text-zinc-300 hover:text-white'
+                    }`}
                   >
-                    <ChevronRight className="w-4 h-4" />
+                    <Volume2 className="w-3.5 h-3.5 text-yellow-400" />
+                    <span>{isPlayingAudio ? 'Speaking...' : 'Hear Coach'}</span>
                   </button>
                 </div>
               </div>
 
-              {/* CARD CONTAINER */}
-              <div className="relative bg-zinc-900 border-2 border-red-500/40 rounded-3xl p-6 card-deck-shadow flex flex-col gap-5 min-h-[480px] justify-between transition-all duration-300">
-                
-                {/* Sleek Gamified Card Steps progress bar */}
-                <div className="grid grid-cols-6 gap-1 pb-2.5 border-b border-zinc-800">
-                  {[
-                    { label: 'Overview', icon: Award },
-                    { label: 'Technique', icon: Activity },
-                    { label: 'Masteries', icon: Sparkles },
-                    { label: 'The Fix', icon: AlertTriangle },
-                    { label: 'Next Level', icon: Flame }
-                  ].map((step, idx) => {
-                    const Icon = step.icon;
-                    const isActive = deckCardIndex === idx;
-                    const isCompleted = deckCardIndex > idx;
-                    return (
-                      <button
-                        key={idx}
-                        onClick={() => setDeckCardIndex(idx)}
-                        className={`flex flex-col items-center gap-1.5 pb-1 border-b-2 transition-all duration-300 ${
-                          isActive
-                            ? 'border-red-500 text-red-400'
-                            : isCompleted
-                            ? 'border-emerald-500 text-emerald-400'
-                            : 'border-transparent text-zinc-600 hover:text-zinc-400'
-                        }`}
-                      >
-                        <Icon className={`w-4 h-4 transition-transform duration-300 ${isActive ? 'scale-110' : ''}`} />
-                        <span className="text-[9px] font-black uppercase tracking-wider hidden md:inline">{step.label}</span>
-                      </button>
-                    );
-                  })}
-                </div>
-                
-                {/* CARD 0: EXECUTIVE SUMMARY */}
-                {deckCardIndex === 0 && (
-                  <div className="flex flex-col gap-5 animate-fadeIn">
-                    <div className="flex items-center justify-between border-b border-zinc-800 pb-3">
-                      <div className="flex items-center gap-2.5">
-                        <span className="w-7 h-7 rounded-xl bg-red-600 text-white font-black text-xs flex items-center justify-center shrink-0">
-                          01
-                        </span>
-                        <h3 className="text-xs font-black uppercase text-white tracking-wider">
-                          Executive Score & Performance Dossier
-                        </h3>
-                      </div>
-                      <span className="text-[10px] font-mono font-bold px-2.5 py-1 rounded-lg bg-red-500/10 text-red-400 border border-red-500/30">
-                        Grade {aiReport?.overallGrade || 'A'}
-                      </span>
-                    </div>
-
-                    <div className="bg-gradient-to-tr from-zinc-950 via-zinc-900 to-red-950/30 border border-zinc-800 rounded-2xl p-5 flex flex-col sm:flex-row items-center justify-between gap-5">
+              {/* VIEW 1: ALL-IN-ONE COMPREHENSIVE ACTION REPORT */}
+              {dossierViewMode === 'all' && (
+                <div className="flex flex-col gap-5 animate-fadeIn">
+                  
+                  {/* CARD 1: OVERALL SCORE & BIG PICTURE */}
+                  <div className="bg-gradient-to-tr from-zinc-950 via-zinc-900 to-red-950/20 border-2 border-red-500/30 rounded-3xl p-5 sm:p-6 flex flex-col gap-5 shadow-xl">
+                    <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
                       <div className="flex items-center gap-4">
                         <div className="w-20 h-20 rounded-2xl bg-gradient-to-tr from-amber-500 to-red-600 flex flex-col items-center justify-center text-white shadow-xl shadow-red-600/30 shrink-0">
                           <Award className="w-6 h-6 text-yellow-200" />
-                          <span className="text-xl font-black tracking-tight mt-0.5">
+                          <span className="text-2xl font-black tracking-tight mt-0.5">
                             {((avgSymmetry + avgKneeSafety) / 20).toFixed(1)}
                           </span>
+                          <span className="text-[9px] font-bold uppercase tracking-wider text-yellow-100">Score</span>
                         </div>
                         <div>
-                          <div className="flex flex-wrap items-center gap-1.5 text-[10px] text-red-400 font-mono font-black uppercase tracking-wider">
-                            <span>Klutchh Form Audit</span>
-                            <span className="text-zinc-600">•</span>
-                            <span className="text-yellow-400 flex items-center gap-0.5"><Sparkles className="w-2.5 h-2.5" /> KLUTCHH INTERFACE TECH</span>
+                          <div className="flex items-center gap-2">
+                            <span className="text-[11px] font-bold px-2.5 py-0.5 rounded-full bg-red-500/10 text-red-400 border border-red-500/30">
+                              {aiReport?.overallGrade || 'Grade A'}
+                            </span>
+                            <span className="text-xs text-zinc-400 font-bold">
+                              {assignedAthleteName ? `${assignedAthleteName}'s Form` : 'Your Movement Analysis'}
+                            </span>
                           </div>
-                          <h2 className="text-xl font-black text-white italic uppercase tracking-wide mt-0.5">
-                            {aiReport?.summaryTitle || `${sportRule.name} Form Audit`}
+                          <h2 className="text-lg sm:text-xl font-black text-white uppercase tracking-wide mt-1">
+                            {aiReport?.executiveDossier?.headline || `${sportRule.name} Form Check`}
                           </h2>
-                          <p className="text-xs text-zinc-400 mt-1 font-medium">
-                            Analyzed across {sportRule.jointRules.length} biomechanical checkpoints at {calibratedFps} FPS.
+                          <p className="text-xs text-zinc-300 mt-1 leading-relaxed font-medium">
+                            {aiReport?.summaryText || `You did a solid job with your ${sportRule.name}! Here is what went right and what to practice next.`}
                           </p>
-                          {currentUser && (
-                            <div className="flex flex-wrap items-center gap-x-3 gap-y-1 mt-2 text-[10px] font-mono text-zinc-400 bg-zinc-950/50 border border-zinc-800/60 rounded-xl py-1.5 px-3 w-fit">
-                              <span className="flex items-center gap-1">
-                                <span className="w-1.5 h-1.5 rounded-full bg-yellow-400" />
-                                <span className="text-zinc-500 uppercase">Observer:</span> 
-                                <span className="text-zinc-100 font-bold">{currentUser.name}</span>
-                              </span>
-                              <span className="text-zinc-700">|</span>
-                              <span className="flex items-center gap-1">
-                                <span className="text-zinc-500 uppercase">Role:</span> 
-                                <span className="text-zinc-300 font-medium">{currentUser.role}</span>
-                              </span>
-                              <span className="text-zinc-700">|</span>
-                              <span className="flex items-center gap-1">
-                                <span className="text-zinc-500 uppercase">Club:</span> 
-                                <span className="text-zinc-300 font-medium">{currentUser.clubOrSchool || 'Klutchh Academy'}</span>
-                              </span>
-                            </div>
-                          )}
                         </div>
                       </div>
 
-                      <div className="flex flex-col gap-2 w-full sm:w-auto">
-                        <div className="grid grid-cols-2 gap-2">
-                          <div className="bg-zinc-950 border border-zinc-800 px-4 py-2 rounded-xl text-center">
-                            <span className="text-[9px] text-zinc-400 font-bold uppercase block">Symmetry</span>
-                            <span className="text-sm font-black text-emerald-400">{avgSymmetry}%</span>
-                          </div>
-                          <div className="bg-zinc-950 border border-zinc-800 px-4 py-2 rounded-xl text-center">
-                            <span className="text-[9px] text-zinc-400 font-bold uppercase block">Knee Safety</span>
-                            <span className="text-sm font-black text-yellow-400">{avgKneeSafety}%</span>
-                          </div>
+                      {/* 3 Simple Big Stat Pills */}
+                      <div className="grid grid-cols-3 gap-2 w-full sm:w-auto">
+                        <div className="bg-zinc-950 border border-zinc-800 px-3.5 py-2.5 rounded-2xl text-center">
+                          <span className="text-[10px] text-zinc-400 font-bold uppercase block">Balance</span>
+                          <span className="text-base font-black text-emerald-400">{avgSymmetry}%</span>
+                          <span className="text-[9px] text-zinc-500 font-medium block mt-0.5">Centered</span>
                         </div>
-                      </div>
-                    </div>
-
-                    {/* Biometric Phase Scoring Radar */}
-                    <div className="bg-zinc-950/50 border border-zinc-800 rounded-2xl p-4 flex flex-col md:flex-row gap-6 items-center">
-                      <div className="w-full md:w-1/2 h-48">
-                        <ResponsiveContainer width="100%" height="100%">
-                          <RadarChart cx="50%" cy="50%" outerRadius="70%" data={radarData}>
-                            <PolarGrid stroke="#27272a" />
-                            <PolarAngleAxis dataKey="subject" tick={{ fill: '#71717a', fontSize: 10, fontWeight: 800 }} />
-                            <PolarRadiusAxis angle={30} domain={[0, 100]} tick={false} axisLine={false} />
-                            <Radar
-                              name="Form Score"
-                              dataKey="A"
-                              stroke="#ef4444"
-                              fill="#ef4444"
-                              fillOpacity={0.4}
-                            />
-                          </RadarChart>
-                        </ResponsiveContainer>
-                      </div>
-                      <div className="w-full md:w-1/2 flex flex-col gap-3">
-                        <div className="flex items-center gap-2">
-                          <Zap className="w-4 h-4 text-yellow-400" />
-                          <h4 className="text-[10px] font-black uppercase text-white tracking-widest">Biometric Phase Scoring</h4>
+                        <div className="bg-zinc-950 border border-zinc-800 px-3.5 py-2.5 rounded-2xl text-center">
+                          <span className="text-[10px] text-zinc-400 font-bold uppercase block">Knee Safety</span>
+                          <span className="text-base font-black text-yellow-400">{avgKneeSafety}%</span>
+                          <span className="text-[9px] text-zinc-500 font-medium block mt-0.5">Protected</span>
                         </div>
-                        <div className="grid grid-cols-2 gap-3">
-                          {radarData.map((d, i) => (
-                            <div key={i} className="flex flex-col gap-1">
-                              <div className="flex items-center justify-between">
-                                <span className="text-[9px] text-zinc-500 font-bold uppercase">{d.subject}</span>
-                                <span className={`text-[10px] font-black ${d.A > 85 ? 'text-emerald-400' : d.A > 70 ? 'text-yellow-400' : 'text-red-400'}`}>{d.A}%</span>
-                              </div>
-                              <div className="h-1 w-full bg-zinc-800 rounded-full overflow-hidden">
-                                <div 
-                                  className={`h-full transition-all duration-1000 ${d.A > 85 ? 'bg-emerald-500' : d.A > 70 ? 'bg-yellow-500' : 'bg-red-500'}`}
-                                  style={{ width: `${d.A}%` }}
-                                />
-                              </div>
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-                    </div>
-
-                    {/* NEW INTERACTIVE RIGHT VS. WRONG SIDE-BY-SIDE COMPARE PANEL */}
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                      {/* WRONG / DETECTED FAULT BOX */}
-                      <div className="bg-zinc-950 border border-red-500/30 rounded-2xl p-4 flex flex-col gap-3 relative overflow-hidden">
-                        <div className="absolute top-0 right-0 w-24 h-24 bg-red-500/5 rounded-full filter blur-xl" />
-                        <div className="flex items-center justify-between">
-                          <span className="text-[10px] font-black uppercase text-red-400 flex items-center gap-1.5">
-                            <span className="w-4 h-4 rounded-full bg-red-500/20 text-red-400 flex items-center justify-center text-[10px]">✕</span>
-                            <span>{aiReport?.executiveDossier?.detectedFault?.title || 'Detected Athlete Form (What Went Wrong)'}</span>
+                        <div className="bg-zinc-950 border border-zinc-800 px-3.5 py-2.5 rounded-2xl text-center">
+                          <span className="text-[10px] text-zinc-400 font-bold uppercase block">Power</span>
+                          <span className="text-base font-black text-red-400">
+                            {Math.min(100, Math.round((dynamicMetrics?.explosivenessScore || 85)))}%
                           </span>
-                          <span className="text-[8px] font-mono bg-red-950/40 text-red-300 px-2 py-0.5 rounded border border-red-500/30">
-                            Action Required
-                          </span>
-                        </div>
-                        <p className="text-xs text-zinc-300 leading-relaxed font-medium">
-                          {aiReport?.executiveDossier?.detectedFault?.description || aiReport?.biomechanicInsights?.[0] || 'Joint tracking recorded technical deviation during movement execution.'}
-                        </p>
-                        <div className="bg-zinc-900 border border-zinc-850 p-2.5 rounded-xl text-[10px] font-mono text-zinc-400 flex flex-col gap-1">
-                          <div className="flex justify-between">
-                            <span className="text-zinc-500">Joint Deviation:</span>
-                            <span className="text-red-400 font-bold">{aiReport?.executiveDossier?.detectedFault?.angleDeviation || 'Sub-optimal Zone'}</span>
-                          </div>
-                          <div className="flex justify-between">
-                            <span className="text-zinc-500">Power Impact:</span>
-                            <span className="text-red-400 font-bold">{aiReport?.executiveDossier?.detectedFault?.impact || 'Energy Loss Detected'}</span>
-                          </div>
+                          <span className="text-[9px] text-zinc-500 font-medium block mt-0.5">Speed</span>
                         </div>
                       </div>
-
-                      {/* RIGHT / ELITE STANDARD BOX */}
-                      <div className="bg-zinc-950 border border-emerald-500/30 rounded-2xl p-4 flex flex-col gap-3 relative overflow-hidden">
-                        <div className="absolute top-0 right-0 w-24 h-24 bg-emerald-500/5 rounded-full filter blur-xl" />
-                        <div className="flex items-center justify-between">
-                          <span className="text-[10px] font-black uppercase text-emerald-400 flex items-center gap-1.5">
-                            <span className="w-4 h-4 rounded-full bg-emerald-500/20 text-emerald-400 flex items-center justify-center text-[10px]">✓</span>
-                            <span>{aiReport?.executiveDossier?.goldStandard?.title || 'Elite Gold Standard (What Is Right)'}</span>
-                          </span>
-                          <span className="text-[8px] font-mono bg-emerald-950/40 text-emerald-300 px-2 py-0.5 rounded border border-emerald-500/30">
-                            Biomechanically Ideal
-                          </span>
-                        </div>
-                        <p className="text-xs text-zinc-300 leading-relaxed font-medium">
-                          {aiReport?.executiveDossier?.goldStandard?.description || (typeof aiReport?.keyStrengths?.[0] === 'string' ? aiReport?.keyStrengths?.[0] : (aiReport?.keyStrengths?.[0] as any)?.desc) || 'Neutral joint tracking aligned over load vector with active shock absorption.'}
-                        </p>
-                        <div className="bg-zinc-900 border border-zinc-850 p-2.5 rounded-xl text-[10px] font-mono text-zinc-400 flex flex-col gap-1">
-                          <div className="flex justify-between">
-                            <span className="text-zinc-500">Ideal Target Range:</span>
-                            <span className="text-emerald-400 font-bold">{aiReport?.executiveDossier?.goldStandard?.idealRange || 'Optimal Range'}</span>
-                          </div>
-                          <div className="flex justify-between">
-                            <span className="text-zinc-500">Force Transmission:</span>
-                            <span className="text-emerald-400 font-bold">{aiReport?.executiveDossier?.goldStandard?.forceTransmission || '100% Kinetic Whip'}</span>
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-
-                  </div>
-                )}
-
-                {/* CARD 1: KINETIC CHAIN SEQUENCE */}
-                {deckCardIndex === 1 && (
-                  <div className="animate-fadeIn">
-                    <SequenceVerificationMatrix 
-                      sequenceComparison={localSequenceComparison} 
-                      kineticSequence={kineticSequence}
-                      sportRule={sportRule} 
-                      viewMode={viewMode}
-                      onUpdateSequenceComparison={setLocalSequenceComparison}
-                      drills={aiReport?.funCorrectiveDrills || sportRule.drills || []}
-                      drillProgress={drillProgress}
-                      onToggleDrillStatus={toggleDrillStatus}
-                      keyframes={keyframeList}
-                      currentTime={currentTime}
-                      onSeekVideo={(timestamp) => {
-                        if (videoRef.current) {
-                          videoRef.current.currentTime = timestamp;
-                          setCurrentTime(timestamp);
-                        }
-                      }}
-                      onSelectKeyframe={(frame) => {
-                        if (videoRef.current) {
-                          videoRef.current.currentTime = frame.timestamp;
-                          setCurrentTime(frame.timestamp);
-                        }
-                      }}
-                    />
-                  </div>
-                )}
-
-                {/* CARD 2: STRENGTHS */}
-                {deckCardIndex === 2 && (
-                  <div className="flex flex-col gap-6 animate-fadeIn max-w-2xl mx-auto w-full py-2">
-                    <div className="flex items-center justify-between border-b border-zinc-800 pb-3">
-                      <div className="flex items-center gap-2.5">
-                        <span className="w-7 h-7 rounded-xl bg-emerald-600 text-white font-black text-xs flex items-center justify-center shrink-0">
-                          03
-                        </span>
-                        <h3 className="text-xs font-black uppercase text-emerald-400 tracking-wider">
-                          What You Did Well (Strengths)
-                        </h3>
-                      </div>
-                      <span className="text-[10px] font-mono font-bold px-2.5 py-0.5 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
-                        Top Form Highlights
-                      </span>
-                    </div>
-
-                    <div className="flex flex-col gap-4">
-                      {(() => {
-                        const strengthsList = (aiReport?.strengthsDetailed && aiReport.strengthsDetailed.length > 0)
-                          ? aiReport.strengthsDetailed
-                          : (aiReport?.keyStrengths || []).map((s: any) => {
-                              if (typeof s === 'object' && s !== null && s.title) return s;
-                              return {
-                                title: typeof s === 'string' ? s : 'Clean Joint Execution',
-                                desc: 'Movement phase executed with strong joint stability and efficient kinetic chain power transfer.',
-                                metric: 'Optimal Zone'
-                              };
-                            });
-
-                        return strengthsList.map((strength: any, idx: number) => (
-                          <div key={idx} className="bg-zinc-950 border border-emerald-500/30 rounded-2xl p-5 flex flex-col gap-3 relative overflow-hidden">
-                            <div className="absolute top-0 right-0 w-24 h-24 bg-emerald-500/5 rounded-full filter blur-xl" />
-                            <div className="flex items-center gap-2">
-                              <span className="w-5 h-5 rounded-full bg-emerald-500/20 text-emerald-400 font-bold text-xs flex items-center justify-center">✓</span>
-                              <span className="text-sm font-bold text-white">{strength.title}</span>
-                            </div>
-                            <p className="text-xs text-zinc-300 leading-relaxed">
-                              {strength.desc}
-                            </p>
-                            <div className="bg-zinc-900 border border-zinc-850 px-3 py-2 rounded-xl text-xs font-mono text-emerald-400 self-start">
-                              {strength.metric || 'Optimal Alignment'}
-                            </div>
-                          </div>
-                        ));
-                      })()}
                     </div>
                   </div>
-                )}
 
-                {/* CARD 3: FAULTS & ATTACHED DRILLS */}
-                {deckCardIndex === 3 && (
-                  <div className="flex flex-col gap-6 animate-fadeIn max-w-2xl mx-auto w-full py-2">
-                    <div className="flex items-center justify-between border-b border-zinc-800 pb-3">
-                      <div className="flex items-center gap-2.5">
-                        <span className="w-7 h-7 rounded-xl bg-amber-500 text-zinc-950 font-black text-xs flex items-center justify-center shrink-0">
-                          04
+                  {/* CARD 2: SIDE-BY-SIDE: WHAT YOU DID RIGHT vs. WHAT TO FIX */}
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    
+                    {/* WHAT LOOKED GREAT */}
+                    <div className="bg-zinc-900/90 border-2 border-emerald-500/30 rounded-3xl p-5 flex flex-col gap-3 shadow-lg relative overflow-hidden">
+                      <div className="absolute top-0 right-0 w-28 h-28 bg-emerald-500/5 rounded-full filter blur-xl" />
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs font-black uppercase text-emerald-400 flex items-center gap-2">
+                          <span className="w-5 h-5 rounded-full bg-emerald-500/20 text-emerald-400 flex items-center justify-center text-xs font-black">✓</span>
+                          <span>What Looked Great</span>
                         </span>
-                        <h3 className="text-xs font-black uppercase text-amber-400 tracking-wider">
-                          The Quick Fix: Corrections & Drills
-                        </h3>
-                      </div>
-                      <span className="text-[10px] font-mono font-bold px-2.5 py-0.5 rounded bg-amber-400/10 text-amber-400 border border-amber-400/20">
-                        Immediate Action
-                      </span>
-                    </div>
-
-                    <div className="flex flex-col gap-4">
-                      {(() => {
-                        const fixesList = (aiReport?.areasToImprove && aiReport.areasToImprove.length > 0)
-                          ? aiReport.areasToImprove
-                          : (aiReport?.biomechanicInsights || []).map((insight: string, idx: number) => {
-                              const correspondingDrill = aiReport?.funCorrectiveDrills?.[idx] || aiReport?.funCorrectiveDrills?.[0];
-                              return {
-                                issue: insight,
-                                explanation: 'We spotted a small movement check that could be robbing you of power or balance.',
-                                drillName: correspondingDrill?.name || `${sportRule.name} Stabilization Drill`,
-                                drillReps: correspondingDrill?.reps || '3 sets x 8 reps',
-                                drillTip: correspondingDrill?.coachingCue || 'Keep it smooth and controlled—focus on the feeling of the movement.'
-                              };
-                            });
-
-                        return fixesList.map((item: any, idx: number) => (
-                          <div key={idx} className="bg-zinc-950 border border-amber-500/30 rounded-2xl p-5 flex flex-col gap-3">
-                            <div className="flex items-center justify-between">
-                              <span className="text-xs font-black text-amber-400 flex items-center gap-1.5 uppercase italic">
-                                <span>⚡</span>
-                                <span>{item.issue}</span>
-                              </span>
-                              <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-amber-950/40 text-amber-300 border border-amber-500/30">
-                                FIX #{idx + 1}
-                              </span>
-                            </div>
-                            
-                            <p className="text-xs text-zinc-300 leading-relaxed font-medium">
-                              {item.explanation}
-                            </p>
-
-                            <div className="bg-zinc-900 border border-zinc-850 p-3.5 rounded-xl flex flex-col gap-2 mt-1">
-                              <div className="flex items-center gap-2">
-                                <div className="w-6 h-6 rounded-lg bg-amber-500/20 flex items-center justify-center text-amber-400">
-                                  <Target className="w-4 h-4" />
-                                </div>
-                                <span className="text-xs font-black text-white uppercase tracking-tight">Do This: {item.drillName}</span>
-                              </div>
-                              <p className="text-[11px] text-zinc-400 font-medium">
-                                💡 <strong>Pro Tip:</strong> {item.drillTip}
-                              </p>
-                              <div className="flex items-center gap-3 mt-1">
-                                <span className="text-[10px] font-mono text-amber-400 font-black bg-amber-500/10 px-2.5 py-1 rounded border border-amber-500/20">
-                                  GOAL: {item.drillReps}
-                                </span>
-                                <span className="text-[10px] font-black text-zinc-500 uppercase tracking-widest">Master this to level up</span>
-                              </div>
-                            </div>
-                          </div>
-                        ));
-                      })()}
-                    </div>
-                  </div>
-                )}
-
-                {/* CARD 4: FORCE & EFFICIENCY */}
-                {deckCardIndex === 4 && (
-                  <div className="flex flex-col gap-6 animate-fadeIn">
-                    {/* Header */}
-                    <div className="flex items-center justify-between border-b border-zinc-800 pb-3">
-                      <div className="flex items-center gap-2.5">
-                        <span className="w-7 h-7 rounded-xl bg-purple-600 text-white font-black text-xs flex items-center justify-center shrink-0">
-                          05
-                        </span>
-                        <h3 className="text-xs font-black uppercase text-purple-400 tracking-wider">
-                          Kinetic Summary & Next Steps
-                        </h3>
-                      </div>
-                      <span className="text-[10px] font-mono font-bold px-2.5 py-1 rounded bg-purple-500/10 text-purple-300 border border-purple-500/20">
-                        Final Action Plan
-                      </span>
-                    </div>
-
-                    {/* Overview Hero Banner */}
-                    <div className="bg-gradient-to-br from-zinc-950 to-zinc-900 border border-purple-500/30 rounded-2xl p-5 flex flex-col gap-3 relative overflow-hidden">
-                      <div className="absolute top-0 right-0 w-32 h-32 bg-purple-600/10 rounded-full blur-2xl pointer-events-none" />
-                      <div className="flex items-center justify-between z-10">
-                        <span className="text-xs font-black text-purple-300 uppercase tracking-wide flex items-center gap-1.5 italic">
-                          <span>🚀</span> {aiReport?.kineticSummary?.headline || 'Your Performance Path'}
-                        </span>
-                        <span className="text-[10px] font-black px-2 py-0.5 rounded bg-purple-950 text-purple-300 border border-purple-500/30 uppercase italic">
-                          Level Up Ready
+                        <span className="text-[9px] font-bold px-2 py-0.5 rounded-full bg-emerald-950/60 text-emerald-300 border border-emerald-500/30">
+                          Strengths
                         </span>
                       </div>
-                      <p className="text-xs text-zinc-300 leading-relaxed z-10 font-medium">
-                        {aiReport?.kineticSummary?.summary || 'You have great foundational power! To unlock your next level, focus on core bracing and smooth force absorption during transitions.'}
-                      </p>
-                    </div>
 
-                    {/* Core Takeaways Grid */}
-                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3.5">
-                      {(() => {
-                        const takeaways = aiReport?.kineticSummary?.takeaways || [
-                          {
-                            category: 'Power Potential',
-                            title: 'Initial Drive Phase',
-                            detail: 'Explosive force generation off the ground is solid.'
-                          },
-                          {
-                            category: 'Joint Safety',
-                            title: 'Landing Absorption',
-                            detail: 'Bend knees proactively to cushion joints during impact.'
-                          },
-                          {
-                            category: 'Sequence Timing',
-                            title: 'Core Stability',
-                            detail: 'Maintain upright posture through movement transition.'
-                          }
-                        ];
-
-                        const icons = ['✓', '!', '★'];
-                        const colors = [
-                          'bg-emerald-500/10 text-emerald-400 border-emerald-500/20',
-                          'bg-amber-500/10 text-amber-400 border-amber-500/20',
-                          'bg-purple-500/10 text-purple-400 border-purple-500/20'
-                        ];
-
-                        return takeaways.map((t: any, idx: number) => (
-                          <div key={idx} className="bg-zinc-950 border border-zinc-850 rounded-xl p-4 flex flex-col gap-2">
-                            <div className={`w-6 h-6 rounded-lg font-bold text-xs flex items-center justify-center border ${colors[idx % colors.length]}`}>
-                              {icons[idx % icons.length]}
-                            </div>
-                            <span className="text-[10px] font-bold text-purple-400 uppercase tracking-wider">{t.category}</span>
-                            <span className="text-xs font-black text-white">{t.title}</span>
-                            <p className="text-[11px] text-zinc-400 leading-normal">
-                              {t.detail}
-                            </p>
-                          </div>
-                        ));
-                      })()}
-                    </div>
-
-                    {/* Recommended Routine Card */}
-                    <div className="bg-zinc-950 border border-zinc-800 rounded-xl p-4 flex flex-col gap-3">
-                      <span className="text-[10px] font-black uppercase text-zinc-400 tracking-wider">
-                        Weekly Training Prescription
-                      </span>
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      <div className="flex flex-col gap-2.5 mt-1">
                         {(() => {
-                          const rxList = aiReport?.kineticSummary?.weeklyPrescription || (aiReport?.funCorrectiveDrills || []).slice(0, 2).map((d: any, idx: number) => ({
-                            title: `${idx + 1}. ${d.name}`,
-                            detail: `${d.reps || '3 sets x 8 reps'} • ${d.coachingCue || 'Focus on controlled form.'}`
-                          }));
+                          const strengths = (aiReport?.strengthsDetailed && aiReport.strengthsDetailed.length > 0)
+                            ? aiReport.strengthsDetailed
+                            : (aiReport?.keyStrengths || []).map((s: any) => {
+                                if (typeof s === 'object' && s !== null && s.title) return s;
+                                return {
+                                  title: typeof s === 'string' ? s.split('.')[0] : 'Solid Movement Timing',
+                                  desc: typeof s === 'string' ? s : 'Good balance and control throughout the key parts of the movement.'
+                                };
+                              });
 
-                          if (rxList.length === 0) {
-                            rxList.push(
-                              { title: '1. Soft Landing Drills', detail: '3 sets of 8 reps • Focus on cushioned contact.' },
-                              { title: '2. Core Braced Holds', detail: '3 sets of 30 sec • Maintain neutral spinal alignment.' }
-                            );
-                          }
-
-                          return rxList.map((rx: any, idx: number) => (
-                            <div key={idx} className="bg-zinc-900 border border-zinc-850 p-3 rounded-lg flex flex-col gap-1">
-                              <span className="text-[11px] font-bold text-white">{rx.title}</span>
-                              <span className="text-[10px] text-zinc-400">{rx.detail}</span>
+                          return strengths.slice(0, 3).map((st: any, idx: number) => (
+                            <div key={idx} className="bg-zinc-950 border border-zinc-800 p-3 rounded-2xl flex items-start gap-3">
+                              <span className="w-5 h-5 rounded-full bg-emerald-500/10 text-emerald-400 flex items-center justify-center text-xs shrink-0 mt-0.5">
+                                ✓
+                              </span>
+                              <div>
+                                <h4 className="text-xs font-bold text-white">{st.title}</h4>
+                                <p className="text-[11px] text-zinc-300 mt-0.5 leading-relaxed font-medium">
+                                  {st.desc || 'Executed with good balance and smooth control.'}
+                                </p>
+                              </div>
                             </div>
                           ));
                         })()}
                       </div>
                     </div>
 
+                    {/* THE #1 THING TO FIX */}
+                    <div className="bg-zinc-900/90 border-2 border-amber-500/30 rounded-3xl p-5 flex flex-col gap-3 shadow-lg relative overflow-hidden">
+                      <div className="absolute top-0 right-0 w-28 h-28 bg-amber-500/5 rounded-full filter blur-xl" />
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs font-black uppercase text-amber-400 flex items-center gap-2">
+                          <span className="w-5 h-5 rounded-full bg-amber-500/20 text-amber-400 flex items-center justify-center text-xs font-black">🎯</span>
+                          <span>The #1 Thing To Practice</span>
+                        </span>
+                        <span className="text-[9px] font-bold px-2 py-0.5 rounded-full bg-amber-950/60 text-amber-300 border border-amber-500/30">
+                          Easy Fix
+                        </span>
+                      </div>
+
+                      <div className="bg-zinc-950 border border-zinc-800 p-3.5 rounded-2xl flex flex-col gap-2 mt-1">
+                        <div className="flex items-center justify-between">
+                          <h4 className="text-xs font-bold text-white flex items-center gap-1.5">
+                            <AlertTriangle className="w-4 h-4 text-amber-400" />
+                            <span>{aiReport?.executiveDossier?.detectedFault?.title || 'Joint Alignment Check'}</span>
+                          </h4>
+                          <span className="text-[10px] font-mono text-amber-400 font-bold">
+                            {aiReport?.executiveDossier?.detectedFault?.impact || 'Losing ~15% Power'}
+                          </span>
+                        </div>
+                        <p className="text-xs text-zinc-300 leading-relaxed font-medium">
+                          {aiReport?.executiveDossier?.detectedFault?.description || aiReport?.biomechanicInsights?.[0] || 'Keep your joints lined up straight when landing or planting to stay balanced.'}
+                        </p>
+                      </div>
+
+                      {/* How To Do It Like A Pro */}
+                      <div className="bg-emerald-950/30 border border-emerald-500/30 p-3.5 rounded-2xl flex flex-col gap-1.5">
+                        <span className="text-[10px] font-black uppercase tracking-wider text-emerald-400 flex items-center gap-1">
+                          <Sparkles className="w-3.5 h-3.5" />
+                          <span>How To Do It Like A Pro:</span>
+                        </span>
+                        <p className="text-xs text-emerald-200 leading-relaxed font-medium">
+                          {aiReport?.executiveDossier?.goldStandard?.description || 'Keep your feet shoulder-width apart, knees pointing over your toes, and stay smooth.'}
+                        </p>
+                      </div>
+                    </div>
+
                   </div>
-                )}
 
-                
-                
+                  {/* CARD 3: 3-STEP PRACTICE ACTION PLAN (DRILLS) */}
+                  <div className="bg-zinc-900 border-2 border-red-500/20 rounded-3xl p-5 sm:p-6 flex flex-col gap-4 shadow-xl">
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-zinc-800 pb-3">
+                      <div>
+                        <h3 className="text-sm font-black uppercase text-white tracking-wider flex items-center gap-2">
+                          <Zap className="w-4 h-4 text-yellow-400" />
+                          <span>Your 3-Step Practice Plan</span>
+                        </h3>
+                        <p className="text-xs text-zinc-400 mt-0.5">
+                          Try these simple drills during your next practice session. Check them off when done!
+                        </p>
+                      </div>
+                      <span className="text-[10px] font-bold px-3 py-1 rounded-full bg-red-500/10 text-red-400 border border-red-500/20 self-start sm:self-auto">
+                        Practice Drills
+                      </span>
+                    </div>
 
-                {/* Card Footer Dots */}
-                <div className="flex items-center justify-between pt-4 border-t border-zinc-800 text-[11px] text-zinc-400">
-                  <span>Swipe or use arrows to flip through tactical dossier</span>
-                  <div className="flex items-center gap-1.5">
-                    {[0, 1, 2, 3, 4].map((i) => (
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3.5">
+                      {(() => {
+                        const drillsList = (aiReport?.areasToImprove && aiReport.areasToImprove.length > 0)
+                          ? aiReport.areasToImprove
+                          : (aiReport?.funCorrectiveDrills || []).slice(0, 3).map((d: any) => ({
+                              drillName: d.name,
+                              drillReps: d.reps || '3 sets of 8 reps',
+                              drillTip: d.coachingCue || 'Keep it smooth and stay balanced.',
+                              issue: d.targetJoint || 'Form Check'
+                            }));
+
+                        if (drillsList.length === 0) {
+                          drillsList.push(
+                            { drillName: 'Slow-Motion Mirror Reps', drillReps: '3 sets of 8 reps', drillTip: 'Practice in front of a mirror at half speed.', issue: 'Form Control' },
+                            { drillName: 'Balance & Knee Lineup', drillReps: '3 sets of 10 reps', drillTip: 'Keep knees over your middle toes.', issue: 'Balance' },
+                            { drillName: 'Smooth Follow-Through', drillReps: '3 sets of 8 reps', drillTip: 'Hold your finish for 2 seconds.', issue: 'Power' }
+                          );
+                        }
+
+                        return drillsList.slice(0, 3).map((drill: any, idx: number) => {
+                          const isDone = !!completedDrills[drill.drillName];
+                          return (
+                            <div 
+                              key={idx} 
+                              className={`bg-zinc-950 border rounded-2xl p-4 flex flex-col justify-between gap-3 transition-all ${
+                                isDone ? 'border-emerald-500/50 bg-emerald-950/10' : 'border-zinc-800'
+                              }`}
+                            >
+                              <div className="flex flex-col gap-2">
+                                <div className="flex items-center justify-between">
+                                  <span className="text-[10px] font-black uppercase text-red-400 font-mono">
+                                    Step {idx + 1}
+                                  </span>
+                                  <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-zinc-900 text-zinc-300 border border-zinc-800">
+                                    {drill.drillReps || '3 sets of 8 reps'}
+                                  </span>
+                                </div>
+                                <h4 className="text-xs font-bold text-white">{drill.drillName}</h4>
+                                <p className="text-[11px] text-zinc-300 leading-relaxed font-medium">
+                                  💡 <strong>Tip:</strong> {drill.drillTip}
+                                </p>
+                              </div>
+
+                              <button
+                                onClick={() => {
+                                  setCompletedDrills(prev => ({
+                                    ...prev,
+                                    [drill.drillName]: !prev[drill.drillName]
+                                  }));
+                                }}
+                                className={`w-full py-2 px-3 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 transition-all ${
+                                  isDone
+                                    ? 'bg-emerald-600 text-white shadow-md shadow-emerald-600/20'
+                                    : 'bg-zinc-900 hover:bg-zinc-800 text-zinc-300 border border-zinc-700'
+                                }`}
+                              >
+                                <CheckCircle2 className={`w-4 h-4 ${isDone ? 'text-white' : 'text-zinc-500'}`} />
+                                <span>{isDone ? 'Practiced! ✓' : 'Mark as Practiced'}</span>
+                              </button>
+                            </div>
+                          );
+                        });
+                      })()}
+                    </div>
+                  </div>
+
+                  {/* CARD 4: MOVEMENT CHECKLIST (STEP-BY-STEP ORDER) */}
+                  <div className="bg-zinc-900 border border-zinc-800 rounded-3xl p-5 sm:p-6 flex flex-col gap-4 shadow-xl">
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-zinc-800 pb-3">
+                      <div>
+                        <h3 className="text-sm font-black uppercase text-white tracking-wider flex items-center gap-2">
+                          <Activity className="w-4 h-4 text-emerald-400" />
+                          <span>Movement Checklist (Step-by-Step)</span>
+                        </h3>
+                        <p className="text-xs text-zinc-400 mt-0.5">
+                          Tap any step to jump straight to that moment in the video.
+                        </p>
+                      </div>
+                      <span className="text-[10px] font-bold px-3 py-1 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 self-start sm:self-auto">
+                        Timing Check
+                      </span>
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3">
+                      {(() => {
+                        const steps = kineticSequence?.steps && kineticSequence.steps.length > 0
+                          ? kineticSequence.steps
+                          : sportRule.phases.map((p, i) => ({
+                              name: p,
+                              timestamp: (i + 1) * 0.8,
+                              score: 90,
+                              status: 'optimal'
+                            }));
+
+                        return steps.map((step: any, idx: number) => {
+                          const isGood = step.score >= 80 || step.status === 'optimal' || step.status === 'good';
+                          return (
+                            <button
+                              key={idx}
+                              onClick={() => {
+                                if (videoRef.current && step.timestamp !== undefined) {
+                                  videoRef.current.currentTime = step.timestamp;
+                                  setCurrentTime(step.timestamp);
+                                }
+                              }}
+                              className="bg-zinc-950 hover:bg-zinc-900 border border-zinc-800 hover:border-zinc-700 p-3.5 rounded-2xl flex flex-col gap-2 text-left transition-all group"
+                            >
+                              <div className="flex items-center justify-between">
+                                <span className="text-[10px] font-mono font-bold text-zinc-500">
+                                  Phase {idx + 1}
+                                </span>
+                                <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
+                                  isGood ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/30' : 'bg-amber-500/10 text-amber-400 border border-amber-500/30'
+                                }`}>
+                                  {isGood ? '✓ Good' : '⚠️ Check'}
+                                </span>
+                              </div>
+                              <span className="text-xs font-bold text-white group-hover:text-red-400 transition-colors">
+                                {step.name}
+                              </span>
+                              <span className="text-[10px] text-zinc-500 font-mono">
+                                ⏱️ {step.timestamp ? `${step.timestamp.toFixed(2)}s` : 'Tap to view'}
+                              </span>
+                            </button>
+                          );
+                        });
+                      })()}
+                    </div>
+                  </div>
+
+                </div>
+              )}
+
+              {/* VIEW 2: STEP-BY-STEP INTERACTIVE CARDS */}
+              {dossierViewMode === 'cards' && (
+                <div className="flex flex-col gap-4">
+                  {/* Card Deck Progress Bar */}
+                  <div className="grid grid-cols-4 gap-2 pb-2">
+                    {[
+                      { label: '1. Score', icon: Award },
+                      { label: '2. Fixes', icon: Target },
+                      { label: '3. Drills', icon: Zap },
+                      { label: '4. Sequence', icon: Activity }
+                    ].map((step, idx) => {
+                      const Icon = step.icon;
+                      const isActive = deckCardIndex === idx;
+                      const isCompleted = deckCardIndex > idx;
+                      return (
+                        <button
+                          key={idx}
+                          onClick={() => setDeckCardIndex(idx)}
+                          className={`flex items-center justify-center gap-2 p-2.5 rounded-2xl border transition-all ${
+                            isActive
+                              ? 'bg-red-600/20 border-red-500 text-white shadow-md'
+                              : isCompleted
+                              ? 'bg-emerald-950/30 border-emerald-500/40 text-emerald-400'
+                              : 'bg-zinc-900 border-zinc-800 text-zinc-500 hover:text-zinc-300'
+                          }`}
+                        >
+                          <Icon className="w-4 h-4" />
+                          <span className="text-xs font-bold">{step.label}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+
+                  {/* Active Card Body */}
+                  <div className="bg-zinc-900 border-2 border-red-500/30 rounded-3xl p-6 flex flex-col justify-between min-h-[420px] shadow-2xl">
+                    
+                    {/* CARD 0: SCORE & BIG PICTURE */}
+                    {deckCardIndex === 0 && (
+                      <div className="flex flex-col gap-5 animate-fadeIn">
+                        <div className="flex items-center justify-between border-b border-zinc-800 pb-3">
+                          <span className="text-xs font-black uppercase text-red-400">Step 1: Your Score & Big Picture</span>
+                          <span className="text-[10px] font-bold px-2.5 py-0.5 rounded-full bg-red-500/10 text-red-400 border border-red-500/30">
+                            {aiReport?.overallGrade || 'Grade A'}
+                          </span>
+                        </div>
+
+                        <div className="flex flex-col sm:flex-row items-center gap-5 bg-zinc-950 border border-zinc-800 p-5 rounded-2xl">
+                          <div className="w-20 h-20 rounded-2xl bg-gradient-to-tr from-amber-500 to-red-600 flex flex-col items-center justify-center text-white shadow-xl shadow-red-600/30 shrink-0">
+                            <Award className="w-6 h-6 text-yellow-200" />
+                            <span className="text-2xl font-black">{((avgSymmetry + avgKneeSafety) / 20).toFixed(1)}</span>
+                          </div>
+                          <div>
+                            <h3 className="text-lg font-black text-white">{aiReport?.executiveDossier?.headline || `${sportRule.name} Form Check`}</h3>
+                            <p className="text-xs text-zinc-300 mt-1 leading-relaxed font-medium">
+                              {aiReport?.summaryText || `Solid performance! Your movement is consistent and well balanced.`}
+                            </p>
+                          </div>
+                        </div>
+
+                        <div className="grid grid-cols-3 gap-3">
+                          <div className="bg-zinc-950 border border-zinc-800 p-3 rounded-xl text-center">
+                            <span className="text-[10px] text-zinc-400 font-bold uppercase block">Balance</span>
+                            <span className="text-base font-black text-emerald-400">{avgSymmetry}%</span>
+                          </div>
+                          <div className="bg-zinc-950 border border-zinc-800 p-3 rounded-xl text-center">
+                            <span className="text-[10px] text-zinc-400 font-bold uppercase block">Safety</span>
+                            <span className="text-base font-black text-yellow-400">{avgKneeSafety}%</span>
+                          </div>
+                          <div className="bg-zinc-950 border border-zinc-800 p-3 rounded-xl text-center">
+                            <span className="text-[10px] text-zinc-400 font-bold uppercase block">Power</span>
+                            <span className="text-base font-black text-red-400">
+                              {Math.min(100, Math.round((dynamicMetrics?.explosivenessScore || 85)))}%
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* CARD 1: WHAT WENT RIGHT vs WHAT TO FIX */}
+                    {deckCardIndex === 1 && (
+                      <div className="flex flex-col gap-4 animate-fadeIn">
+                        <div className="flex items-center justify-between border-b border-zinc-800 pb-3">
+                          <span className="text-xs font-black uppercase text-amber-400">Step 2: Right vs. The Fix</span>
+                          <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-zinc-800 text-zinc-300">
+                            Key Compare
+                          </span>
+                        </div>
+
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                          <div className="bg-zinc-950 border border-emerald-500/30 p-4 rounded-2xl flex flex-col gap-2">
+                            <span className="text-xs font-bold text-emerald-400 flex items-center gap-1.5">
+                              <span>✓</span> What Looked Great
+                            </span>
+                            <p className="text-xs text-zinc-300 leading-relaxed font-medium">
+                              {aiReport?.executiveDossier?.goldStandard?.description || 'Your stance and balance remained solid throughout.'}
+                            </p>
+                          </div>
+
+                          <div className="bg-zinc-950 border border-amber-500/30 p-4 rounded-2xl flex flex-col gap-2">
+                            <span className="text-xs font-bold text-amber-400 flex items-center gap-1.5">
+                              <span>🎯</span> The #1 Thing To Practice
+                            </span>
+                            <p className="text-xs text-zinc-300 leading-relaxed font-medium">
+                              {aiReport?.executiveDossier?.detectedFault?.description || 'Keep your knee pointing straight ahead over your toes.'}
+                            </p>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* CARD 2: 3 PRACTICE DRILLS */}
+                    {deckCardIndex === 2 && (
+                      <div className="flex flex-col gap-4 animate-fadeIn">
+                        <div className="flex items-center justify-between border-b border-zinc-800 pb-3">
+                          <span className="text-xs font-black uppercase text-yellow-400">Step 3: Practice Drills</span>
+                          <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-yellow-500/10 text-yellow-300 border border-yellow-500/20">
+                            3 Drills
+                          </span>
+                        </div>
+
+                        <div className="flex flex-col gap-2.5">
+                          {(aiReport?.areasToImprove || aiReport?.funCorrectiveDrills || []).slice(0, 3).map((drill: any, dIdx: number) => (
+                            <div key={dIdx} className="bg-zinc-950 border border-zinc-800 p-3 rounded-2xl flex items-center justify-between gap-3">
+                              <div>
+                                <h4 className="text-xs font-bold text-white">{drill.drillName || drill.name || `Drill #${dIdx + 1}`}</h4>
+                                <p className="text-[11px] text-zinc-400 mt-0.5">
+                                  {drill.drillTip || drill.coachingCue || 'Focus on clean, smooth reps.'}
+                                </p>
+                              </div>
+                              <span className="text-[10px] font-mono font-bold bg-zinc-900 px-2.5 py-1 rounded text-zinc-300 shrink-0">
+                                {drill.drillReps || drill.reps || '3 sets of 8'}
+                              </span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* CARD 3: MOVEMENT SEQUENCE */}
+                    {deckCardIndex === 3 && (
+                      <div className="flex flex-col gap-4 animate-fadeIn">
+                        <div className="flex items-center justify-between border-b border-zinc-800 pb-3">
+                          <span className="text-xs font-black uppercase text-purple-400">Step 4: Movement Timing</span>
+                          <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-purple-500/10 text-purple-300 border border-purple-500/20">
+                            Timeline
+                          </span>
+                        </div>
+
+                        <div className="grid grid-cols-2 gap-3">
+                          {(kineticSequence?.steps || sportRule.phases.map((p, i) => ({ name: p, timestamp: (i + 1) * 0.8 }))).map((step: any, sIdx: number) => (
+                            <button
+                              key={sIdx}
+                              onClick={() => {
+                                if (videoRef.current && step.timestamp !== undefined) {
+                                  videoRef.current.currentTime = step.timestamp;
+                                  setCurrentTime(step.timestamp);
+                                }
+                              }}
+                              className="bg-zinc-950 hover:bg-zinc-850 border border-zinc-800 p-3 rounded-2xl flex flex-col gap-1 text-left transition-all"
+                            >
+                              <span className="text-[10px] font-mono text-zinc-500">Step {sIdx + 1}</span>
+                              <span className="text-xs font-bold text-white">{step.name}</span>
+                              <span className="text-[10px] text-red-400 font-mono">⏱️ {step.timestamp ? `${step.timestamp.toFixed(2)}s` : ''}</span>
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Card Navigation Footer */}
+                    <div className="flex items-center justify-between pt-4 border-t border-zinc-800 mt-4">
                       <button
-                        key={i}
-                        onClick={() => setDeckCardIndex(i)}
-                        className={`w-2 h-2 rounded-full transition-all ${
-                          deckCardIndex === i ? 'bg-red-500 w-5' : 'bg-zinc-700'
-                        }`}
-                      />
-                    ))}
+                        onClick={() => setDeckCardIndex(prev => (prev > 0 ? prev - 1 : 3))}
+                        className="px-4 py-2 rounded-xl bg-zinc-950 border border-zinc-800 hover:border-zinc-700 text-xs font-bold text-zinc-300 flex items-center gap-1.5 transition-all"
+                      >
+                        <ChevronLeft className="w-4 h-4" />
+                        <span>Previous</span>
+                      </button>
+
+                      <div className="flex items-center gap-1.5">
+                        {[0, 1, 2, 3].map(i => (
+                          <button
+                            key={i}
+                            onClick={() => setDeckCardIndex(i)}
+                            className={`h-2 rounded-full transition-all ${
+                              deckCardIndex === i ? 'bg-red-500 w-6' : 'bg-zinc-700 w-2'
+                            }`}
+                          />
+                        ))}
+                      </div>
+
+                      <button
+                        onClick={() => setDeckCardIndex(prev => (prev < 3 ? prev + 1 : 0))}
+                        className="px-4 py-2 rounded-xl bg-red-600 hover:bg-red-500 text-xs font-bold text-white flex items-center gap-1.5 transition-all shadow-md shadow-red-600/20"
+                      >
+                        <span>{deckCardIndex === 3 ? 'Back to Start' : 'Next Step'}</span>
+                        <ChevronRight className="w-4 h-4" />
+                      </button>
+                    </div>
+
                   </div>
                 </div>
-
-              </div>
+              )}
 
               {/* INTERACTIVE TELEMETRY CALIBRATION STUDIO */}
               <div className="bg-gradient-to-br from-zinc-900 to-zinc-950 border border-zinc-800 p-5 rounded-3xl mt-4 flex flex-col gap-5 shadow-2xl relative overflow-hidden select-none">

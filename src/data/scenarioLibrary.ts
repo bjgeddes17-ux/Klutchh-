@@ -21,64 +21,64 @@ export interface BiomechanicScenario {
 export const SCENARIO_LIBRARY: BiomechanicScenario[] = [
   {
     id: 'power_leak_velocity',
-    name: 'Velocity vs Stability Leak',
+    name: 'Fast Movement but Low Control',
     conditions: [
       { metric: 'velocity', operator: '>', value: 400 },
       { metric: 'score', operator: '<', value: 8 }
     ],
     insights: [
-      "Your velocity is elite at {velocity} units, but your kinetic chain is leaking energy due to technical instability.",
-      "Elite speed detected ({velocity}), yet efficiency is low. You're moving fast, but technical 'leaks' are reducing your impact.",
-      "Biometric alert: High output ({velocity}) paired with sub-optimal form ({score}/10). Focus on stabilizing your core to convert that speed into power.",
-      "You're generating massive speed ({velocity}), but your stability score of {score} suggests you're losing force through the kinetic chain."
+      "You have awesome speed ({velocity} speed), but you are losing power because your body is wobbling slightly.",
+      "Great quickness! To get full power on your shot or pass, keep your core and hips steady.",
+      "Speed is high, but control is {score}/10. Slow down just a little bit to hit the perfect form.",
+      "You are moving fast, but tightening your stomach muscles will give you much more solid power."
     ],
     priority: 'high',
     sportIds: []
   },
   {
     id: 'asymmetric_torque_danger',
-    name: 'Asymmetric Shear Load',
+    name: 'Leaning Too Much on One Side',
     conditions: [
       { metric: 'symmetry', operator: '<', value: 70 },
       { metric: 'torque', operator: '>', value: 12 }
     ],
     insights: [
-      "High torque ({torque} Nm) measured with significant asymmetry ({symmetry}%). This puts uneven shear load on your joints.",
-      "Critical Observation: Your {symmetry}% symmetry score combined with high torque loads ({torque} Nm) increases injury risk in your dominant side.",
-      "Warning: Asymmetric loading detected. With {torque} Nm of torque and only {symmetry}% symmetry, your weight distribution needs immediate correction.",
-      "Torque output is high ({torque} Nm), but your symmetry is lagging at {symmetry}%. You're overloading one side of the kinetic chain."
+      "You are putting most of your weight on one side ({symmetry}% balance). Try to keep your feet and hips centered.",
+      "Watch your balance: you are leaning heavily to one side. Standing even protects your knees and ankles.",
+      "Balance check ({symmetry}%): Put equal weight on both feet so you don't wear out one leg.",
+      "Stay centered! Leaning too hard on one side slows you down and can make your joints sore."
     ],
     priority: 'critical',
     sportIds: []
   },
   {
     id: 'low_stability_academy',
-    name: 'Foundation Stability Alert',
+    name: 'Knee & Ankle Landing Check',
     conditions: [
       { metric: 'safety', operator: '<', value: 60 },
       { metric: 'score', operator: '<', value: 6 }
     ],
     insights: [
-      "Your foundation is currently unstable (Safety: {safety}%). We need to prioritize decelerating force control.",
-      "Technical Debt Alert: Low safety metrics ({safety}%) and form score ({score}) indicate you're building power on an unstable base.",
-      "Focus on the foundation. Your {safety}% safety rating suggests your joints are absorbing too much force. Slow down to speed up later.",
-      "Biomechanical Warning: Stabilizer muscles are underperforming. With a safety score of {safety}%, we must fix your landing and bracing mechanics."
+      "Your knees need a softer bend on landing (Safety score: {safety}%). Bend your knees like a spring to stay safe.",
+      "Landing tip: Don't let your knees cave inward. Keep them pointing over your middle toes.",
+      "Soft landings protect your knees! Sink your hips down gently when you plant or land.",
+      "Keep your feet wide and stable. Bending your knees softly absorbs shock and keeps you fast."
     ],
     priority: 'high',
     sportIds: []
   },
   {
     id: 'elite_efficiency_check',
-    name: 'Elite Efficiency Detection',
+    name: 'Smooth & Powerful Form',
     conditions: [
       { metric: 'score', operator: '>', value: 9 },
       { metric: 'torque', operator: '<', value: 5 }
     ],
     insights: [
-      "Maximum efficiency detected. You are generating high-output movement with minimal joint stress ({torque} Nm).",
-      "Elite Precision: Maintaining a {score}/10 form score while keeping torque under {torque} Nm is the hallmark of a pro.",
-      "Kinematic Signature: Perfect. You've achieved elite-level efficiency with a symmetry score of {symmetry}% and optimal joint safety.",
-      "Pro Status: Your movement efficiency is in the top 5%. High control, low stress ({torque} Nm), and perfect sequencing."
+      "Awesome technique! You are moving smoothly with great power and zero wasted effort.",
+      "Pro level form! Your score is {score}/10. Everything looks smooth, balanced, and sharp.",
+      "Great balance and control! Your body is lined up perfectly from your feet all the way to your arms.",
+      "Top notch movement! You are getting maximum power while keeping your knees and back completely safe."
     ],
     priority: 'low',
     sportIds: []
@@ -86,13 +86,10 @@ export const SCENARIO_LIBRARY: BiomechanicScenario[] = [
 ];
 
 const PREFIXES = [
-  "Technical Observation:",
-  "Kinetic Insight:",
-  "Pro-Level Note:",
-  "Data Analysis:",
-  "Coach's Eye:",
-  "Biometric Alert:",
-  "Performance Tip:"
+  "Coach Tip:",
+  "Key Note:",
+  "Quick Check:",
+  "What to Watch:"
 ];
 
 function injectVariables(text: string, data: any): string {

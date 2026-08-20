@@ -25,6 +25,7 @@ import { PinPromptModal } from './components/PinPromptModal';
 import { parseZeroKnowledgeShareHash } from './utils/shareReportUrl';
 
 export default function App() {
+  const [isInitialLoading, setIsInitialLoading] = useState(true);
   const [selectedSportId, setSelectedSportId] = useState<SportId>('rugby');
   const [athleteCategory, setAthleteCategory] = useState<AthleteCategory>('middle_school');
   const [skillLevel, setSkillLevel] = useState<SkillLevel>('grassroots');
@@ -34,6 +35,13 @@ export default function App() {
   const [customVideoUrl, setCustomVideoUrl] = useState<string | null>(null);
   const [customVideoFile, setCustomVideoFile] = useState<File | null>(null);
   const [targetAthleteAnchor, setTargetAthleteAnchor] = useState<'auto' | 'left' | 'center' | 'right'>('auto');
+
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setIsInitialLoading(false);
+    }, 2800); // Elegantly show animated loading logo for 2.8s
+    return () => clearTimeout(timer);
+  }, []);
 
   const [currentAnalysis, setCurrentAnalysis] = useState<FrameAnalysis | null>(null);
   const [keyframeList, setKeyframeList] = useState<FrameAnalysis[]>([]);
@@ -543,6 +551,52 @@ export default function App() {
     setCurrentUser(null);
     localStorage.removeItem('klutchh_user_session');
   };
+
+  if (isInitialLoading) {
+    return (
+      <div className="min-h-screen bg-zinc-950 flex flex-col items-center justify-center relative overflow-hidden select-none">
+        {/* Animated Cybergrid background */}
+        <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,rgba(220,38,38,0.15)_0%,transparent_75%)]" />
+        <div className="absolute inset-0 opacity-[0.03] bg-[linear-gradient(to_right,#ef4444_1px,transparent_1px),linear-gradient(to_bottom,#ef4444_1px,transparent_1px)] bg-[size:32px_32px]" />
+        
+        {/* Animated logo scanner */}
+        <div className="relative flex flex-col items-center gap-6 z-10">
+          <div className="relative">
+            {/* Glowing rings */}
+            <div className="absolute inset-0 bg-gradient-to-tr from-red-600 to-amber-500 rounded-3xl blur-2xl opacity-40 animate-pulse" />
+            
+            <div className="relative bg-zinc-900 border-2 border-red-500/40 p-6 rounded-3xl flex items-center justify-center shadow-2xl shadow-red-600/20">
+              <div className="flex items-center -space-x-2 bg-zinc-950/80 px-4 py-3 border border-zinc-800/80 rounded-2xl">
+                {/* Modern visual representation of Klutchh Icon: A stylized speed gauge + kinetic peak vector */}
+                <svg className="w-12 h-12 text-red-500 animate-pulse" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M4.5 16.5c-1.5-1.5-2.5-3.5-2.5-6s2-6 6-6s6 2 6 6s-1 4.5-2.5 6" />
+                  <path d="m12 12 4-4 4 4-4 4z" />
+                </svg>
+              </div>
+            </div>
+            {/* Biometric Scanning horizontal red bar */}
+            <div className="absolute -left-6 right-6 h-0.5 bg-red-500 shadow-[0_0_12px_#ef4444] animate-bounce top-1/2" />
+          </div>
+
+          <div className="text-center">
+            <h1 className="text-4xl font-black tracking-widest uppercase italic text-transparent bg-clip-text bg-gradient-to-r from-red-500 via-amber-400 to-yellow-300">
+              Klutchh
+            </h1>
+            <p className="text-[10px] font-black tracking-widest uppercase text-zinc-400 mt-2 flex items-center justify-center gap-2">
+              <span className="w-1.5 h-1.5 bg-red-500 rounded-full animate-ping" />
+              <span>Initializing Biometrics Rule Engine...</span>
+            </p>
+          </div>
+        </div>
+
+        {/* Footer status bar */}
+        <div className="absolute bottom-6 left-6 right-6 flex justify-between text-[8px] font-mono text-zinc-600 uppercase">
+          <span>Ver: 3.2.0-Production</span>
+          <span>System active</span>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-zinc-950 text-zinc-100 flex flex-col font-sans selection:bg-red-600 selection:text-white">

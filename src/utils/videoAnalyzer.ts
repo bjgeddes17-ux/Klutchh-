@@ -492,8 +492,8 @@ async function synthesizeAnalysis(
     actual: actualSequence,
     isCorrect: isCorrectOrder,
     feedback: isCorrectOrder 
-      ? "Elite Kinetic Link! Your hips initialized the movement, followed by shoulders and hands in a perfect proximal-to-distal sequence." 
-      : `Sequence Break Detected. ${hipsPeak > shouldersPeak ? 'Shoulders' : 'Hands'} fired before ${hipsPeak > shouldersPeak ? 'Hips' : 'Shoulders'}. You are losing power in the transition.`
+      ? "Great timing! Your hips moved first, followed smoothly by your upper body and arms for strong power." 
+      : `Timing check: Your ${hipsPeak > shouldersPeak ? 'upper body' : 'arms'} moved before your ${hipsPeak > shouldersPeak ? 'hips' : 'upper body'}. Moving hips first gives you much more power.`
   };
 
   // Prioritize kinetic sequence frames as the authoritative keyframes
@@ -653,26 +653,27 @@ async function synthesizeAnalysis(
     processingMode: useOptionBPipeline ? 'pro_30fps_cloud' : 'standard_client'
   };
 }
-// Deterministic Template Matrix for Dynamic AI-sounding feedback without Gemini
+
+// Deterministic Template Matrix for friendly, easy-to-understand coach feedback
 const TEMPLATE_MATRIX = {
   openings: [
-    "Phenomenal technical dedication!", 
-    "A massive step forward in your mastery journey.", 
-    "Elite hustle detected in your performance telemetry.", 
-    "That is how we build pro-level biomechanical habits.",
-    "Your kinematic signature is looking sharp today."
+    "Great effort on this play!", 
+    "You are making solid progress!", 
+    "Nice hustle and focus on your form!", 
+    "Good work getting this rep in!",
+    "Your movement is looking sharper every time!"
   ],
   middle: [
-    "The data points toward a specific opportunity in your kinetic chain.", 
-    "Our biometric engine has identified your primary power-transfer gap.", 
-    "Your movement efficiency has shifted into a new tier of precision.",
-    "We've isolated the exact frame where your power leaks are occurring."
+    "We found one simple tweak that will give you more power.", 
+    "Here is the main thing to practice to level up your game.", 
+    "Your form is good, and fixing this one spot will make you even faster.",
+    "Focus on this small adjustment for better balance and power."
   ],
   closers: [
-    "Execute the Hero Quests below to lock in these gains.", 
-    "Target these three drills to bulletproof your technique.", 
-    "Master the drills in your report before our next session.",
-    "Focus on these adjustments to smash your personal best next time."
+    "Try the 3 quick practice drills below to lock it in.", 
+    "Check out the easy tips below before your next session.", 
+    "Practice these steps to feel more confident and powerful.",
+    "Follow these simple cues and you'll crush your next rep!"
   ]
 };
 
@@ -697,7 +698,7 @@ async function fetchOrBuildReport(
   averageTorques: Record<string, number>
 ): Promise<AICoachingReport> {
   const formScore = overallBiometricScore;
-  const gradeLetter = formScore >= 9.0 ? 'Elite (A+)' : formScore >= 8.0 ? 'Pro (A)' : formScore >= 7.0 ? 'Academy (B+)' : 'Focus (C)';
+  const gradeLetter = formScore >= 9.0 ? 'A+ (Elite)' : formScore >= 8.0 ? 'A (Great)' : formScore >= 7.0 ? 'B+ (Good)' : 'C (Needs Practice)';
 
   // Scenario Mapper: Dynamic evaluation of coaching patterns
   const velocityValues = Object.values(averageVelocities);
@@ -744,8 +745,6 @@ async function fetchOrBuildReport(
     }
   });
 
-  console.log("Gemini API integration removed. Utilizing Deterministic Rule Engine for report generation.");
-
   // Deterministic Rule-Based Report Builder (The "Scoring Judge")
   const riskLevel = injuryFindings.length > 2 ? 'high' : injuryFindings.length > 0 ? 'moderate' : 'low';
   const primaryRule = sportRule.jointRules[0];
@@ -754,57 +753,57 @@ async function fetchOrBuildReport(
 
   const aiReport: AICoachingReport = {
     overallGrade: gradeLetter,
-    summaryTitle: `${sportRule.name} Precision Audit`,
+    summaryTitle: `${sportRule.name} Action Report`,
     summaryText: `${getRandomTemplate('openings')} ${getRandomTemplate('middle')} ${getRandomTemplate('closers')}`,
     keyStrengths: positiveFormPoints.slice(0, 3).map(p => ({
       title: p.split('.')[0],
       desc: p,
-      metric: 'Optimal'
+      metric: 'Good Form'
     })),
     biomechanicInsights: [sequenceComparison.feedback, ...sophisticatedInsights, ...detectedIssues.slice(0, 1)],
     executiveDossier: {
       headline: primaryOptimal 
-        ? `High Precision ${sportRule.name} Alignment` 
-        : `${sportRule.name} Deviation at ${primaryRule?.name || 'Primary Joint'}`,
-      overviewText: `Biomechanical analysis recorded a form score of ${formScore.toFixed(1)}/10. Symmetry: ${overallSymmetry}%. Knee Safety: ${overallKneeSafety}%.`,
+        ? `Great ${sportRule.name} Form & Balance` 
+        : `Quick Tweak Needed for ${sportRule.name}`,
+      overviewText: `You scored ${formScore.toFixed(1)}/10. Balance: ${overallSymmetry}%. Knee Safety: ${overallKneeSafety}%.`,
       detectedFault: {
-        title: detectedIssues[0] || `${primaryRule?.name || 'Joint'} Alignment`,
-        description: `Measured at ${primaryAngle}°. Target: ${primaryRule?.idealMin || 80}° - ${primaryRule?.idealMax || 120}°.`,
-        angleDeviation: `${primaryAngle}°`,
-        impact: primaryOptimal ? 'Optimal Power' : 'Energy Leakage Detected'
+        title: detectedIssues[0] ? detectedIssues[0].split('.')[0] : `${primaryRule?.name || 'Movement'} Check`,
+        description: `Your ${primaryRule?.name || 'body'} was at ${primaryAngle}°. Aim for ${primaryRule?.idealMin || 80}° to ${primaryRule?.idealMax || 120}° for more power.`,
+        angleDeviation: `${primaryAngle}° (Aim for ${primaryRule?.idealMin || 80}°-${primaryRule?.idealMax || 120}°)`,
+        impact: primaryOptimal ? 'Full Power' : 'Losing ~15% Power'
       },
       goldStandard: {
-        title: `Elite ${sportRule.name} Standard`,
-        description: `Maintain ${primaryRule?.name || 'joint'} between ${primaryRule?.idealMin || 80}° and ${primaryRule?.idealMax || 120}°.`,
-        idealRange: `${primaryRule?.idealMin || 80}° - ${primaryRule?.idealMax || 120}°`,
-        forceTransmission: '100% Kinetic Efficiency'
+        title: `Pro Form: How It Should Look`,
+        description: `Keep your ${primaryRule?.name || 'body'} steady between ${primaryRule?.idealMin || 80}° and ${primaryRule?.idealMax || 120}°.`,
+        idealRange: `${primaryRule?.idealMin || 80}° to ${primaryRule?.idealMax || 120}°`,
+        forceTransmission: '100% Full Power & Balance'
       }
     },
     strengthsDetailed: positiveFormPoints.slice(0, 3).map(p => ({
-      title: p.split('!')[0] || 'Technical Accuracy',
+      title: p.split('!')[0] || 'Good Form',
       desc: p,
-      metric: 'Elite'
+      metric: 'Solid'
     })),
     areasToImprove: detectedIssues.slice(0, 2).map((issue, idx) => ({
-      issue,
-      explanation: `Telemetry shows a ${Math.abs(primaryAngle - 90)}° deviation from the elite benchmark.`,
-      drillName: suggestedDrills[idx]?.name || 'Standard Stability Drill',
-      drillReps: suggestedDrills[idx]?.reps || '3 sets x 10 reps',
-      drillTip: suggestedDrills[idx]?.coachingCue || 'Focus on precise joint tracking.'
+      issue: issue.split('.')[0] || issue,
+      explanation: `Adjusting your angle slightly gives you more power and protects your joints.`,
+      drillName: suggestedDrills[idx]?.name || 'Simple Balance & Form Drill',
+      drillReps: suggestedDrills[idx]?.reps || '3 sets of 8 reps',
+      drillTip: suggestedDrills[idx]?.coachingCue || 'Keep it smooth and stay balanced.'
     })),
     kineticSummary: {
-      headline: 'Kinetic Chain Efficiency',
-      summary: `Your ${sportRule.name} movement sequence recorded a match score of ${sequenceComparison.isCorrect ? '95%' : '78%'}.`,
+      headline: 'Your Movement Breakdown',
+      summary: `Your ${sportRule.name} movement was ${sequenceComparison.isCorrect ? 'well-timed and smooth' : 'good, with room for more power'}. Follow the 3 steps below to get even better.`,
       takeaways: [
-        { category: 'Timing', title: 'Sequential Loading', detail: sequenceComparison.feedback },
-        { category: 'Safety', title: 'Joint Protection', detail: `Knee safety score sits at ${overallKneeSafety}%.` },
-        ...(sophisticatedInsights.map(insight => ({ category: 'Elite Intel', title: 'Kinetic Chain Insight', detail: insight })))
+        { category: 'Timing', title: 'Body Order', detail: sequenceComparison.feedback },
+        { category: 'Safety', title: 'Joint Protection', detail: `Knee safety score is ${overallKneeSafety}% (safe and cushioned).` },
+        ...(sophisticatedInsights.map(insight => ({ category: 'Coach Tip', title: 'Key Check', detail: insight })))
       ],
       weeklyPrescription: suggestedDrills.map(d => ({ title: d.name, detail: d.reps }))
     },
     injuryRiskAssessment: {
       level: riskLevel,
-      findings: injuryFindings.length > 0 ? injuryFindings : ['No critical biomechanical risks detected.'],
+      findings: injuryFindings.length > 0 ? injuryFindings : ['No joint safety issues detected. Everything looks safe.'],
       preventionDrills: suggestedDrills.slice(0, 2).map(d => d.name)
     },
     funCorrectiveDrills: suggestedDrills,

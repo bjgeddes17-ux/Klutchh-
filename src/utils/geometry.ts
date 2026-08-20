@@ -322,8 +322,9 @@ export function drawPoseSkeleton(
     }
   });
 
-  // 3. Draw Angle Arcs & Biometric Labels
+  // 3. Draw Angle Arcs & Biometric Labels (Compact, non-intrusive micro-HUD badges)
   if (sportRule && sportRule.jointRules) {
+    // Prioritize active phase rules or flagged deviations
     let visibleRules = sportRule.jointRules.filter((rule) => {
       if (!activePhase || activePhase === 'Auto-Detect' || activePhase === 'All') return true;
       const isRulePhase = rule.phase === activePhase;
@@ -331,8 +332,15 @@ export function drawPoseSkeleton(
       return isRulePhase || isFlagged;
     });
 
-    if (visibleRules.length > 4) {
-      visibleRules = visibleRules.slice(0, 4);
+    // Limit to at most 2 key active angle badges at once to prevent cluttering the athlete
+    if (visibleRules.length > 2) {
+      // Sort so errors and warnings come first
+      visibleRules.sort((a, b) => {
+        const sA = statusPriority[ruleResults[a.id] || 'optimal'];
+        const sB = statusPriority[ruleResults[b.id] || 'optimal'];
+        return sB - sA;
+      });
+      visibleRules = visibleRules.slice(0, 2);
     }
 
     visibleRules.forEach((rule) => {
@@ -348,41 +356,54 @@ export function drawPoseSkeleton(
         const status = ruleResults[rule.id] || 'optimal';
         const statusColor = getColorForStatus(status);
 
-        // Draw Arc
+        // Compact Arc (radius 12px instead of 20px)
         ctx.beginPath();
         const startAngle = Math.atan2((p1.y - vertex.y) * height, (p1.x - vertex.x) * width);
         const endAngle = Math.atan2((p3.y - vertex.y) * height, (p3.x - vertex.x) * width);
-        ctx.arc(vx, vy, 20, startAngle, endAngle);
+        ctx.arc(vx, vy, 12, startAngle, endAngle);
         ctx.strokeStyle = statusColor;
-        ctx.lineWidth = 2;
+        ctx.lineWidth = 1.5;
         ctx.stroke();
 
-        // Draw Biometric Angle Pill Label
-        const labelText = `${rule.name}: ${angleVal}${rule.unit}`;
-        ctx.font = 'bold 11px Inter, system-ui, sans-serif';
+        // Generate clean, short label (e.g. "Knee: 142°", "Elbow: 98°")
+        let shortJoint = 'Joint';
+        const nameLower = rule.name.toLowerCase();
+        if (nameLower.includes('knee')) shortJoint = 'Knee';
+        else if (nameLower.includes('elbow')) shortJoint = 'Elbow';
+        else if (nameLower.includes('hip') || nameLower.includes('hinge')) shortJoint = 'Hip';
+        else if (nameLower.includes('shoulder')) shortJoint = 'Shoulder';
+        else if (nameLower.includes('ankle') || nameLower.includes('plant')) shortJoint = 'Ankle';
+        else if (nameLower.includes('spine') || nameLower.includes('torso') || nameLower.includes('back')) shortJoint = 'Spine';
+        else if (nameLower.includes('wrist')) shortJoint = 'Wrist';
+        else {
+          shortJoint = rule.name.split(' ')[0] || 'Angle';
+        }
+
+        const labelText = `${shortJoint} ${Math.round(angleVal)}°`;
+        ctx.font = 'bold 9px Inter, -apple-system, system-ui, sans-serif';
         const textWidth = ctx.measureText(labelText).width;
 
-        const pillX = vx + 8;
-        const pillY = vy - 12;
+        const pillX = vx + 6;
+        const pillY = vy - 8;
 
-        // Background pill
-        ctx.fillStyle = 'rgba(9, 9, 11, 0.9)';
+        // Ultra-compact background pill (height 14px, minimal width)
+        ctx.fillStyle = 'rgba(9, 9, 11, 0.88)';
         ctx.beginPath();
-        ctx.roundRect(pillX - 4, pillY - 11, textWidth + 16, 18, 5);
+        ctx.roundRect(pillX - 3, pillY - 9, textWidth + 12, 13, 3);
         ctx.fill();
         ctx.strokeStyle = statusColor;
-        ctx.lineWidth = 1;
+        ctx.lineWidth = 0.8;
         ctx.stroke();
 
-        // Indicator dot
+        // Mini indicator dot
         ctx.beginPath();
-        ctx.arc(pillX + 2, pillY - 2, 3, 0, 2 * Math.PI);
+        ctx.arc(pillX + 1.5, pillY - 2.5, 2, 0, 2 * Math.PI);
         ctx.fillStyle = statusColor;
         ctx.fill();
 
-        // Text
+        // Clean crisp text
         ctx.fillStyle = '#ffffff';
-        ctx.fillText(labelText, pillX + 9, pillY + 1);
+        ctx.fillText(labelText, pillX + 6.5, pillY);
       }
     });
   }
