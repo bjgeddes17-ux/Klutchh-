@@ -17,6 +17,7 @@ import com.getcapacitor.annotation.CapacitorPlugin;
 
 import com.google.mediapipe.framework.image.BitmapImageBuilder;
 import com.google.mediapipe.framework.image.MPImage;
+import com.google.mediapipe.tasks.components.containers.NormalizedLandmark;
 import com.google.mediapipe.tasks.core.BaseOptions;
 import com.google.mediapipe.tasks.core.Delegate;
 import com.google.mediapipe.tasks.vision.core.RunningMode;
@@ -27,6 +28,7 @@ import java.io.File;
 import java.io.FileOutputStream;
 import java.io.InputStream;
 import java.net.URL;
+import java.util.List;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
@@ -125,18 +127,19 @@ public class NativeHardwarePosePlugin extends Plugin {
 
     @PluginMethod
     public void detectFromBase64(PluginCall call) {
-        String base64Data = call.getString("base64");
-        if (base64Data == null) {
+        final String rawBase64 = call.getString("base64");
+        if (rawBase64 == null) {
             call.reject("Must provide base64 image data");
             return;
         }
 
         backgroundExecutor.execute(() -> {
             try {
-                if (base64Data.contains(",")) {
-                    base64Data = base64Data.substring(base64Data.indexOf(",") + 1);
+                String cleanBase64 = rawBase64;
+                if (cleanBase64.contains(",")) {
+                    cleanBase64 = cleanBase64.substring(cleanBase64.indexOf(",") + 1);
                 }
-                byte[] decoded = Base64.decode(base64Data, Base64.DEFAULT);
+                byte[] decoded = Base64.decode(cleanBase64, Base64.DEFAULT);
                 Bitmap bitmap = BitmapFactory.decodeByteArray(decoded, 0, decoded.length);
 
                 if (bitmap == null) {
@@ -158,8 +161,9 @@ public class NativeHardwarePosePlugin extends Plugin {
                 JSObject response = new JSObject();
                 JSArray landmarksArray = new JSArray();
 
-                if (!result.landmarks().isEmpty() && !result.landmarks().get(0).isEmpty()) {
-                    for (var lm : result.landmarks().get(0)) {
+                if (result != null && !result.landmarks().isEmpty() && !result.landmarks().get(0).isEmpty()) {
+                    List<NormalizedLandmark> lmList = result.landmarks().get(0);
+                    for (NormalizedLandmark lm : lmList) {
                         JSObject obj = new JSObject();
                         obj.put("x", lm.x());
                         obj.put("y", lm.y());
@@ -182,8 +186,9 @@ public class NativeHardwarePosePlugin extends Plugin {
 
     @PluginMethod
     public void processVideoFrames(PluginCall call) {
-        String videoPath = call.getString("videoPath");
-        Integer targetFps = call.getInt("fps", 24);
+        final String videoPath = call.getString("videoPath");
+        final Integer targetFps = call.getInt("fps", 24);
+        final int fps = (targetFps != null && targetFps > 0) ? targetFps : 24;
 
         if (videoPath == null) {
             call.reject("Must provide videoPath");
@@ -194,7 +199,7 @@ public class NativeHardwarePosePlugin extends Plugin {
             MediaMetadataRetriever retriever = new MediaMetadataRetriever();
             try {
                 if (videoPath.startsWith("http://") || videoPath.startsWith("https://")) {
-                    retriever.setDataSource(videoPath, new java.util.HashMap<>());
+                    retriever.setDataSource(videoPath, new java.util.HashMap<String, String>());
                 } else if (videoPath.startsWith("content://") || videoPath.startsWith("file://")) {
                     retriever.setDataSource(getContext(), Uri.parse(videoPath));
                 } else {
@@ -204,7 +209,7 @@ public class NativeHardwarePosePlugin extends Plugin {
                 String durationStr = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION);
                 long durationMs = durationStr != null ? Long.parseLong(durationStr) : 0;
                 
-                long intervalUs = (1000000L / targetFps);
+                long intervalUs = (1000000L / fps);
                 long durationUs = durationMs * 1000L;
 
                 JSArray framesArray = new JSArray();
@@ -221,8 +226,9 @@ public class NativeHardwarePosePlugin extends Plugin {
                         frameObj.put("timestamp", (timeUs / 1000000.0));
 
                         JSArray lmArray = new JSArray();
-                        if (!result.landmarks().isEmpty() && !result.landmarks().get(0).isEmpty()) {
-                            for (var lm : result.landmarks().get(0)) {
+                        if (result != null && !result.landmarks().isEmpty() && !result.landmarks().get(0).isEmpty()) {
+                            List<NormalizedLandmark> lmList = result.landmarks().get(0);
+                            for (NormalizedLandmark lm : lmList) {
                                 JSObject pt = new JSObject();
                                 pt.put("x", lm.x());
                                 pt.put("y", lm.y());
