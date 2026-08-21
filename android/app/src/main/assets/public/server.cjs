@@ -918,8 +918,24 @@ async function startServer() {
       const handsPeak = peakVelocities.find((v) => v.joint === "Hands")?.peakTime || 0;
       const isCorrectOrder = hipsPeak < shouldersPeak && shouldersPeak < handsPeak && shouldersPeak - hipsPeak >= 0.02;
       const kineticKeyframes = [];
+      const totalFramesCount = allSampledFrames.length;
       const actualSteps = biomechanicalSteps.map((step, idx) => {
-        const winner = phaseWinners[step.phaseName]?.frame || allSampledFrames.find((f) => f.detectedPhase === step.phaseName) || allSampledFrames[Math.min(allSampledFrames.length - 1, (step.stepNumber - 1) * 5)];
+        const windowSize = Math.max(1, Math.floor(totalFramesCount / biomechanicalSteps.length));
+        const startIdx = idx * windowSize;
+        const endIdx = Math.min(totalFramesCount - 1, (idx + 1) * windowSize + 2);
+        const windowFrames = allSampledFrames.slice(startIdx, endIdx + 1);
+        let bestFrame = windowFrames[0] || phaseWinners[step.phaseName]?.frame || allSampledFrames[0];
+        let maxExtremaScore = -1;
+        windowFrames.forEach((f) => {
+          const hipVel = smoothedVelocities.find((sv) => Math.abs(sv.timestamp - f.timestamp) < 0.05)?.velocities?.Hips || 0;
+          const shoulderVel = smoothedVelocities.find((sv) => Math.abs(sv.timestamp - f.timestamp) < 0.05)?.velocities?.Shoulders || 0;
+          const extScore = hipVel + shoulderVel + (f.symmetryScore ? f.symmetryScore * 0.01 : 0);
+          if (extScore > maxExtremaScore) {
+            maxExtremaScore = extScore;
+            bestFrame = f;
+          }
+        });
+        const winner = bestFrame || phaseWinners[step.phaseName]?.frame || allSampledFrames[Math.min(totalFramesCount - 1, idx * 5)];
         if (winner && !kineticKeyframes.some((kf) => kf.timestamp === winner.timestamp)) {
           kineticKeyframes.push(winner);
         }

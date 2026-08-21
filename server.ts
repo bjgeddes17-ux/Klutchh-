@@ -1002,10 +1002,30 @@ function buildDynamicFallbackReport(data: any) {
       const isCorrectOrder = (hipsPeak < shouldersPeak) && (shouldersPeak < handsPeak) && ((shouldersPeak - hipsPeak) >= 0.02);
 
       const kineticKeyframes: any[] = [];
+      const totalFramesCount = allSampledFrames.length;
       const actualSteps = biomechanicalSteps.map((step: any, idx: number) => {
-        const winner = phaseWinners[step.phaseName]?.frame || 
-                       allSampledFrames.find((f: any) => f.detectedPhase === step.phaseName) ||
-                       allSampledFrames[Math.min(allSampledFrames.length - 1, (step.stepNumber - 1) * 5)];
+        // Divide video timeline into 4 precise temporal windows for mathematical extrema selection
+        const windowSize = Math.max(1, Math.floor(totalFramesCount / biomechanicalSteps.length));
+        const startIdx = idx * windowSize;
+        const endIdx = Math.min(totalFramesCount - 1, (idx + 1) * windowSize + 2);
+        
+        const windowFrames = allSampledFrames.slice(startIdx, endIdx + 1);
+        
+        // Find extrema: frame with highest rotational velocity or deepest loading inflection point in this window
+        let bestFrame = windowFrames[0] || phaseWinners[step.phaseName]?.frame || allSampledFrames[0];
+        let maxExtremaScore = -1;
+
+        windowFrames.forEach((f: any) => {
+          const hipVel = smoothedVelocities.find((sv: any) => Math.abs(sv.timestamp - f.timestamp) < 0.05)?.velocities?.Hips || 0;
+          const shoulderVel = smoothedVelocities.find((sv: any) => Math.abs(sv.timestamp - f.timestamp) < 0.05)?.velocities?.Shoulders || 0;
+          const extScore = hipVel + shoulderVel + (f.symmetryScore ? f.symmetryScore * 0.01 : 0);
+          if (extScore > maxExtremaScore) {
+            maxExtremaScore = extScore;
+            bestFrame = f;
+          }
+        });
+
+        const winner = bestFrame || phaseWinners[step.phaseName]?.frame || allSampledFrames[Math.min(totalFramesCount - 1, idx * 5)];
         
         if (winner && !kineticKeyframes.some((kf: any) => kf.timestamp === winner.timestamp)) {
           kineticKeyframes.push(winner);

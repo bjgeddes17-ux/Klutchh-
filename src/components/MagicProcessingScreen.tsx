@@ -69,7 +69,11 @@ export const MagicProcessingScreen: React.FC<MagicProcessingScreenProps> = ({
     else setCurrentStepIndex(0);
   }, [progress]);
 
+  const analysisStartedRef = useRef(false);
+
   useEffect(() => {
+    if (analysisStartedRef.current) return;
+    analysisStartedRef.current = true;
     let isMounted = true;
     hasFiredRef.current = false;
     setInvalidResult(null);
