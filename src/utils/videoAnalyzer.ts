@@ -255,8 +255,8 @@ export async function analyzeVideoBiometrics(
           }
         },
         (p) => onProgress?.(Math.min(97, p)), // Cap extraction progress at 97%
-        calibratedFps || 30, // Target native FPS for perfect per-frame exactness
-        480, // Consistent with extractor target height
+        calibratedFps ? Math.min(calibratedFps, 20) : 18, // High-speed optimal FPS for mobile acceleration
+        360, // 360p height for high-speed hardware decoding and memory efficiency
         cropBox,
         startTime,
         endTime

@@ -73,9 +73,10 @@ jobs:
           chmod +x gradlew
           ./gradlew assembleDebug --stacktrace
 
-      - name: Build Android Bundle (Release AAB for Google Play)
+      - name: Build Android Bundle (AAB)
         working-directory: android
-        run: ./gradlew bundleRelease --stacktrace || true
+        run: |
+          ./gradlew bundleDebug bundleRelease || ./gradlew bundleDebug || true
 
       - name: Upload Android Debug APK
         uses: actions/upload-artifact@v4
@@ -83,13 +84,15 @@ jobs:
           name: klutchh-android-debug-apk
           path: android/app/build/outputs/apk/debug/*.apk
           retention-days: 14
+          if-no-files-found: error
 
-      - name: Upload Android Release AAB
+      - name: Upload Android App Bundle (AAB)
         uses: actions/upload-artifact@v4
         with:
-          name: klutchh-android-release-aab
-          path: android/app/build/outputs/bundle/release/*.aab
+          name: klutchh-android-bundle
+          path: android/app/build/outputs/bundle/**/*.aab
           retention-days: 14
+          if-no-files-found: ignore
 
   build-ios:
     name: 🍎 3. Build Native iOS Project

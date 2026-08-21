@@ -35,8 +35,8 @@ import java.util.concurrent.Executors;
 @CapacitorPlugin(name = "NativeHardwarePose")
 public class NativeHardwarePosePlugin extends Plugin {
     private static final String TAG = "NativeHardwarePose";
-    private static final String MODEL_URL = "https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_full/float16/1/pose_landmarker_full.task";
-    private static final String LOCAL_MODEL_NAME = "pose_landmarker_full.task";
+    private static final String MODEL_URL = "https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_lite/float16/1/pose_landmarker_lite.task";
+    private static final String LOCAL_MODEL_NAME = "pose_landmarker_lite.task";
 
     private PoseLandmarker poseLandmarker;
     private boolean isGpuAccelerated = false;
@@ -58,7 +58,7 @@ public class NativeHardwarePosePlugin extends Plugin {
 
                 // Download model to local sandbox if not present
                 if (!modelFile.exists() || modelFile.length() < 1000000) {
-                    Log.i(TAG, "Downloading MediaPipe Full model to native storage...");
+                    Log.i(TAG, "Downloading MediaPipe Lite Float16 model to native storage for maximum GPU speed...");
                     URL url = new URL(MODEL_URL);
                     try (InputStream in = url.openStream(); FileOutputStream out = new FileOutputStream(modelFile)) {
                         byte[] buffer = new byte[8192];
@@ -81,14 +81,14 @@ public class NativeHardwarePosePlugin extends Plugin {
                             .setBaseOptions(baseOptions)
                             .setRunningMode(RunningMode.IMAGE)
                             .setNumPoses(1)
-                            .setMinPoseDetectionConfidence(0.5f)
-                            .setMinPosePresenceConfidence(0.5f)
-                            .setMinTrackingConfidence(0.5f)
+                            .setMinPoseDetectionConfidence(0.3f)
+                            .setMinPosePresenceConfidence(0.3f)
+                            .setMinTrackingConfidence(0.3f)
                             .build();
 
                     poseLandmarker = PoseLandmarker.createFromOptions(context, options);
                     isGpuAccelerated = true;
-                    Log.i(TAG, "PoseLandmarker initialized with native GPU acceleration");
+                    Log.i(TAG, "PoseLandmarker initialized with native GPU acceleration (Mali/Adreno OpenCL/Vulkan)");
                 } catch (Exception e) {
                     Log.w(TAG, "GPU delegate failed, falling back to multi-core CPU delegate: " + e.getMessage());
                     BaseOptions cpuOptions = BaseOptions.builder()
@@ -100,9 +100,9 @@ public class NativeHardwarePosePlugin extends Plugin {
                             .setBaseOptions(cpuOptions)
                             .setRunningMode(RunningMode.IMAGE)
                             .setNumPoses(1)
-                            .setMinPoseDetectionConfidence(0.5f)
-                            .setMinPosePresenceConfidence(0.5f)
-                            .setMinTrackingConfidence(0.5f)
+                            .setMinPoseDetectionConfidence(0.3f)
+                            .setMinPosePresenceConfidence(0.3f)
+                            .setMinTrackingConfidence(0.3f)
                             .build();
 
                     poseLandmarker = PoseLandmarker.createFromOptions(context, options);
@@ -119,7 +119,7 @@ public class NativeHardwarePosePlugin extends Plugin {
         JSObject ret = new JSObject();
         ret.put("supported", true);
         ret.put("isGpuAccelerated", isGpuAccelerated);
-        ret.put("modelType", "pose_landmarker_full");
+        ret.put("modelType", "pose_landmarker_lite_fp16");
         ret.put("delegate", isGpuAccelerated ? "GPU_OPENCL_VULKAN" : "CPU_MULTI_THREAD");
         ret.put("platform", "android_native");
         call.resolve(ret);
@@ -155,8 +155,25 @@ public class NativeHardwarePosePlugin extends Plugin {
                     }
                 }
 
-                MPImage mpImage = new BitmapImageBuilder(bitmap).build();
+                // Downscale if higher than 360px to accelerate inference
+                Bitmap scaledBitmap = bitmap;
+                if (bitmap.getWidth() > 360 || bitmap.getHeight() > 360) {
+                    int maxDim = Math.max(bitmap.getWidth(), bitmap.getHeight());
+                    float scale = 360f / maxDim;
+                    int targetW = Math.round(bitmap.getWidth() * scale);
+                    int targetH = Math.round(bitmap.getHeight() * scale);
+                    scaledBitmap = Bitmap.createScaledBitmap(bitmap, targetW, targetH, true);
+                }
+
+                MPImage mpImage = new BitmapImageBuilder(scaledBitmap).build();
                 PoseLandmarkerResult result = poseLandmarker.detect(mpImage);
+
+                if (scaledBitmap != bitmap && !scaledBitmap.isRecycled()) {
+                    scaledBitmap.recycle();
+                }
+                if (!bitmap.isRecycled()) {
+                    bitmap.recycle();
+                }
 
                 JSObject response = new JSObject();
                 JSArray landmarksArray = new JSArray();
@@ -187,8 +204,8 @@ public class NativeHardwarePosePlugin extends Plugin {
     @PluginMethod
     public void processVideoFrames(PluginCall call) {
         final String videoPath = call.getString("videoPath");
-        final Integer targetFps = call.getInt("fps", 24);
-        final int fps = (targetFps != null && targetFps > 0) ? targetFps : 24;
+        final Integer targetFps = call.getInt("fps", 18);
+        final int fps = (targetFps != null && targetFps > 0) ? Math.min(targetFps, 24) : 18;
 
         if (videoPath == null) {
             call.reject("Must provide videoPath");
@@ -212,14 +229,29 @@ public class NativeHardwarePosePlugin extends Plugin {
                 long intervalUs = (1000000L / fps);
                 long durationUs = durationMs * 1000L;
 
+                if (poseLandmarker == null) {
+                    initPoseLandmarker();
+                }
+
                 JSArray framesArray = new JSArray();
                 int frameIndex = 0;
 
                 for (long timeUs = 0; timeUs < durationUs; timeUs += intervalUs) {
-                    Bitmap frameBitmap = retriever.getFrameAtTime(timeUs, MediaMetadataRetriever.OPTION_CLOSEST);
+                    Bitmap frameBitmap = null;
+                    if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O_MR1) {
+                        // High-speed hardware-scaled extraction at 360p directly in native decoder
+                        frameBitmap = retriever.getScaledFrameAtTime(timeUs, MediaMetadataRetriever.OPTION_CLOSEST, 360, 360);
+                    } else {
+                        Bitmap raw = retriever.getFrameAtTime(timeUs, MediaMetadataRetriever.OPTION_CLOSEST);
+                        if (raw != null) {
+                            frameBitmap = Bitmap.createScaledBitmap(raw, 360, 360, true);
+                            if (raw != frameBitmap && !raw.isRecycled()) raw.recycle();
+                        }
+                    }
+
                     if (frameBitmap != null) {
                         MPImage mpImage = new BitmapImageBuilder(frameBitmap).build();
-                        PoseLandmarkerResult result = poseLandmarker.detect(mpImage);
+                        PoseLandmarkerResult result = (poseLandmarker != null) ? poseLandmarker.detect(mpImage) : null;
 
                         JSObject frameObj = new JSObject();
                         frameObj.put("index", frameIndex);
@@ -240,6 +272,10 @@ public class NativeHardwarePosePlugin extends Plugin {
                         frameObj.put("landmarks", lmArray);
                         framesArray.put(frameObj);
                         frameIndex++;
+
+                        if (!frameBitmap.isRecycled()) {
+                            frameBitmap.recycle();
+                        }
                     }
                 }
 

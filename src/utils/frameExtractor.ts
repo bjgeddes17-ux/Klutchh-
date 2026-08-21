@@ -165,7 +165,11 @@ export async function extractFramesPipelined(
           const currentTime = Math.round(t * 1000) / 1000;
           
           try {
-            video.currentTime = currentTime;
+            if (typeof (video as any).fastSeek === 'function') {
+              (video as any).fastSeek(currentTime);
+            } else {
+              video.currentTime = currentTime;
+            }
 
             await new Promise<void>((resolveSeek, rejectSeek) => {
               let done = false;
@@ -187,7 +191,7 @@ export async function extractFramesPipelined(
               };
               video.addEventListener('seeked', handleSeeked);
               video.addEventListener('error', handleError);
-              setTimeout(handleSeeked, 120); // Fast responsive seek timeout for mobile decoders
+              setTimeout(handleSeeked, 80); // Ultra-responsive seek timeout for mobile decoders
             });
 
             const vWidth = video.videoWidth || 640;
