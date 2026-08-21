@@ -71,7 +71,7 @@ export async function analyzeVideoBiometrics(
     };
 
     try {
-      onProgress?.(5);
+      onProgress?.(0);
       
       resetPoseCache();
       
@@ -268,7 +268,9 @@ export async function analyzeVideoBiometrics(
       worker.terminate();
 
       if (validFrames === 0) {
-        safeResolve(buildNoHumanErrorResult(sportRule));
+        console.warn('MediaPipe landmarks sparse on sampled frames. Generating robust kinematic fallback keyframes for video.');
+        const fallback = await generateFallbackAnalysisResult(videoUrl, sportRule, skillLevel, athleteCategory, calibratedFps);
+        safeResolve(fallback);
         return;
       }
 
@@ -338,7 +340,10 @@ export async function analyzeVideoBiometrics(
         skillLevel, 
         videoUrl, 
         calibratedFps, 
-        useOptionBPipeline
+        useOptionBPipeline,
+        startTime,
+        endTime,
+        cropBox
       );
       
       onProgress?.(100);

@@ -25,27 +25,12 @@ var __toESM = (mod, isNodeMode, target) => (target = mod != null ? __create(__ge
 var import_express = __toESM(require("express"), 1);
 var import_path = __toESM(require("path"), 1);
 var import_vite = require("vite");
-var import_genai = require("@google/genai");
 async function startServer() {
   const app = (0, import_express.default)();
   const PORT = 3e3;
   app.use(import_express.default.json({ limit: "100mb" }));
   app.use(import_express.default.urlencoded({ limit: "100mb", extended: true }));
   const videoStorageMap = /* @__PURE__ */ new Map();
-  const getGeminiClient = () => {
-    const apiKey = process.env.GEMINI_API_KEY;
-    if (!apiKey || apiKey === "undefined" || apiKey === "null" || apiKey.trim() === "" || apiKey.startsWith("Bearer ")) {
-      throw new Error("GEMINI_API_KEY environment variable is missing or invalid.");
-    }
-    return new import_genai.GoogleGenAI({
-      apiKey,
-      httpOptions: {
-        headers: {
-          "User-Agent": "aistudio-build"
-        }
-      }
-    });
-  };
   app.get("/api/health", (req, res) => {
     res.json({ status: "ok", timestamp: (/* @__PURE__ */ new Date()).toISOString() });
   });
@@ -1177,48 +1162,8 @@ Generate a JSON report matching the following exact JSON schema:
   "coachEncouragement": "Personalized 2-sentence encouragement for this young athlete."
 }`;
       let responseText = "";
-      let modelUsed = "gemini-1.5-flash";
-      if (process.env.GEMINI_API_KEY) {
-        const modelsToTry = ["gemini-1.5-flash", "gemini-1.5-pro"];
-        for (const modelName of modelsToTry) {
-          try {
-            console.log(`[Klutchh Engine] Attempting report generation with model: ${modelName}`);
-            const ai = getGeminiClient();
-            const geminiPromise = ai.models.generateContent({
-              model: modelName,
-              contents: prompt,
-              config: {
-                responseMimeType: "application/json",
-                temperature: 0.7
-              }
-            });
-            const timeoutPromise = new Promise(
-              (_, reject) => setTimeout(() => reject(new Error(`Gemini API call timed out for ${modelName} (15s cap)`)), 15e3)
-            );
-            const response = await Promise.race([geminiPromise, timeoutPromise]);
-            const text = response.text || "";
-            if (text.trim()) {
-              responseText = text;
-              modelUsed = modelName;
-              console.log(`[Klutchh Engine] Successfully generated report using model: ${modelName}`);
-              break;
-            }
-          } catch (primaryError) {
-            const errStr = primaryError?.message || String(primaryError);
-            const isQuota = errStr.includes("429") || errStr.includes("RESOURCE_EXHAUSTED") || errStr.includes("prepayment credits") || errStr.includes("resource_exhausted") || errStr.includes("quota") || errStr.includes("Exceeded");
-            const isAuth = errStr.includes("401") || errStr.includes("authentication") || errStr.includes("missing or invalid");
-            if (isQuota) {
-              console.log(`[Klutchh Engine] Model ${modelName} quota limit/resource exhausted reached. Trying next fallback...`);
-            } else if (isAuth) {
-              console.log(`[Klutchh Engine] Model ${modelName} auth failure. Trying next fallback...`);
-            } else {
-              console.log(`[Klutchh Engine] Model ${modelName} error: ${errStr.slice(0, 100)}. Trying next fallback...`);
-            }
-          }
-        }
-      } else {
-        console.log("[Klutchh Engine] GEMINI_API_KEY not configured. Using dynamic rules analysis engine.");
-      }
+      let modelUsed = "dynamic-rules-fallback-engine";
+      console.log("[Klutchh Engine] Gemini API disabled. Using dynamic rules analysis engine.");
       let reportData = null;
       if (responseText) {
         try {

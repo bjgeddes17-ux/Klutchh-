@@ -102,6 +102,14 @@ export const MagicProcessingScreen: React.FC<MagicProcessingScreenProps> = ({
             }
             resultRef.current = res;
             setProgress(100);
+            if (!hasFiredRef.current) {
+              hasFiredRef.current = true;
+              setTimeout(() => {
+                if (isMounted) {
+                  onCompleteRef.current(res);
+                }
+              }, 600);
+            }
           }
         })
         .catch(async (err: any) => {
@@ -125,6 +133,14 @@ export const MagicProcessingScreen: React.FC<MagicProcessingScreenProps> = ({
               const fallback = await generateFallbackAnalysisResult(videoUrl, sportRule, skillLevel, athleteCategory, calibratedFps);
               resultRef.current = fallback;
               setProgress(100);
+              if (!hasFiredRef.current) {
+                hasFiredRef.current = true;
+                setTimeout(() => {
+                  if (isMounted) {
+                    onCompleteRef.current(fallback);
+                  }
+                }, 600);
+              }
             } catch (fallbackErr) {
               console.error("Fallback analysis also FAILED:", fallbackErr);
               setInvalidError("Analysis failed completely: " + String(errorMessage));

@@ -1496,12 +1496,6 @@ export const AnalysisReportPage: React.FC<AnalysisReportPageProps> = ({
           minHeight: isFullscreen ? '100vh' : '340px'
         }}
       >
-        {isFullscreen && (
-          <div className="absolute top-4 left-1/2 -translate-x-1/2 z-40 bg-zinc-950/90 border border-amber-500/50 text-amber-300 px-4 py-2 rounded-2xl shadow-2xl flex items-center gap-2 text-xs font-bold backdrop-blur-md animate-fade-in pointer-events-none">
-            <span>💡 Swipe right to advance frames</span>
-          </div>
-        )}
-
         {videoUrl && !videoError ? (
           <>
             <video
@@ -1632,24 +1626,26 @@ export const AnalysisReportPage: React.FC<AnalysisReportPageProps> = ({
             </span>
           </div>
 
-          <div className="bg-zinc-950/80 backdrop-blur-md border border-zinc-800/80 px-2 py-1 rounded-lg flex items-center gap-2 text-[9px] font-bold text-zinc-300 shadow-lg">
-            <div className="flex items-center gap-1">
-              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
-              <span className="text-emerald-400 hidden sm:inline">Optimal</span>
+          {viewMode !== 'student' && (
+            <div className="bg-zinc-950/80 backdrop-blur-md border border-zinc-800/80 px-2 py-1 rounded-lg flex items-center gap-2 text-[9px] font-bold text-zinc-300 shadow-lg">
+              <div className="flex items-center gap-1">
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
+                <span className="text-emerald-400 hidden sm:inline">Optimal</span>
+              </div>
+              <div className="flex items-center gap-1">
+                <span className="w-1.5 h-1.5 rounded-full bg-blue-500" />
+                <span className="text-blue-400 hidden sm:inline">Good</span>
+              </div>
+              <div className="flex items-center gap-1">
+                <span className="w-1.5 h-1.5 rounded-full bg-purple-500" />
+                <span className="text-purple-400 hidden sm:inline">Warn</span>
+              </div>
+              <div className="flex items-center gap-1">
+                <span className="w-1.5 h-1.5 rounded-full bg-red-500" />
+                <span className="text-red-400 font-extrabold hidden sm:inline">Error</span>
+              </div>
             </div>
-            <div className="flex items-center gap-1">
-              <span className="w-1.5 h-1.5 rounded-full bg-blue-500" />
-              <span className="text-blue-400 hidden sm:inline">Good</span>
-            </div>
-            <div className="flex items-center gap-1">
-              <span className="w-1.5 h-1.5 rounded-full bg-purple-500" />
-              <span className="text-purple-400 hidden sm:inline">Warn</span>
-            </div>
-            <div className="flex items-center gap-1">
-              <span className="w-1.5 h-1.5 rounded-full bg-red-500" />
-              <span className="text-red-400 font-extrabold hidden sm:inline">Error</span>
-            </div>
-          </div>
+          )}
         </div>
 
         {/* Bottom Overlay Non-Blocking Glassmorphism Scrubber Bar */}
