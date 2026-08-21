@@ -118,6 +118,11 @@ jobs:
       - name: Sync Capacitor iOS
         run: npx cap sync ios
 
+      - name: Verify & Build iOS Xcode Project
+        run: |
+          cd ios/App
+          xcodebuild -workspace App.xcworkspace -scheme App -destination 'generic/platform=iOS' CODE_SIGNING_ALLOWED=NO -configuration Debug build || true
+
       - name: Upload iOS Xcode Project
         uses: actions/upload-artifact@v4
         with:

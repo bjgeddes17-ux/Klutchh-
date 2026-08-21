@@ -122,17 +122,17 @@ export async function analyzeVideoBiometrics(
         
         const imageBitmap = frameData.imageBitmap || (frameData.blob ? await createImageBitmap(frameData.blob) : null);
 
-        if (imageBitmap && miniCtx) {
-          // Generate a very low-res thumbnail BEFORE transferring the bitmap
-          const scale = Math.min(240 / imageBitmap.width, 240 / imageBitmap.height);
-          const w = Math.round(imageBitmap.width * scale);
-          const h = Math.round(imageBitmap.height * scale);
+        if (imageBitmap && miniCtx && frameData.index % 3 === 0) {
+          // Generate thumbnail only for sample intervals to save CPU
+          const scale = Math.min(180 / imageBitmap.width, 180 / imageBitmap.height);
+          const w = Math.max(120, Math.round(imageBitmap.width * scale));
+          const h = Math.max(90, Math.round(imageBitmap.height * scale));
           if (miniCanvas.width !== w || miniCanvas.height !== h) {
              miniCanvas.width = w;
              miniCanvas.height = h;
           }
           miniCtx.drawImage(imageBitmap, 0, 0, w, h);
-          thumbDataUrl = miniCanvas.toDataURL('image/jpeg', 0.4); // extremely compressed
+          thumbDataUrl = miniCanvas.toDataURL('image/jpeg', 0.35);
         }
         
         if (useWorker) {

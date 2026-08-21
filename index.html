@@ -15,12 +15,15 @@
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
     <script>
+      // Clean up service workers in dev preview to prevent stale asset interception and Unexpected token '<' errors
       if ('serviceWorker' in navigator) {
-        window.addEventListener('load', () => {
-          navigator.serviceWorker.register('/sw.js').catch((err) => {
-            console.log('SW registration note:', err);
-          });
-        });
+        if (window.location.hostname.includes('localhost') || window.location.hostname.includes('run.app')) {
+          navigator.serviceWorker.getRegistrations().then((registrations) => {
+            for (const registration of registrations) {
+              registration.unregister();
+            }
+          }).catch(() => {});
+        }
       }
     </script>
   </body>

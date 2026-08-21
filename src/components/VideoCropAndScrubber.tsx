@@ -386,19 +386,19 @@ export const VideoCropAndScrubber: React.FC<VideoCropAndScrubberProps> = ({
       </div>
 
       {/* Action Buttons */}
-      <div className="flex items-center justify-between w-full">
+      <div className="flex flex-col-reverse sm:flex-row items-center justify-between w-full gap-3">
         <button
           onClick={onCancel}
-          className="px-5 py-3 bg-zinc-800 hover:bg-zinc-700 text-zinc-300 font-bold text-xs uppercase tracking-wider rounded-xl transition-all"
+          className="w-full sm:w-auto px-5 py-3.5 bg-zinc-800 hover:bg-zinc-700 text-zinc-300 font-bold text-xs uppercase tracking-wider rounded-xl transition-all cursor-pointer text-center min-h-[44px]"
         >
           Cancel & Re-upload
         </button>
 
         <button
           onClick={handleConfirmAnalysis}
-          className="px-8 py-3.5 bg-gradient-to-r from-emerald-600 via-teal-600 to-cyan-600 hover:from-emerald-500 hover:to-cyan-500 text-white font-black text-xs uppercase tracking-widest rounded-xl shadow-2xl flex items-center gap-2 transform hover:scale-105 transition-all"
+          className="w-full sm:w-auto px-8 py-3.5 bg-gradient-to-r from-emerald-600 via-teal-600 to-cyan-600 hover:from-emerald-500 hover:to-cyan-500 text-white font-black text-xs uppercase tracking-widest rounded-xl shadow-2xl flex items-center justify-center gap-2 transform active:scale-95 sm:hover:scale-105 transition-all cursor-pointer min-h-[44px]"
         >
-          <Check className="w-4 h-4" /> Run AI Pose Analysis & Shadow Filter
+          <Check className="w-4 h-4 stroke-[3]" /> Run AI Pose Analysis & Shadow Filter
         </button>
       </div>
 

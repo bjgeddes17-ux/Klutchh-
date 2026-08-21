@@ -23,8 +23,8 @@ export async function extractFramesPipelined(
   videoUrl: string,
   onFrame: (frame: ExtractedFrame) => Promise<void>,
   onProgress: (progress: number) => void,
-  targetFps: number = 20,
-  targetHeight: number = 480,
+  targetFps: number = 18,
+  targetHeight: number = 360,
   cropBox?: { x: number; y: number; width: number; height: number },
   startTime: number = 0,
   endTime?: number
@@ -187,7 +187,7 @@ export async function extractFramesPipelined(
               };
               video.addEventListener('seeked', handleSeeked);
               video.addEventListener('error', handleError);
-              setTimeout(handleSeeked, 400); // Increased timeout for slow decoders
+              setTimeout(handleSeeked, 120); // Fast responsive seek timeout for mobile decoders
             });
 
             const vWidth = video.videoWidth || 640;
@@ -204,13 +204,6 @@ export async function extractFramesPipelined(
 
             const frame: ExtractedFrame = { imageBitmap, timestamp: currentTime, index: frameCount };
 
-            // Persist blob to IndexedDB asynchronously in background
-            canvas.toBlob((blob) => {
-              if (blob) {
-                set(`${idbPrefix}${frameCount}`, { blob, timestamp: currentTime, index: frameCount }).catch(() => {});
-              }
-            }, 'image/jpeg', 0.8);
-
             // Process immediately through pose detection pipeline
             await onFrame(frame);
 
@@ -220,9 +213,9 @@ export async function extractFramesPipelined(
             frameCount++;
             onProgress(Math.min(99, Math.round((frameCount / Math.max(1, totalExpectedFrames)) * 100)));
 
-            // Safety throttle to let hardware decoder catch up - avoids Code 4 crashes
-            if (frameCount % 5 === 0) {
-              await new Promise(r => setTimeout(r, 15));
+            // Yield lightly every 8 frames to keep UI responsive
+            if (frameCount % 8 === 0) {
+              await new Promise(r => setTimeout(r, 4));
             }
           } catch (seekErr: any) {
             console.warn('Seek or frame processing error, attempting recovery:', seekErr?.message || String(seekErr));

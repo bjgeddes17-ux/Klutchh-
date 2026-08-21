@@ -10,11 +10,7 @@ import {
   TrophyCard
 } from '../types';
 import { sanitizeForJSON, safeJsonStringify } from '../utils/privacyStorage';
-import { ReflexTimingGame } from './ReflexTimingGame';
 import { KineticTitanBattleCard } from './KineticTitanBattleCard';
-import { FormFlawSmashGame } from './FormFlawSmashGame';
-import { LaunchTrajectoryGame } from './LaunchTrajectoryGame';
-import { D3SkeletonHeatmap } from './D3SkeletonHeatmap';
 import { ensureMinimumKeyframes } from '../utils/videoAnalyzer';
 import {
   ArrowLeft,
@@ -51,6 +47,8 @@ import {
   ChevronLeft,
   ChevronRight,
   X,
+  Eye,
+  EyeOff,
   Cloud,
   Download,
   HardDrive,
@@ -192,7 +190,7 @@ export const AnalysisReportPage: React.FC<AnalysisReportPageProps> = ({
   const [showWhatsAppModal, setShowWhatsAppModal] = useState(false);
   const [assignedAthleteName, setAssignedAthleteName] = useState<string | null>(null);
   const [showExportSuccess, setShowExportSuccess] = useState(false);
-  const [activeTab, setActiveTab] = useState<'overview' | 'game' | 'reflex' | 'smash' | 'cannon' | 'drills' | 'notes' | 'trading_card' | 'trophy_shelf'>('overview');
+  const [activeTab, setActiveTab] = useState<'overview' | 'game' | 'drills' | 'notes' | 'trading_card' | 'trophy_shelf'>('overview');
   const [dossierViewMode, setDossierViewMode] = useState<'all' | 'cards'>('all');
   const [copiedSummary, setCopiedSummary] = useState(false);
   const [completedDrills, setCompletedDrills] = useState<Record<string, boolean>>({});
@@ -227,6 +225,11 @@ export const AnalysisReportPage: React.FC<AnalysisReportPageProps> = ({
   const [questXpEarned, setQuestXpEarned] = useState(0);
   const [questVictory, setQuestVictory] = useState(false);
   const [showStorageNoticeModal, setShowStorageNoticeModal] = useState<boolean>(true);
+  const [overlayMode, setOverlayMode] = useState<'sleek' | 'minimal' | 'off'>('sleek');
+  const overlayModeRef = useRef<'sleek' | 'minimal' | 'off'>('sleek');
+  useEffect(() => {
+    overlayModeRef.current = overlayMode;
+  }, [overlayMode]);
   const [viewMode, setViewMode] = useState<'student' | 'coach'>('student');
 
   const radarData = useMemo(() => {
@@ -513,8 +516,8 @@ export const AnalysisReportPage: React.FC<AnalysisReportPageProps> = ({
     const diffY = e.changedTouches[0].clientY - swipeStartY;
     
     if (Math.abs(diffX) > Math.abs(diffY) && Math.abs(diffX) > 65 && Math.abs(diffY) < 55) {
-      const tabs: ('overview' | 'game' | 'reflex' | 'smash' | 'cannon' | 'drills' | 'notes' | 'trading_card' | 'trophy_shelf')[] = [
-        'overview', 'smash', 'cannon', 'reflex', 'game', 'drills', 'trading_card', 'notes'
+      const tabs: ('overview' | 'game' | 'drills' | 'notes' | 'trading_card' | 'trophy_shelf')[] = [
+        'overview', 'game', 'drills', 'trading_card', 'notes'
       ];
       const currentIndex = tabs.indexOf(activeTab as any);
       if (currentIndex !== -1) {
@@ -1036,7 +1039,9 @@ export const AnalysisReportPage: React.FC<AnalysisReportPageProps> = ({
                 ruleResultsToDraw,
                 anglesToDraw,
                 sportRule,
-                activeFramePhase
+                activeFramePhase,
+                true,
+                overlayModeRef.current
               );
             }
           } catch (err) {
@@ -1259,7 +1264,15 @@ export const AnalysisReportPage: React.FC<AnalysisReportPageProps> = ({
 
             <div className="flex items-center justify-end pt-1">
               <button
-                onClick={() => setShowStorageNoticeModal(false)}
+                onClick={() => {
+                  setShowStorageNoticeModal(false);
+                  try {
+                    sessionStorage.setItem('klutchh_storage_notice_seen', 'true');
+                  } catch (e) {}
+                  setTimeout(() => {
+                    stageContainerRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                  }, 60);
+                }}
                 className="w-full bg-gradient-to-r from-red-600 to-amber-500 hover:from-red-500 hover:to-amber-400 text-white font-black text-xs py-3 px-6 rounded-xl shadow-lg shadow-red-600/20 flex items-center justify-center gap-2 transition-all cursor-pointer"
               >
                 <span>I Understand</span>
@@ -1456,11 +1469,13 @@ export const AnalysisReportPage: React.FC<AnalysisReportPageProps> = ({
       {/* Hero Full-Size Video Scrubber Stage */}
       <div
         ref={stageContainerRef}
-        className="relative w-full bg-black border border-zinc-800 rounded-2xl sm:rounded-3xl overflow-hidden shadow-2xl group flex items-center justify-center select-none"
+        id="hero-video-player-stage"
+        onClick={() => togglePlay()}
+        className="relative w-full bg-black border border-zinc-800 rounded-2xl sm:rounded-3xl overflow-hidden shadow-2xl group flex items-center justify-center select-none min-h-[340px] sm:min-h-[480px] lg:min-h-[620px] cursor-pointer"
         style={{
           aspectRatio: videoDimensions ? `${videoDimensions.width} / ${videoDimensions.height}` : '16 / 9',
-          maxHeight: '72vh',
-          minHeight: isFullscreen ? '100vh' : '220px'
+          maxHeight: isFullscreen ? '100vh' : '88vh',
+          minHeight: isFullscreen ? '100vh' : '340px'
         }}
       >
         {isFullscreen && (
@@ -1485,6 +1500,9 @@ export const AnalysisReportPage: React.FC<AnalysisReportPageProps> = ({
               onLoadedMetadata={() => {
                 if (videoRef.current) {
                   setDuration(endTime && endTime <= videoRef.current.duration ? endTime : videoRef.current.duration);
+                  if (videoRef.current.currentTime === 0) {
+                    videoRef.current.currentTime = Math.max(startTime || 0, 0.001);
+                  }
                 }
               }}
               onTimeUpdate={() => {
@@ -1513,15 +1531,20 @@ export const AnalysisReportPage: React.FC<AnalysisReportPageProps> = ({
               className="absolute inset-0 w-full h-full object-contain pointer-events-none z-10"
             />
 
-            {/* Loading / Buffering State Overlay */}
-            {(isSeeking || !videoRef.current || videoRef.current.readyState < 2) && (
-              <div className="absolute inset-0 z-20 flex flex-col items-center justify-center bg-zinc-950/40 backdrop-blur-[2px]">
-                <div className="w-8 h-8 border-2 border-amber-500/20 border-t-amber-500 rounded-full animate-spin mb-2" />
-                <span className="text-[10px] font-black uppercase tracking-widest text-amber-500 animate-pulse">
-                  {isSeeking ? 'Seeking Frame...' : 'Syncing Biometrics...'}
-                </span>
+            {/* Center Big Play/Pause Overlay Indicator */}
+            <div
+              className={`absolute inset-0 z-25 flex items-center justify-center pointer-events-none transition-all duration-300 ${
+                !isPlaying ? 'opacity-100 scale-100' : 'opacity-0 scale-90 group-hover:opacity-60'
+              }`}
+            >
+              <div className="w-16 h-16 sm:w-20 sm:h-20 rounded-full bg-zinc-950/80 border-2 border-amber-400 text-amber-400 flex items-center justify-center shadow-2xl backdrop-blur-md transition-transform transform group-hover:scale-110">
+                {isPlaying ? (
+                  <Pause className="w-7 h-7 sm:w-8 sm:h-8 fill-current" />
+                ) : (
+                  <Play className="w-7 h-7 sm:w-8 sm:h-8 fill-current ml-1" />
+                )}
               </div>
-            )}
+            </div>
             {/* Student Mode Arcade Overlays */}
             {viewMode === 'student' && (
               <div className="absolute inset-0 pointer-events-none z-20 flex flex-col justify-between p-4 mix-blend-screen">
@@ -1582,41 +1605,41 @@ export const AnalysisReportPage: React.FC<AnalysisReportPageProps> = ({
           </div>
         )}
 
-        {/* Top Floating Header Badges */}
-        <div className="absolute top-3 left-3 right-3 z-20 pointer-events-none flex items-center justify-between gap-2 flex-wrap">
-          <div className="bg-zinc-950/90 backdrop-blur-md border border-zinc-800/90 px-3 py-1.5 rounded-xl flex items-center gap-2 shadow-xl">
-            <Flame className="w-4 h-4 text-red-500 fill-current" />
-            <span className="text-xs font-black text-white uppercase tracking-wider">{sportRule.name} Studio</span>
-            <span className="bg-yellow-400 text-zinc-950 font-black text-[10px] px-2 py-0.5 rounded uppercase">
+        {/* Top Floating Header Badges - Ultra Sleek & Unobtrusive */}
+        <div className="absolute top-2.5 left-2.5 right-2.5 z-20 pointer-events-none flex items-center justify-between gap-2 flex-wrap">
+          <div className="bg-zinc-950/80 backdrop-blur-md border border-zinc-800/80 px-2.5 py-1 rounded-lg flex items-center gap-2 shadow-lg">
+            <Flame className="w-3.5 h-3.5 text-red-500 fill-current" />
+            <span className="text-[11px] font-black text-white uppercase tracking-wider">{sportRule.name}</span>
+            <span className="bg-yellow-400 text-zinc-950 font-black text-[9px] px-1.5 py-0.5 rounded uppercase">
               Grade {aiReport?.overallGrade || 'A'}
             </span>
-            <span className="text-[10px] font-mono text-amber-400 bg-amber-400/10 border border-amber-400/30 px-2 py-0.5 rounded hidden md:inline">
+            <span className="text-[9px] font-mono text-amber-400 bg-amber-400/10 border border-amber-400/30 px-1.5 py-0.5 rounded hidden md:inline">
               Frame #{Math.round(currentTime * calibratedFps)} • {currentTime.toFixed(2)}s @ {calibratedFps} FPS
             </span>
           </div>
 
-          <div className="bg-zinc-950/90 backdrop-blur-md border border-zinc-800/80 px-2.5 py-1.5 rounded-xl flex items-center gap-2.5 text-[10px] font-bold text-zinc-300 shadow-xl">
+          <div className="bg-zinc-950/80 backdrop-blur-md border border-zinc-800/80 px-2 py-1 rounded-lg flex items-center gap-2 text-[9px] font-bold text-zinc-300 shadow-lg">
             <div className="flex items-center gap-1">
-              <span className="w-2 h-2 rounded-full bg-emerald-500 shadow-sm shadow-emerald-500/50" />
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
               <span className="text-emerald-400 hidden sm:inline">Optimal</span>
             </div>
             <div className="flex items-center gap-1">
-              <span className="w-2 h-2 rounded-full bg-blue-500 shadow-sm shadow-blue-500/50" />
+              <span className="w-1.5 h-1.5 rounded-full bg-blue-500" />
               <span className="text-blue-400 hidden sm:inline">Good</span>
             </div>
             <div className="flex items-center gap-1">
-              <span className="w-2 h-2 rounded-full bg-purple-500 shadow-sm shadow-purple-500/50" />
+              <span className="w-1.5 h-1.5 rounded-full bg-purple-500" />
               <span className="text-purple-400 hidden sm:inline">Warn</span>
             </div>
             <div className="flex items-center gap-1">
-              <span className="w-2 h-2 rounded-full bg-red-500 shadow-sm shadow-red-500/50" />
+              <span className="w-1.5 h-1.5 rounded-full bg-red-500" />
               <span className="text-red-400 font-extrabold hidden sm:inline">Error</span>
             </div>
           </div>
         </div>
 
         {/* Bottom Overlay Non-Blocking Glassmorphism Scrubber Bar */}
-        <div className="absolute inset-x-0 bottom-0 z-30 bg-gradient-to-t from-black via-black/95 to-transparent pt-10 pb-3 px-4 sm:px-6 flex flex-col gap-2">
+        <div className="absolute inset-x-0 bottom-0 z-30 bg-gradient-to-t from-black via-black/95 to-transparent pt-8 pb-3 px-3 sm:px-5 flex flex-col gap-2">
           
           {/* Sleek, Non-Intrusive Telemetry HUD Overlay */}
           {activeFrameMetrics && (
@@ -1653,7 +1676,7 @@ export const AnalysisReportPage: React.FC<AnalysisReportPageProps> = ({
           )}
 
           {/* Timeline Range Slider */}
-          <div className="relative w-full flex flex-col py-1.5">
+          <div className="relative w-full flex flex-col py-1">
             <input
               type="range"
               min={0}
@@ -1661,57 +1684,92 @@ export const AnalysisReportPage: React.FC<AnalysisReportPageProps> = ({
               step={1 / calibratedFps}
               value={currentTime}
               onChange={(e) => handleSeek(parseFloat(e.target.value))}
-              className="w-full accent-red-600 bg-zinc-800/90 h-3.5 rounded-full cursor-pointer shadow-inner [&::-webkit-slider-thumb]:w-6 [&::-webkit-slider-thumb]:h-6 [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-red-600 [&::-webkit-slider-thumb]:border-2 [&::-webkit-slider-thumb]:border-white"
+              className="w-full accent-red-600 bg-zinc-800/90 h-3 rounded-full cursor-pointer shadow-inner [&::-webkit-slider-thumb]:w-5 [&::-webkit-slider-thumb]:h-5 [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-red-600 [&::-webkit-slider-thumb]:border-2 [&::-webkit-slider-thumb]:border-white"
             />
           </div>
 
           {/* Controls Bar: Frame Scrubbers (-5f, -1f, +1f, +5f) & Timecode */}
-          <div className="flex items-center justify-between gap-3 pt-0.5 flex-wrap">
+          <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2 pt-0.5">
             {/* Left: Frame Scrubbers & Timecode */}
-            <div className="flex items-center gap-1.5 sm:gap-2">
-              <button
-                onClick={() => stepFrame(-5 / calibratedFps)}
-                className="px-2.5 py-1.5 bg-zinc-900/90 hover:bg-zinc-800 border border-zinc-800 text-zinc-300 hover:text-white rounded-lg transition-all text-xs flex items-center gap-1 font-mono font-bold"
-                title="Step Back 5 Frames"
-              >
-                <SkipBack className="w-3.5 h-3.5" />
-                <span>-5f</span>
-              </button>
+            <div className="flex items-center justify-between sm:justify-start gap-1.5 overflow-x-auto no-scrollbar py-0.5">
+              <div className="flex items-center gap-1">
+                {/* Dedicated Play / Pause Toggle Button */}
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    togglePlay();
+                  }}
+                  className="px-2.5 py-1 bg-amber-500 hover:bg-amber-400 text-zinc-950 font-black rounded-lg transition-all text-xs flex items-center gap-1 cursor-pointer shadow-md font-mono"
+                  title={isPlaying ? 'Pause Video' : 'Play Video'}
+                >
+                  {isPlaying ? <Pause className="w-3.5 h-3.5 fill-current" /> : <Play className="w-3.5 h-3.5 fill-current ml-0.5" />}
+                  <span>{isPlaying ? 'Pause' : 'Play'}</span>
+                </button>
 
-              <button
-                onClick={() => stepFrame(-1 / calibratedFps)}
-                className="px-2.5 py-1.5 bg-zinc-900/90 hover:bg-zinc-800 border border-zinc-800 text-zinc-300 hover:text-white rounded-lg transition-all text-xs flex items-center gap-1 font-mono font-bold"
-                title="Step Back 1 Frame"
-              >
-                <SkipBack className="w-3.5 h-3.5" />
-                <span>-1f</span>
-              </button>
+                <button
+                  onClick={() => stepFrame(-5 / calibratedFps)}
+                  className="px-2 py-1 bg-zinc-900/90 hover:bg-zinc-800 border border-zinc-800 text-zinc-300 hover:text-white rounded-lg transition-all text-xs flex items-center gap-1 font-mono font-bold cursor-pointer"
+                  title="Step Back 5 Frames"
+                >
+                  <SkipBack className="w-3 h-3" />
+                  <span>-5f</span>
+                </button>
 
-              <button
-                onClick={() => stepFrame(1 / calibratedFps)}
-                className="px-2.5 py-1.5 bg-zinc-900/90 hover:bg-zinc-800 border border-zinc-800 text-zinc-300 hover:text-white rounded-lg transition-all text-xs flex items-center gap-1 font-mono font-bold"
-                title="Step Forward 1 Frame"
-              >
-                <span>+1f</span>
-                <SkipForward className="w-3.5 h-3.5" />
-              </button>
+                <button
+                  onClick={() => stepFrame(-1 / calibratedFps)}
+                  className="px-2 py-1 bg-zinc-900/90 hover:bg-zinc-800 border border-zinc-800 text-zinc-300 hover:text-white rounded-lg transition-all text-xs flex items-center gap-1 font-mono font-bold cursor-pointer"
+                  title="Step Back 1 Frame"
+                >
+                  <SkipBack className="w-3 h-3" />
+                  <span>-1f</span>
+                </button>
 
-              <button
-                onClick={() => stepFrame(5 / calibratedFps)}
-                className="px-2.5 py-1.5 bg-zinc-900/90 hover:bg-zinc-800 border border-zinc-800 text-zinc-300 hover:text-white rounded-lg transition-all text-xs flex items-center gap-1 font-mono font-bold"
-                title="Step Forward 5 Frames"
-              >
-                <span>+5f</span>
-                <SkipForward className="w-3.5 h-3.5" />
-              </button>
+                <button
+                  onClick={() => stepFrame(1 / calibratedFps)}
+                  className="px-2 py-1 bg-zinc-900/90 hover:bg-zinc-800 border border-zinc-800 text-zinc-300 hover:text-white rounded-lg transition-all text-xs flex items-center gap-1 font-mono font-bold cursor-pointer"
+                  title="Step Forward 1 Frame"
+                >
+                  <span>+1f</span>
+                  <SkipForward className="w-3 h-3" />
+                </button>
 
-              <div className="bg-zinc-950/90 px-2.5 py-1 rounded-md border border-zinc-800 text-[11px] font-mono text-zinc-300 font-bold ml-1">
+                <button
+                  onClick={() => stepFrame(5 / calibratedFps)}
+                  className="px-2 py-1 bg-zinc-900/90 hover:bg-zinc-800 border border-zinc-800 text-zinc-300 hover:text-white rounded-lg transition-all text-xs flex items-center gap-1 font-mono font-bold cursor-pointer"
+                  title="Step Forward 5 Frames"
+                >
+                  <span>+5f</span>
+                  <SkipForward className="w-3 h-3" />
+                </button>
+              </div>
+
+              <div className="bg-zinc-950/90 px-2 py-0.5 rounded-md border border-zinc-800 text-[10px] font-mono text-zinc-300 font-bold shrink-0">
                 {currentTime.toFixed(2)}s / {duration.toFixed(2)}s
               </div>
             </div>
 
-            {/* Right: Speed, Mute & Fullscreen */}
-            <div className="flex items-center gap-2">
+            {/* Right: Angle Overlay Toggle, Speed & Fullscreen */}
+            <div className="flex items-center justify-between sm:justify-end gap-1.5 shrink-0">
+              {/* Angles / Overlay toggle */}
+              <button
+                onClick={() => {
+                  setOverlayMode(prev => prev === 'sleek' ? 'minimal' : prev === 'minimal' ? 'off' : 'sleek');
+                }}
+                className={`px-2 py-1 border rounded-lg text-xs font-mono font-bold transition-all flex items-center gap-1 cursor-pointer min-h-[30px] ${
+                  overlayMode === 'sleek'
+                    ? 'bg-zinc-900 border-amber-500/40 text-amber-400 hover:bg-zinc-800'
+                    : overlayMode === 'minimal'
+                    ? 'bg-zinc-900 border-blue-500/40 text-blue-400 hover:bg-zinc-800'
+                    : 'bg-zinc-950 border-zinc-800 text-zinc-500 hover:text-zinc-300'
+                }`}
+                title="Toggle Overlay Density (Sleek -> Minimal -> Angles Off)"
+              >
+                {overlayMode === 'off' ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                <span className="text-[10px]">
+                  {overlayMode === 'sleek' ? 'Angles: Sleek' : overlayMode === 'minimal' ? 'Angles: Min' : 'Angles: Off'}
+                </span>
+              </button>
+
               <div className="flex items-center bg-zinc-950/90 p-0.5 rounded-lg border border-zinc-800 text-[10px]">
                 {[0.25, 0.5, 1.0].map((speed) => (
                   <button
@@ -1720,7 +1778,7 @@ export const AnalysisReportPage: React.FC<AnalysisReportPageProps> = ({
                       setPlaybackSpeed(speed);
                       if (videoRef.current) videoRef.current.playbackRate = speed;
                     }}
-                    className={`px-2 py-0.5 rounded-md font-mono font-bold transition-all ${
+                    className={`px-1.5 py-0.5 rounded font-mono font-bold transition-all cursor-pointer ${
                       playbackSpeed === speed
                         ? 'bg-red-600 text-white shadow'
                         : 'text-zinc-400 hover:text-white'
@@ -1733,132 +1791,14 @@ export const AnalysisReportPage: React.FC<AnalysisReportPageProps> = ({
 
               <button
                 onClick={toggleFullscreen}
-                className="p-1.5 bg-zinc-900/90 hover:bg-zinc-800 border border-zinc-800 text-zinc-300 hover:text-white rounded-lg text-xs transition-all flex items-center gap-1 font-bold"
+                className="p-1.5 bg-zinc-900/90 hover:bg-zinc-800 border border-zinc-800 text-zinc-300 hover:text-white rounded-lg text-xs transition-all flex items-center gap-1 font-bold cursor-pointer min-h-[30px]"
                 title={isFullscreen ? 'Exit Fullscreen' : 'Fullscreen'}
               >
-                {isFullscreen ? <Minimize className="w-4 h-4" /> : <Maximize className="w-4 h-4" />}
+                {isFullscreen ? <Minimize className="w-3.5 h-3.5" /> : <Maximize className="w-3.5 h-3.5" />}
               </button>
             </div>
           </div>
         </div>
-      </div>
-
-      {/* 🎯 INTERACTIVE KEYFRAME PHASE ALIGNMENT & MATCHER TOOLBAR */}
-      <div className="bg-zinc-950/90 border border-zinc-800 p-3.5 rounded-2xl flex flex-col gap-3 shadow-xl max-w-5xl mx-auto w-full">
-        <div className="flex items-center justify-between gap-3 flex-wrap">
-          <div className="flex items-center gap-2">
-            <Bookmark className="w-4 h-4 text-amber-400 fill-current" />
-            <span className="text-xs font-black uppercase tracking-wider text-white">
-              Keyframe Phase Alignment ({customKeyframeList.length})
-            </span>
-            <span className="text-[10px] font-mono text-zinc-400 bg-zinc-900 px-2 py-0.5 rounded border border-zinc-800">
-              Playhead: {currentTime.toFixed(2)}s (#{Math.round(currentTime * calibratedFps)})
-            </span>
-          </div>
-
-          <div className="flex items-center gap-2">
-            {/* Quick Tag Phase Dropdown */}
-            <div className="flex items-center gap-1.5 bg-zinc-900 border border-zinc-700/70 rounded-xl px-2 py-1">
-              <span className="text-[10px] font-bold text-zinc-400 uppercase hidden sm:inline">Set Frame As:</span>
-              <select
-                value={selectedTagPhase}
-                onChange={(e) => setSelectedTagPhase(e.target.value)}
-                className="bg-transparent text-amber-300 font-extrabold text-[11px] outline-none cursor-pointer uppercase"
-              >
-                {(sportRule.phases && sportRule.phases.length > 0 ? sportRule.phases : ['Approach', 'Setup', 'Contact / Strike', 'Release', 'Follow-Through']).map((p) => (
-                  <option key={p} value={p} className="bg-zinc-900 text-white">
-                    {p}
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            <button
-              onClick={() => handleTagCurrentFrameAsPhase(selectedTagPhase)}
-              className="px-3 py-1.5 bg-amber-500 hover:bg-amber-400 text-zinc-950 font-black text-xs rounded-xl uppercase tracking-wider transition-all flex items-center gap-1 shadow-md shadow-amber-500/10"
-              title="Set current video moment as this keyframe phase"
-            >
-              <Plus className="w-3.5 h-3.5" />
-              <span>Tag Frame</span>
-            </button>
-
-            <button
-              onClick={() => setShowKeyframeManager((prev) => !prev)}
-              className="p-1.5 bg-zinc-900 hover:bg-zinc-800 text-zinc-300 rounded-xl border border-zinc-800 transition-all text-xs"
-              title="Toggle Keyframe List"
-            >
-              {showKeyframeManager ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
-            </button>
-          </div>
-        </div>
-
-        {/* Keyframe Cards Horizontal Strip */}
-        {showKeyframeManager && (
-          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-2.5 pt-2 border-t border-zinc-850">
-            {customKeyframeList.map((frame, idx) => (
-              <div
-                key={idx}
-                className="bg-zinc-900/90 border border-zinc-800 p-2.5 rounded-xl flex flex-col gap-2 relative group hover:border-zinc-700 transition-all text-zinc-200"
-              >
-                <div className="flex items-center justify-between gap-1">
-                  <button
-                    onClick={() => handleSeekToKeyframe(frame.timestamp)}
-                    className="flex items-center gap-1 text-[11px] font-mono font-bold text-zinc-300 hover:text-amber-400 bg-zinc-950 px-2 py-0.5 rounded border border-zinc-800"
-                    title="Jump video playhead to this frame"
-                  >
-                    <Play className="w-2.5 h-2.5 fill-current text-amber-400" />
-                    <span>{frame.timestamp.toFixed(2)}s</span>
-                  </button>
-
-                  <div className="flex items-center gap-1">
-                    <button
-                      onClick={() => handleUpdateKeyframeTimestamp(idx, Math.max(0, frame.timestamp - 0.033))}
-                      className="px-1 py-0.5 text-[9px] bg-zinc-950 text-zinc-400 hover:text-white rounded border border-zinc-800"
-                      title="Nudge frame back 1 step"
-                    >
-                      -1f
-                    </button>
-                    <button
-                      onClick={() => handleUpdateKeyframeTimestamp(idx, frame.timestamp + 0.033)}
-                      className="px-1 py-0.5 text-[9px] bg-zinc-950 text-zinc-400 hover:text-white rounded border border-zinc-800"
-                      title="Nudge frame forward 1 step"
-                    >
-                      +1f
-                    </button>
-                    <button
-                      onClick={() => handleRemoveKeyframe(idx)}
-                      className="p-1 text-zinc-500 hover:text-red-400 transition-colors"
-                      title="Delete Keyframe"
-                    >
-                      <X className="w-3 h-3" />
-                    </button>
-                  </div>
-                </div>
-
-                {/* Change Phase Dropdown */}
-                <div className="flex flex-col gap-0.5">
-                  <span className="text-[8px] font-mono text-zinc-400 uppercase">Assigned Phase:</span>
-                  <select
-                    value={frame.detectedPhase}
-                    onChange={(e) => handleUpdateKeyframePhase(idx, e.target.value)}
-                    className="bg-zinc-950 text-amber-300 font-extrabold text-[10.5px] px-2 py-1 rounded-lg border border-zinc-800 focus:border-amber-500 outline-none uppercase w-full cursor-pointer"
-                  >
-                    {(sportRule.phases && sportRule.phases.length > 0 ? sportRule.phases : ['Approach', 'Setup', 'Contact / Strike', 'Release', 'Follow-Through']).map((p) => (
-                      <option key={p} value={p} className="bg-zinc-900 text-white">
-                        {p}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-
-                <div className="flex items-center justify-between text-[9px] text-zinc-400 border-t border-zinc-850 pt-1">
-                  <span>Safety: <strong className="text-yellow-400">{frame.kneeSafetyScore || 95}%</strong></span>
-                  <span>Symmetry: <strong className="text-emerald-400">{frame.symmetryScore || 92}%</strong></span>
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
       </div>
 
       {/* Main Full-Width Analysis Report */}
@@ -1939,12 +1879,9 @@ export const AnalysisReportPage: React.FC<AnalysisReportPageProps> = ({
             <div ref={tabContainerRef} className="flex items-center flex-nowrap gap-2 overflow-x-auto no-scrollbar w-full">
                     {[
                       { id: 'overview', label: `📋 ${assignedAthleteName || 'Athlete'}'s Action Report` },
-                      { id: 'smash', label: '🥊 Smash Form Flaws' },
-                      { id: 'cannon', label: '🎯 Launch Cannon' },
-                      { id: 'reflex', label: '🕹️ Reflex & Release' },
-                      { id: 'game', label: '🎮 Biomechanical Arena' },
-                      { id: 'drills', label: '⚡ Hero Quests' },
-                      { id: 'trading_card', label: '✨ 3D Card Maker' },
+                      { id: 'game', label: '🛡️ Hero Mastery Trials' },
+                      { id: 'drills', label: '⚡ Training Quests' },
+                      { id: 'trading_card', label: '✨ 3D Trophy Card' },
                       { id: 'notes', label: '📝 Coach Tips' }
                     ].map((tab) => (
                       <button
@@ -2558,143 +2495,6 @@ export const AnalysisReportPage: React.FC<AnalysisReportPageProps> = ({
                 </div>
               )}
 
-              {/* INTERACTIVE TELEMETRY CALIBRATION STUDIO */}
-              <div className="bg-gradient-to-br from-zinc-900 to-zinc-950 border border-zinc-800 p-5 rounded-3xl mt-4 flex flex-col gap-5 shadow-2xl relative overflow-hidden select-none">
-                <div className="absolute top-0 right-0 w-32 h-32 bg-red-600/5 rounded-full blur-2xl pointer-events-none" />
-                
-                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-zinc-800 pb-3">
-                  <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 rounded-2xl bg-red-600/10 border border-red-500/20 text-red-500 flex items-center justify-center text-lg shrink-0">
-                      ⚙️
-                    </div>
-                    <div>
-                      <h3 className="text-sm font-black uppercase text-white tracking-wider leading-none">
-                        Interactive Telemetry Calibration Studio
-                      </h3>
-                      <span className="text-[10px] text-zinc-500 font-mono mt-1.5 block">
-                        DETERMINISTIC SIMULATION & REAL-TIME PERFORMANCE MODELLING
-                      </span>
-                    </div>
-                  </div>
-
-                  {(customSymmetry !== null || customKneeSafety !== null || customVelocity !== null || customTorque !== null) && (
-                    <button
-                      onClick={() => {
-                        setCustomSymmetry(null);
-                        setCustomKneeSafety(null);
-                        setCustomVelocity(null);
-                        setCustomTorque(null);
-                      }}
-                      className="px-4 py-2 bg-red-600/10 hover:bg-red-600/20 border border-red-500/30 text-red-400 rounded-xl text-[10px] font-bold font-mono uppercase tracking-wider transition-all"
-                    >
-                      Reset to Video Capture
-                    </button>
-                  )}
-                </div>
-
-                {/* Explanation text */}
-                <div className="bg-zinc-950/60 border border-zinc-850 p-4 rounded-xl text-[11px] text-zinc-400 leading-relaxed font-sans flex items-start gap-3">
-                  <div className="text-lg leading-none shrink-0">ℹ️</div>
-                  <div className="flex-1">
-                    <strong className="text-zinc-200">What is missing without Generative AI?</strong> Without server-side LLM processing, the system relies on high-speed, deterministic mathematical computer-vision models to track landmarks. It misses unstructured natural language contextualization, baggy-clothing error offsets, and ambient noise filtering.
-                    <div className="mt-2 text-[10px] text-amber-500 font-mono font-bold uppercase tracking-wider">
-                      🔄 How to Update Regularly: Adjust the sliders below to simulate different technical levels and instantly recalculate form scores, radar metrics, and practice quests.
-                    </div>
-                  </div>
-                </div>
-
-                {/* Control sliders grid */}
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-5 mt-1">
-                  {/* Slider 1: Symmetry */}
-                  <div className="flex flex-col gap-2 bg-zinc-950/40 p-3.5 rounded-xl border border-zinc-850">
-                    <div className="flex items-center justify-between text-[11px] font-mono">
-                      <span className="text-zinc-400 font-bold uppercase">Bilateral Symmetry</span>
-                      <span className="text-emerald-400 font-extrabold">{avgSymmetry}%</span>
-                    </div>
-                    <input
-                      type="range"
-                      min={10}
-                      max={100}
-                      step={1}
-                      value={avgSymmetry}
-                      onChange={(e) => setCustomSymmetry(parseInt(e.target.value))}
-                      className="w-full accent-emerald-500 bg-zinc-900 h-1.5 rounded-lg cursor-pointer"
-                    />
-                    <div className="flex items-center justify-between text-[9px] text-zinc-600 font-mono">
-                      <span>10% ASYMMETRICAL</span>
-                      <span>100% PERFECTLY BALANCED</span>
-                    </div>
-                  </div>
-
-                  {/* Slider 2: Knee Safety / Alignment */}
-                  <div className="flex flex-col gap-2 bg-zinc-950/40 p-3.5 rounded-xl border border-zinc-850">
-                    <div className="flex items-center justify-between text-[11px] font-mono">
-                      <span className="text-zinc-400 font-bold uppercase">Knee Safety & Posture Alignment</span>
-                      <span className="text-yellow-400 font-extrabold">{avgKneeSafety}%</span>
-                    </div>
-                    <input
-                      type="range"
-                      min={10}
-                      max={100}
-                      step={1}
-                      value={avgKneeSafety}
-                      onChange={(e) => setCustomKneeSafety(parseInt(e.target.value))}
-                      className="w-full accent-yellow-500 bg-zinc-900 h-1.5 rounded-lg cursor-pointer"
-                    />
-                    <div className="flex items-center justify-between text-[9px] text-zinc-600 font-mono">
-                      <span>CRITICAL COLLAPSE</span>
-                      <span>GOLDEN STANDARD</span>
-                    </div>
-                  </div>
-
-                  {/* Slider 3: Velocity */}
-                  <div className="flex flex-col gap-2 bg-zinc-950/40 p-3.5 rounded-xl border border-zinc-850">
-                    <div className="flex items-center justify-between text-[11px] font-mono">
-                      <span className="text-zinc-400 font-bold uppercase">Angular Velocity Override</span>
-                      <span className="text-emerald-400 font-extrabold">
-                        {customVelocity !== null ? `${customVelocity}°/s` : 'Auto (Video Native)'}
-                      </span>
-                    </div>
-                    <input
-                      type="range"
-                      min={50}
-                      max={600}
-                      step={10}
-                      value={customVelocity !== null ? customVelocity : 180}
-                      onChange={(e) => setCustomVelocity(parseInt(e.target.value))}
-                      className="w-full accent-emerald-500 bg-zinc-900 h-1.5 rounded-lg cursor-pointer"
-                    />
-                    <div className="flex items-center justify-between text-[9px] text-zinc-600 font-mono">
-                      <span>50°/s SLOW CONTROL</span>
-                      <span>600°/s MAX EXPLOSIVE POWER</span>
-                    </div>
-                  </div>
-
-                  {/* Slider 4: Torque */}
-                  <div className="flex flex-col gap-2 bg-zinc-950/40 p-3.5 rounded-xl border border-zinc-850">
-                    <div className="flex items-center justify-between text-[11px] font-mono">
-                      <span className="text-zinc-400 font-bold uppercase">Biomechanical Torque Override</span>
-                      <span className="text-amber-400 font-extrabold">
-                        {customTorque !== null ? `${customTorque} N·m` : 'Auto (Video Native)'}
-                      </span>
-                    </div>
-                    <input
-                      type="range"
-                      min={1}
-                      max={40}
-                      step={0.5}
-                      value={customTorque !== null ? customTorque : 6.5}
-                      onChange={(e) => setCustomTorque(parseFloat(e.target.value))}
-                      className="w-full accent-amber-500 bg-zinc-900 h-1.5 rounded-lg cursor-pointer"
-                    />
-                    <div className="flex items-center justify-between text-[9px] text-zinc-600 font-mono">
-                      <span>1.0 N·m LOW CONTACT FORCE</span>
-                      <span>40.0 N·m IMPACT OVERLOAD</span>
-                    </div>
-                  </div>
-                </div>
-              </div>
-
             </div>
           )}
 
@@ -3167,42 +2967,12 @@ export const AnalysisReportPage: React.FC<AnalysisReportPageProps> = ({
             <BiomechanicalGameArena
               sportRule={sportRule}
               keyframeList={safeKeyframeList}
+              aiReport={aiReport}
+              dynamicMetrics={dynamicMetrics}
+              sequenceComparison={sequenceComparison}
               viewMode={viewMode}
               onApplyDrill={(drillName) => {
                 setActiveTab('drills');
-              }}
-            />
-          )}
-
-          {/* TAB 3.5: REFLEX & RELEASE TIMING GAME */}
-          {activeTab === 'reflex' && (
-            <ReflexTimingGame
-              sportRule={sportRule}
-              athleteName={assignedAthleteName || 'Athlete'}
-              onEarnXp={(amt) => {
-                setQuestXpEarned((prev) => prev + amt);
-              }}
-            />
-          )}
-
-          {/* TAB 3.6: RAPID FORM FLAW SMASH GAME */}
-          {activeTab === 'smash' && (
-            <FormFlawSmashGame
-              sportRule={sportRule}
-              athleteName={assignedAthleteName || 'Athlete'}
-              onEarnXp={(amt) => {
-                setQuestXpEarned((prev) => prev + amt);
-              }}
-            />
-          )}
-
-          {/* TAB 3.7: LAUNCH TRAJECTORY TARGET CANNON */}
-          {activeTab === 'cannon' && (
-            <LaunchTrajectoryGame
-              sportRule={sportRule}
-              athleteName={assignedAthleteName || 'Athlete'}
-              onEarnXp={(amt) => {
-                setQuestXpEarned((prev) => prev + amt);
               }}
             />
           )}

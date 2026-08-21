@@ -155,13 +155,13 @@ export const Header: React.FC<HeaderProps> = ({
             </div>
 
             {/* Mode Selector & Control Options */}
-            <div className="flex flex-wrap items-center gap-2">
+            <div className="flex items-center gap-2 overflow-x-auto no-scrollbar py-0.5 max-w-full">
               
               {/* User Login/Profile Button */}
               {currentUser ? (
                 <button
                   onClick={() => setIsProfileModalOpen(true)}
-                  className="bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 hover:border-yellow-500/30 text-zinc-200 font-bold text-xs px-3 py-2 sm:px-3.5 sm:py-2 rounded-xl flex items-center gap-2 transition-all shadow-md cursor-pointer"
+                  className="bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 hover:border-yellow-500/30 text-zinc-200 font-bold text-xs px-3 py-2 rounded-xl flex items-center gap-2 transition-all shadow-md cursor-pointer shrink-0 min-h-[40px]"
                   title="Configure athlete profile & view subscription"
                 >
                   <div className="w-5 h-5 rounded-lg bg-zinc-800 text-base flex items-center justify-center">
@@ -173,7 +173,7 @@ export const Header: React.FC<HeaderProps> = ({
               ) : (
                 <button
                   onClick={onOpenAuth}
-                  className="bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 text-zinc-200 font-bold text-xs px-3 py-2 rounded-xl flex items-center gap-1.5 transition-all cursor-pointer"
+                  className="bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 text-zinc-200 font-bold text-xs px-3 py-2 rounded-xl flex items-center gap-1.5 transition-all cursor-pointer shrink-0 min-h-[40px]"
                 >
                   <LogIn className="w-3.5 h-3.5 text-amber-400" />
                   <span>Sign In</span>
@@ -183,7 +183,7 @@ export const Header: React.FC<HeaderProps> = ({
               {/* Saved Reports Library Button */}
               <button
                 onClick={onOpenDashboard}
-                className="bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 text-zinc-300 font-bold text-xs px-2.5 py-1.5 sm:px-3 sm:py-1.5 rounded-xl flex items-center gap-1.5 transition-all"
+                className="bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 text-zinc-300 font-bold text-xs px-3 py-2 rounded-xl flex items-center gap-1.5 transition-all shrink-0 min-h-[40px]"
                 title="Historical Performance Dashboard"
               >
                 <TrendingUp className="w-3.5 h-3.5 text-emerald-400" />
@@ -192,31 +192,31 @@ export const Header: React.FC<HeaderProps> = ({
 
               <button
                 onClick={onOpenSavedReports}
-                className="bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 text-zinc-300 font-bold text-xs px-2.5 py-1.5 sm:px-3 sm:py-1.5 rounded-xl flex items-center gap-1.5 transition-all"
+                className="bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 text-zinc-300 font-bold text-xs px-3 py-2 rounded-xl flex items-center gap-1.5 transition-all shrink-0 min-h-[40px]"
                 title="Library of Imported & Saved Biometric Reports"
               >
                 <BookOpen className="w-3.5 h-3.5 text-amber-400" />
                 <span className="hidden sm:inline">Report Library</span>
-                <span className="sm:hidden text-[10px]">Library</span>
+                <span className="sm:hidden text-xs">Reports</span>
               </button>
 
               <button
                 onClick={onOpenCabinet}
-                className="bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 text-zinc-300 font-bold text-xs px-2.5 py-1.5 sm:px-3 sm:py-1.5 rounded-xl flex items-center gap-1.5 transition-all"
+                className="bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 text-zinc-300 font-bold text-xs px-3 py-2 rounded-xl flex items-center gap-1.5 transition-all shrink-0 min-h-[40px]"
                 title="Trophy Cabinet"
               >
                 <Trophy className="w-3.5 h-3.5 text-red-500" />
                 <span className="hidden sm:inline">Trophy Cabinet</span>
-                <span className="sm:hidden text-[10px]">Cabinet</span>
+                <span className="sm:hidden text-xs">Trophies</span>
               </button>
 
               <label
-                className="bg-zinc-900 hover:bg-zinc-800 border border-amber-500/30 hover:border-amber-400 text-amber-300 font-extrabold text-xs px-2.5 py-1.5 sm:px-3 sm:py-1.5 rounded-xl flex items-center gap-1.5 transition-all cursor-pointer"
+                className="bg-zinc-900 hover:bg-zinc-800 border border-amber-500/30 hover:border-amber-400 text-amber-300 font-extrabold text-xs px-3 py-2 rounded-xl flex items-center gap-1.5 transition-all cursor-pointer shrink-0 min-h-[40px]"
                 title="Open/Import an exported .klutchh report file stored on your device or Google Drive"
               >
                 <FolderOpen className="w-3.5 h-3.5 text-amber-400" />
-                <span className="hidden sm:inline">Open .klutchh Report</span>
-                <span className="sm:hidden text-[10px]">Open .klutchh</span>
+                <span className="hidden sm:inline">Open .klutchh</span>
+                <span className="sm:hidden text-xs">Open File</span>
                 <input
                   type="file"
                   accept=".klutchh,.json"
@@ -242,11 +242,11 @@ export const Header: React.FC<HeaderProps> = ({
 
               {/* Monthly Analyses Used Badge */}
               <div 
-                className="hidden sm:flex items-center bg-zinc-900 border border-zinc-800 text-zinc-300 text-xs px-3 py-1.5 rounded-xl font-bold gap-1.5" 
+                className="hidden md:flex items-center bg-zinc-900 border border-zinc-800 text-zinc-300 text-xs px-3 py-2 rounded-xl font-bold gap-1.5 shrink-0 min-h-[40px]" 
                 title={`Accounts receive 10 free video analyses per month (${analysisCount} used so far)`}
               >
                 <Activity className="w-3.5 h-3.5 text-red-500" />
-                <span>Analyses Used:</span>
+                <span>Analyses:</span>
                 <span className={`font-mono font-black ${analysisCount >= maxAnalyses ? 'text-red-400' : 'text-amber-400'}`}>
                   {analysisCount}/{maxAnalyses} Free
                 </span>
@@ -254,34 +254,36 @@ export const Header: React.FC<HeaderProps> = ({
 
               {/* FPS Calibration Selector */}
               <div
-                className="flex items-center bg-zinc-900 border border-zinc-800 rounded-xl px-2.5 py-1 gap-1 text-xs font-bold"
+                className="flex items-center bg-zinc-900 border border-zinc-800 rounded-xl px-2.5 py-1.5 gap-1 text-xs font-bold shrink-0 min-h-[40px]"
                 title="FPS Calibration: Sets analysis sample rate & frame stepper resolution for high-speed or slo-mo clips"
               >
                 <Gauge className="w-3.5 h-3.5 text-red-500 shrink-0" />
-                <span className="text-[10px] text-zinc-400 uppercase font-mono hidden xl:inline">FPS Calib:</span>
+                <span className="text-[10px] text-zinc-400 uppercase font-mono hidden xl:inline">FPS:</span>
                 <select
                   value={calibratedFps}
                   onChange={(e) => onChangeCalibratedFps(Number(e.target.value))}
+                  aria-label="Calibrated video framerate (FPS)"
                   className="bg-zinc-900 text-red-400 font-extrabold focus:outline-none cursor-pointer text-xs"
                 >
-                  <option value={24}>24 FPS (Cinematic)</option>
-                  <option value={30}>30 FPS (Standard Sports)</option>
-                  <option value={60}>60 FPS (High-Speed Sport)</option>
-                  <option value={120}>120 FPS (High Slo-Mo)</option>
-                  <option value={240}>240 FPS (Ultra Slo-Mo)</option>
+                  <option value={24}>24 FPS</option>
+                  <option value={30}>30 FPS</option>
+                  <option value={60}>60 FPS</option>
+                  <option value={120}>120 FPS</option>
+                  <option value={240}>240 FPS</option>
                 </select>
               </div>
 
-              <div className="flex items-center bg-zinc-900 border border-zinc-800 rounded-xl px-2.5 py-1 gap-1 text-xs font-bold">
+              <div className="flex items-center bg-zinc-900 border border-zinc-800 rounded-xl px-2.5 py-1.5 gap-1 text-xs font-bold shrink-0 min-h-[40px]">
                 <Target className="w-3.5 h-3.5 text-amber-400 shrink-0" />
                 <select
                   value={skillLevel}
                   onChange={(e) => onChangeSkillLevel(e.target.value as SkillLevel)}
+                  aria-label="Target athlete skill level tier"
                   className="bg-zinc-900 text-amber-400 font-extrabold focus:outline-none cursor-pointer text-xs"
                 >
-                  <option value="grassroots">Grassroots Tier</option>
-                  <option value="academy">Academy Tier</option>
-                  <option value="elite_pro">Elite Pro Tier</option>
+                  <option value="grassroots">Grassroots</option>
+                  <option value="academy">Academy</option>
+                  <option value="elite_pro">Elite Pro</option>
                 </select>
               </div>
             </div>

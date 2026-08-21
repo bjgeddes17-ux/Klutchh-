@@ -151,86 +151,49 @@ export function drawPoseSkeleton(
   angles: Record<string, number> = {},
   sportRule?: SportRule,
   activePhase?: string,
-  shouldClear = true
+  shouldClear = true,
+  overlayMode: 'sleek' | 'minimal' | 'off' = 'sleek'
 ) {
   if (shouldClear) {
     ctx.clearRect(0, 0, width, height);
   }
 
+  if (overlayMode === 'off') {
+    return;
+  }
+
   if (!landmarks || landmarks.length === 0) return;
 
-  // HIGH-TECH BIOMECHANICAL VOLUMETRIC ATHLETE SILHOUETTE UNDERLAY
+  // HIGH-TECH BIOMECHANICAL VOLUMETRIC ATHLETE SILHOUETTE UNDERLAY (Ultra-subtle, non-obtrusive)
   const sportId = (sportRule?.id as string) || 'rugby';
-  const activeThemeColor = sportId === 'rugby' ? 'rgba(239, 68, 68, 0.3)' 
-                        : sportId === 'swim' ? 'rgba(56, 189, 248, 0.3)' 
-                        : 'rgba(245, 158, 11, 0.3)'; // fallback to gold
+  const activeThemeColor = sportId === 'rugby' ? 'rgba(239, 68, 68, 0.15)' 
+                        : sportId === 'swim' ? 'rgba(56, 189, 248, 0.15)' 
+                        : 'rgba(245, 158, 11, 0.15)'; // fallback to gold
 
   ctx.save();
   ctx.lineJoin = 'round';
   ctx.lineCap = 'round';
 
-  // 1. Draw stylized torso polygon frame (11=L Shoulder, 12=R Shoulder, 24=R Hip, 23=L Hip)
-  const p11 = landmarks[11];
-  const p12 = landmarks[12];
-  const p24 = landmarks[24];
-  const p23 = landmarks[23];
+  // Only draw very subtle faint torso frame if in sleek mode
+  if (overlayMode === 'sleek') {
+    const p11 = landmarks[11];
+    const p12 = landmarks[12];
+    const p24 = landmarks[24];
+    const p23 = landmarks[23];
 
-  if (p11 && p12 && p24 && p23) {
-    ctx.beginPath();
-    ctx.moveTo(p11.x * width, p11.y * height);
-    ctx.lineTo(p12.x * width, p12.y * height);
-    ctx.lineTo(p24.x * width, p24.y * height);
-    ctx.lineTo(p23.x * width, p23.y * height);
-    ctx.closePath();
-    ctx.fillStyle = activeThemeColor.replace('0.3', '0.08'); // light inner body volume
-    ctx.fill();
-    ctx.strokeStyle = activeThemeColor.replace('0.3', '0.15');
-    ctx.lineWidth = 3;
-    ctx.stroke();
-  }
-
-  // 2. Thick volumetric "athletic muscle tubes" for limbs
-  const limbPairs = [
-    [11, 13], [13, 15], // Left Arm
-    [12, 14], [14, 16], // Right Arm
-    [23, 25], [25, 27], // Left Leg
-    [24, 26], [26, 28], // Right Leg
-    [11, 23], [12, 24]  // Side torso lines
-  ];
-
-  limbPairs.forEach(([i1, i2]) => {
-    const pt1 = landmarks[i1];
-    const pt2 = landmarks[i2];
-    if (pt1 && pt2 && (pt1.visibility === undefined || pt1.visibility > 0.3)) {
+    if (p11 && p12 && p24 && p23) {
       ctx.beginPath();
-      ctx.moveTo(pt1.x * width, pt1.y * height);
-      ctx.lineTo(pt2.x * width, pt2.y * height);
-      ctx.strokeStyle = activeThemeColor.replace('0.3', '0.12');
-      ctx.lineWidth = 5; // Sleeker volumetric bone outline (reduced from 14 to 5)
+      ctx.moveTo(p11.x * width, p11.y * height);
+      ctx.lineTo(p12.x * width, p12.y * height);
+      ctx.lineTo(p24.x * width, p24.y * height);
+      ctx.lineTo(p23.x * width, p23.y * height);
+      ctx.closePath();
+      ctx.fillStyle = activeThemeColor.replace('0.15', '0.03'); // faint inner volume
+      ctx.fill();
+      ctx.strokeStyle = activeThemeColor.replace('0.15', '0.08');
+      ctx.lineWidth = 1;
       ctx.stroke();
-
-      // Additional center core glow
-      ctx.beginPath();
-      ctx.moveTo(pt1.x * width, pt1.y * height);
-      ctx.lineTo(pt2.x * width, pt2.y * height);
-      ctx.strokeStyle = '#ffffff';
-      ctx.globalAlpha = 0.04;
-      ctx.lineWidth = 3;
-      ctx.stroke();
-      ctx.globalAlpha = 1.0;
     }
-  });
-
-  // 3. Glowing helmet/head capsule (centered around Nose 0)
-  const nose = landmarks[0];
-  if (nose) {
-    ctx.beginPath();
-    ctx.arc(nose.x * width, nose.y * height - 8, 12, 0, 2 * Math.PI);
-    ctx.fillStyle = activeThemeColor.replace('0.3', '0.1');
-    ctx.fill();
-    ctx.strokeStyle = activeThemeColor.replace('0.3', '0.2');
-    ctx.lineWidth = 2;
-    ctx.stroke();
   }
 
   ctx.restore();
@@ -266,7 +229,7 @@ export function drawPoseSkeleton(
     }
   };
 
-  // 1. Draw Skeleton Connection Lines (2.5px width)
+  // 1. Draw Sleek Skeleton Connection Lines (1.5px width - crisp and thin)
   POSE_CONNECTIONS.forEach(({ points: [i1, i2] }) => {
     const pt1 = landmarks[i1];
     const pt2 = landmarks[i2];
@@ -281,13 +244,15 @@ export function drawPoseSkeleton(
       const lineStatus = statusPriority[s1] > statusPriority[s2] ? s1 : s2;
 
       ctx.strokeStyle = getColorForStatus(lineStatus);
-      ctx.lineWidth = 2.5;
+      ctx.lineWidth = 1.5;
+      ctx.globalAlpha = 0.85;
       ctx.lineCap = 'round';
       ctx.stroke();
+      ctx.globalAlpha = 1.0;
     }
   });
 
-  // 2. Draw Keypoint Joint Dots & Target Rings
+  // 2. Draw Keypoint Joint Dots (Small micro-dots: 2.2px)
   landmarks.forEach((pt, idx) => {
     if (pt && (pt.visibility === undefined || pt.visibility > 0.35)) {
       const cx = pt.x * width;
@@ -297,32 +262,32 @@ export function drawPoseSkeleton(
       const color = getColorForStatus(jointStatus);
 
       if (jointStatus === 'error' || jointStatus === 'warning') {
-        // Glowing target ring for warning/error joints
+        // Delicate micro target ring for warning/error joints
         ctx.beginPath();
-        ctx.arc(cx, cy, jointStatus === 'error' ? 9 : 7, 0, 2 * Math.PI);
+        ctx.arc(cx, cy, jointStatus === 'error' ? 5.5 : 4.5, 0, 2 * Math.PI);
         ctx.strokeStyle = color;
-        ctx.lineWidth = 1.5;
+        ctx.lineWidth = 1;
         ctx.stroke();
 
         ctx.beginPath();
-        ctx.arc(cx, cy, jointStatus === 'error' ? 4 : 3.5, 0, 2 * Math.PI);
+        ctx.arc(cx, cy, 2.5, 0, 2 * Math.PI);
         ctx.fillStyle = color;
         ctx.fill();
       } else {
-        // Solid dot for optimal / good joints
+        // Solid micro-dot for optimal / good joints
         ctx.beginPath();
-        ctx.arc(cx, cy, 3.5, 0, 2 * Math.PI);
+        ctx.arc(cx, cy, 2.2, 0, 2 * Math.PI);
         ctx.fillStyle = color;
         ctx.fill();
 
-        ctx.lineWidth = 1;
-        ctx.strokeStyle = 'rgba(0,0,0,0.4)';
+        ctx.lineWidth = 0.5;
+        ctx.strokeStyle = 'rgba(0,0,0,0.5)';
         ctx.stroke();
       }
     }
   });
 
-  // 3. Draw Angle Arcs & Biometric Labels (Compact, non-intrusive micro-HUD badges)
+  // 3. Draw Angle Arcs & Biometric Labels (Ultra-compact, delicate micro-labels out of the way)
   if (sportRule && sportRule.jointRules) {
     // Prioritize active phase rules or flagged deviations
     let visibleRules = sportRule.jointRules.filter((rule) => {
@@ -332,15 +297,16 @@ export function drawPoseSkeleton(
       return isRulePhase || isFlagged;
     });
 
-    // Limit to at most 2 key active angle badges at once to prevent cluttering the athlete
-    if (visibleRules.length > 2) {
-      // Sort so errors and warnings come first
+    // In minimal mode show at most 1 primary angle; in sleek mode show at most 2 small micro-angles
+    const maxVisibleAngles = overlayMode === 'minimal' ? 1 : 2;
+
+    if (visibleRules.length > maxVisibleAngles) {
       visibleRules.sort((a, b) => {
         const sA = statusPriority[ruleResults[a.id] || 'optimal'];
         const sB = statusPriority[ruleResults[b.id] || 'optimal'];
         return sB - sA;
       });
-      visibleRules = visibleRules.slice(0, 2);
+      visibleRules = visibleRules.slice(0, maxVisibleAngles);
     }
 
     visibleRules.forEach((rule) => {
@@ -356,54 +322,54 @@ export function drawPoseSkeleton(
         const status = ruleResults[rule.id] || 'optimal';
         const statusColor = getColorForStatus(status);
 
-        // Compact Arc (radius 12px instead of 20px)
+        // Micro-Arc (radius 7px, delicate 1px stroke)
         ctx.beginPath();
         const startAngle = Math.atan2((p1.y - vertex.y) * height, (p1.x - vertex.x) * width);
         const endAngle = Math.atan2((p3.y - vertex.y) * height, (p3.x - vertex.x) * width);
-        ctx.arc(vx, vy, 12, startAngle, endAngle);
+        ctx.arc(vx, vy, 7, startAngle, endAngle);
         ctx.strokeStyle = statusColor;
-        ctx.lineWidth = 1.5;
+        ctx.lineWidth = 1;
         ctx.stroke();
 
-        // Generate clean, short label (e.g. "Knee: 142°", "Elbow: 98°")
+        // Short compact joint name
         let shortJoint = 'Joint';
         const nameLower = rule.name.toLowerCase();
         if (nameLower.includes('knee')) shortJoint = 'Knee';
         else if (nameLower.includes('elbow')) shortJoint = 'Elbow';
         else if (nameLower.includes('hip') || nameLower.includes('hinge')) shortJoint = 'Hip';
-        else if (nameLower.includes('shoulder')) shortJoint = 'Shoulder';
+        else if (nameLower.includes('shoulder')) shortJoint = 'Shldr';
         else if (nameLower.includes('ankle') || nameLower.includes('plant')) shortJoint = 'Ankle';
         else if (nameLower.includes('spine') || nameLower.includes('torso') || nameLower.includes('back')) shortJoint = 'Spine';
         else if (nameLower.includes('wrist')) shortJoint = 'Wrist';
         else {
-          shortJoint = rule.name.split(' ')[0] || 'Angle';
+          shortJoint = rule.name.split(' ')[0] || 'Ang';
         }
 
         const labelText = `${shortJoint} ${Math.round(angleVal)}°`;
-        ctx.font = 'bold 9px Inter, -apple-system, system-ui, sans-serif';
+        ctx.font = 'bold 7.5px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
         const textWidth = ctx.measureText(labelText).width;
 
-        const pillX = vx + 6;
-        const pillY = vy - 8;
+        const pillX = vx + 5;
+        const pillY = vy - 6;
 
-        // Ultra-compact background pill (height 14px, minimal width)
-        ctx.fillStyle = 'rgba(9, 9, 11, 0.88)';
+        // Ultra-compact, non-intrusive micro pill (height 10.5px)
+        ctx.fillStyle = 'rgba(9, 9, 11, 0.75)';
         ctx.beginPath();
-        ctx.roundRect(pillX - 3, pillY - 9, textWidth + 12, 13, 3);
+        ctx.roundRect(pillX - 2, pillY - 7.5, textWidth + 8, 10.5, 2.5);
         ctx.fill();
         ctx.strokeStyle = statusColor;
-        ctx.lineWidth = 0.8;
+        ctx.lineWidth = 0.6;
         ctx.stroke();
 
-        // Mini indicator dot
+        // Mini status dot (1.2px)
         ctx.beginPath();
-        ctx.arc(pillX + 1.5, pillY - 2.5, 2, 0, 2 * Math.PI);
+        ctx.arc(pillX + 1.2, pillY - 2.2, 1.2, 0, 2 * Math.PI);
         ctx.fillStyle = statusColor;
         ctx.fill();
 
-        // Clean crisp text
+        // Crisp readable micro text
         ctx.fillStyle = '#ffffff';
-        ctx.fillText(labelText, pillX + 6.5, pillY);
+        ctx.fillText(labelText, pillX + 5, pillY);
       }
     });
   }

@@ -4,7 +4,6 @@ import { SportId, AthleteCategory, SkillLevel, FrameAnalysis, UserAccount, Saved
 import { Header } from './components/Header';
 import { VideoPosePlayer } from './components/VideoPosePlayer';
 import { BiometricPanel } from './components/BiometricPanel';
-import { KeyframeTimeline } from './components/KeyframeTimeline';
 import { UnifiedSetupCard } from './components/UnifiedSetupCard';
 import { AuthModal } from './components/AuthModal';
 import { SavedReportsModal } from './components/SavedReportsModal';

@@ -1,5 +1,5 @@
-import React, { useState, useEffect } from 'react';
-import { SportRule, FrameAnalysis } from '../types';
+import React, { useState, useEffect, useRef } from 'react';
+import { SportRule, FrameAnalysis, AICoachingReport } from '../types';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
   Gamepad2, 
@@ -23,7 +23,13 @@ import {
   BookOpen,
   ArrowRight,
   TrendingUp,
-  AlertTriangle
+  AlertTriangle,
+  Play,
+  Volume2,
+  VolumeX,
+  Footprints,
+  Timer,
+  Check
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 
@@ -35,6 +41,18 @@ import chestOverBallImg from '../assets/images/chest_over_ball_drill_17868216582
 interface Props {
   sportRule: SportRule;
   keyframeList: FrameAnalysis[];
+  aiReport?: AICoachingReport | null;
+  dynamicMetrics?: {
+    peakAngularVelocity?: number;
+    estimatedPeakTorque?: number;
+    explosivenessScore?: number;
+  } | null;
+  sequenceComparison?: {
+    ideal: string[];
+    actual: string[];
+    isCorrect: boolean;
+    feedback: string;
+  } | null;
   onApplyDrill?: (drillName: string) => void;
   viewMode?: 'student' | 'coach';
 }
@@ -42,13 +60,89 @@ interface Props {
 export const BiomechanicalGameArena: React.FC<Props> = ({
   sportRule,
   keyframeList,
+  aiReport,
+  dynamicMetrics,
+  sequenceComparison,
   onApplyDrill,
   viewMode = 'coach'
 }) => {
-  const [gameMode, setGameMode] = useState<'pose_matcher' | 'kinetic_puzzle' | 'match_scenarios' | 'xray_simulator' | 'trivia'>('pose_matcher');
-  const [xp, setXp] = useState(420);
+  const [gameMode, setGameMode] = useState<'strike_sim' | 'active_reps' | 'kinetic_wave' | 'flaw_detective' | 'match_scenarios'>('strike_sim');
+  const [xp, setXp] = useState(450);
   const [level, setLevel] = useState(2);
   const [achievements, setAchievements] = useState<string[]>(['Kinetic Foundation Started']);
+  const [soundEnabled, setSoundEnabled] = useState(true);
+
+  // Synthesized sound effects engine
+  const playSound = (type: 'beep' | 'success' | 'strike' | 'power' | 'tick') => {
+    if (!soundEnabled || typeof window === 'undefined') return;
+    try {
+      const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
+      if (!AudioCtx) return;
+      const ctx = new AudioCtx();
+      if (ctx.state === 'suspended') ctx.resume();
+
+      if (type === 'tick') {
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(440, ctx.currentTime);
+        gain.gain.setValueAtTime(0.1, ctx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.05);
+        osc.start();
+        osc.stop(ctx.currentTime + 0.06);
+      } else if (type === 'beep') {
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(587.33, ctx.currentTime);
+        gain.gain.setValueAtTime(0.15, ctx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.15);
+        osc.start();
+        osc.stop(ctx.currentTime + 0.16);
+      } else if (type === 'strike') {
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+        osc.type = 'triangle';
+        osc.frequency.setValueAtTime(150, ctx.currentTime);
+        osc.frequency.exponentialRampToValueAtTime(40, ctx.currentTime + 0.25);
+        gain.gain.setValueAtTime(0.3, ctx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.25);
+        osc.start();
+        osc.stop(ctx.currentTime + 0.26);
+      } else if (type === 'power') {
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+        osc.type = 'sawtooth';
+        osc.frequency.setValueAtTime(220, ctx.currentTime);
+        osc.frequency.exponentialRampToValueAtTime(880, ctx.currentTime + 0.35);
+        gain.gain.setValueAtTime(0.2, ctx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.35);
+        osc.start();
+        osc.stop(ctx.currentTime + 0.36);
+      } else if (type === 'success') {
+        [523.25, 659.25, 783.99, 1046.50].forEach((freq, idx) => {
+          const osc = ctx.createOscillator();
+          const gain = ctx.createGain();
+          osc.connect(gain);
+          gain.connect(ctx.destination);
+          osc.type = 'triangle';
+          osc.frequency.setValueAtTime(freq, ctx.currentTime + idx * 0.08);
+          gain.gain.setValueAtTime(0.15, ctx.currentTime + idx * 0.08);
+          gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + idx * 0.08 + 0.2);
+          osc.start(ctx.currentTime + idx * 0.08);
+          osc.stop(ctx.currentTime + idx * 0.08 + 0.22);
+        });
+      }
+    } catch (e) {}
+  };
 
   const sportId = sportRule.id || 'rugby';
 
@@ -98,16 +192,18 @@ export const BiomechanicalGameArena: React.FC<Props> = ({
 
   const initialJoints = defaultJoints[sportId as keyof typeof defaultJoints] || defaultJoints.rugby;
   const [joints, setJoints] = useState(initialJoints);
-  const [poseMastered, setPoseMastered] = useState(false);
+  const [isStriking, setIsStriking] = useState(false);
+  const [strikeFeedback, setStrikeFeedback] = useState<string | null>(null);
 
   useEffect(() => {
     const list = defaultJoints[sportId as keyof typeof defaultJoints] || defaultJoints.rugby;
     setJoints(list);
-    setPoseMastered(false);
+    setStrikeFeedback(null);
   }, [sportId]);
 
   const handleSliderChange = (id: string, val: number) => {
     setJoints(prev => prev.map(j => j.id === id ? { ...j, current: val } : j));
+    setStrikeFeedback(null);
   };
 
   // Live physics engine metrics
@@ -118,20 +214,126 @@ export const BiomechanicalGameArena: React.FC<Props> = ({
   const exitVelocityMph = Math.round(42 + (matchPercentage * 0.46));
   const kineticEfficiency = Math.round(55 + (matchPercentage * 0.45));
 
-  useEffect(() => {
-    if (matchPercentage === 100 && !poseMastered) {
-      setPoseMastered(true);
-      setXp(prev => prev + 250);
-      confetti({ particleCount: 80, spread: 70, origin: { y: 0.6 } });
-      if (!achievements.includes('Gold Standard Biomechanics Master')) {
-        setAchievements(prev => [...prev, 'Gold Standard Biomechanics Master']);
+  const handleExecuteStrike = () => {
+    setIsStriking(true);
+    playSound('power');
+    
+    setTimeout(() => {
+      playSound('strike');
+      if (matchPercentage === 100) {
+        playSound('success');
+        confetti({ particleCount: 80, spread: 70, origin: { y: 0.6 } });
+        setStrikeFeedback('🔥 PERFECT GOLDEN STRIKE! 100% Kinetic Energy Transfer. Zero energy leak, maximum injury protection!');
+        setXp(prev => prev + 150);
+      } else if (matchPercentage >= 66) {
+        setStrikeFeedback(`⚡ SOLID STRIKE (${powerWatts}W)! Good alignment, but fine-tune remaining joint angles to unlock maximum velocity.`);
+        setXp(prev => prev + 75);
+      } else {
+        setStrikeFeedback(`⚠️ ENERGY LEAK DETECTED (${powerWatts}W). Poor angle alignment created mechanical resistance and excessive joint shear.`);
       }
-    }
-  }, [matchPercentage, poseMastered, achievements]);
+      setIsStriking(false);
+    }, 450);
+  };
 
-  // --- MODE 2: KINETIC WHIP TIMING SIMULATOR ---
+  // --- MODE 2: ACTIVE 3-REP COACHING CHALLENGE (STAND UP & MOVE!) ---
+  const activePhysicalDrills: Record<string, { title: string; cue: string; why: string; targetPose: string }> = {
+    rugby: {
+      title: 'Low Tackle Spine Lock & Knee Dip',
+      cue: 'Stand up, drop hips 4 inches, hinge flat back, keep chin neutral & chest upright.',
+      why: 'Engages glute recoil while locking cervical spine safely before contact.',
+      targetPose: 'Flat spine hinge + 125° knee flexion'
+    },
+    soccer: {
+      title: 'Chest-Over-Ball Plant & Ankle Lock',
+      cue: 'Plant non-kicking foot 6 inches beside target, lean chest forward, point kicking toe down firmly.',
+      why: 'Directs strike momentum straight down through ball equator to prevent loft.',
+      targetPose: '85° chest lean + firm plantarflexion'
+    },
+    basketball: {
+      title: 'Pocket Set-Point & Gooseneck Follow-Through',
+      cue: 'Tuck elbow tight under eye level, dip knees smoothly, and finish with fingers curled down.',
+      why: 'Produces pure straight-line launch arc and 3-rps soft backspin.',
+      targetPose: '90° elbow pocket + relaxed wrist snap'
+    },
+    tennis: {
+      title: '90° Trophy Elbow & Coil Extension',
+      cue: 'Coil shoulders sideways to target, lift hitting elbow to shoulder level, drive up off toes.',
+      why: 'Maximizes racquet drop space and internal rotational velocity.',
+      targetPose: '90° trophy angle + full upward extension'
+    },
+    golf: {
+      title: 'Spine Tilt Lock & Pelvic Clear',
+      cue: 'Maintain spine forward angle through imaginary impact; rotate lead hip out of the way.',
+      why: 'Stabilizes swing radius for pure centered contact.',
+      targetPose: '35° spine tilt + open lead hip'
+    },
+    cricket: {
+      title: 'Braced Front Knee Post',
+      cue: 'Step forward firmly, lock front knee straight like a steel pillar, vault torso over top.',
+      why: 'Instantly converts horizontal run-up into vertical arm whip.',
+      targetPose: '175° braced lead knee'
+    },
+    netball: {
+      title: 'Soft Landing Cushion & High Release',
+      cue: 'Jump gently, land sinking both knees softly like springs, hold shooting arm tall.',
+      why: 'Dissipates 65% of ground impact force to protect knee ligaments.',
+      targetPose: '120° bilateral knee bend'
+    },
+    hockey: {
+      title: 'Low Turf Crouch & Flat Back Sweep',
+      cue: 'Drop into deep squat, keep back flat, slide hands through horizontal strike zone.',
+      why: 'Maximizes low center of gravity and stick contact area.',
+      targetPose: 'Deep knee bend + rigid spine'
+    }
+  };
+
+  const currentActiveDrill = activePhysicalDrills[sportId] || activePhysicalDrills.rugby;
+  const [repCount, setRepCount] = useState(0);
+  const [repState, setRepState] = useState<'idle' | 'countdown' | 'holding' | 'completed'>('idle');
+  const [timerSeconds, setTimerSeconds] = useState(3);
+
+  const startActiveRep = () => {
+    if (repCount >= 3) return;
+    setRepState('countdown');
+    setTimerSeconds(3);
+    playSound('tick');
+
+    const countdownTimer = setInterval(() => {
+      setTimerSeconds(prev => {
+        if (prev <= 1) {
+          clearInterval(countdownTimer);
+          setRepState('holding');
+          playSound('beep');
+          
+          setTimeout(() => {
+            setRepCount(rc => {
+              const next = rc + 1;
+              if (next >= 3) {
+                setRepState('completed');
+                playSound('success');
+                confetti({ particleCount: 90, spread: 80, origin: { y: 0.5 } });
+                setXp(x => x + 300);
+                if (!achievements.includes('Active Form Champion')) {
+                  setAchievements(a => [...a, 'Active Form Champion']);
+                }
+              } else {
+                setRepState('idle');
+                playSound('power');
+              }
+              return next;
+            });
+          }, 2500);
+          return 0;
+        }
+        playSound('tick');
+        return prev - 1;
+      });
+    }, 1000);
+  };
+
+  // --- MODE 3: KINETIC WHIP TIMING & FORCE WAVE ---
   const baseKineticSteps = [
-    { id: 'ground', name: '1. Ground Reaction & Foot Plant', idealIndex: 0, icon: '⚡', timingMs: 0, desc: 'Ground strike generates vertical ground reaction force (GRF = 2.5-3.5× BW)' },
+    { id: 'ground', name: '1. Ground Reaction & Plant', idealIndex: 0, icon: '⚡', timingMs: 0, desc: 'Ground strike generates vertical ground reaction force (GRF = 2.5-3.5× BW)' },
     { id: 'hips', name: '2. Pelvic Hip Rotation Drive', idealIndex: 1, icon: '🔄', timingMs: 65, desc: 'Hips rotate 400-600°/s, transferring linear momentum into angular momentum' },
     { id: 'torso', name: '3. Thoracic Core & Shoulder Coil', idealIndex: 2, icon: '🌀', timingMs: 140, desc: 'Torso stretch-shortening recoil multiplies torque through the kinetic chain' },
     { id: 'arms', name: '4. Upper Arm & Release Whip', idealIndex: 3, icon: '💥', timingMs: 210, desc: 'Extremities snap at peak terminal velocity for maximum exit speed' }
@@ -145,6 +347,7 @@ export const BiomechanicalGameArena: React.FC<Props> = ({
     return shuffled;
   });
   const [puzzleSolved, setPuzzleSolved] = useState(false);
+  const [waveActive, setWaveActive] = useState(false);
 
   const moveStep = (fromIdx: number, toIdx: number) => {
     if (toIdx < 0 || toIdx >= puzzleSteps.length) return;
@@ -152,11 +355,13 @@ export const BiomechanicalGameArena: React.FC<Props> = ({
     const item = updated.splice(fromIdx, 1)[0];
     updated.splice(toIdx, 0, item);
     setPuzzleSteps(updated);
+    playSound('tick');
 
     const isCorrect = updated.every((s, i) => s.idealIndex === i);
     if (isCorrect && !puzzleSolved) {
       setPuzzleSolved(true);
       setXp(prev => prev + 300);
+      playSound('success');
       confetti({ particleCount: 90, spread: 80, origin: { y: 0.5 } });
       if (!achievements.includes('Kinetic Whip Sequencer')) {
         setAchievements(prev => [...prev, 'Kinetic Whip Sequencer']);
@@ -166,7 +371,85 @@ export const BiomechanicalGameArena: React.FC<Props> = ({
 
   const isPuzzleCorrect = puzzleSteps.every((s, i) => s.idealIndex === i);
 
-  // --- MODE 3: REAL MATCH SCENARIO DECISION ENGINE ---
+  const handleTestKineticWave = () => {
+    setWaveActive(true);
+    playSound('power');
+    setTimeout(() => {
+      if (isPuzzleCorrect) {
+        playSound('success');
+        confetti({ particleCount: 60, spread: 60 });
+      } else {
+        playSound('strike');
+      }
+      setWaveActive(false);
+    }, 1200);
+  };
+
+  // --- MODE 4: FLAW DETECTIVE & FIXER ---
+  const flawItems = [
+    {
+      id: 'valgus',
+      name: 'Dynamic Knee Valgus (Inward Knee Cave)',
+      affectedJoint: 'Knee Joint',
+      risk: 'High ACL Shear & Patellofemoral Friction',
+      whyBreaks: 'Weak gluteus medius abductors allow femur to internally rotate under load.',
+      correctCue: 'Push knees outward over pinky toes during plant & landing (Activate Glute Medius).',
+      drillName: 'Banded Lateral Monster Walks'
+    },
+    {
+      id: 'spine_round',
+      name: 'Thoracolumbar Hyper-Flexion (Rounded Back)',
+      affectedJoint: 'Lumbar Spine',
+      risk: 'Vertebral Disc Herniation & Loss of Core Power Transfer',
+      whyBreaks: 'Bending from lower back rather than hinging through the posterior hip chain.',
+      correctCue: 'Hinge back at the hips with chest proud and spine flat like a tabletop.',
+      drillName: 'PVC Pipe 3-Point Spine Hinge'
+    },
+    {
+      id: 'arm_drop',
+      name: 'Early Lever Drop / Sagging Elbow',
+      affectedJoint: 'Shoulder & Elbow',
+      risk: 'Rotator Cuff Impingement & 30% Exit Speed Loss',
+      whyBreaks: 'Releasing arm early before trunk rotation finishes.',
+      correctCue: 'Hold high set-point at eye level; let hips pull the arm into release.',
+      drillName: '90-Degree Wall Set-Point Holds'
+    }
+  ];
+
+  // Dynamically merge athlete's real video analysis flaws if available
+  const dynamicFlawItems = React.useMemo(() => {
+    const list = [...flawItems];
+    if (aiReport?.criticalFlaws && aiReport.criticalFlaws.length > 0) {
+      aiReport.criticalFlaws.forEach((flaw, idx) => {
+        list.unshift({
+          id: `ai_flaw_${idx}`,
+          name: flaw.name || flaw.joint || 'Video Detected Biomechanical Fault',
+          affectedJoint: flaw.joint || 'Kinetic Joint',
+          risk: flaw.severity === 'critical' ? 'High Injury Strain & Power Disconnect' : 'Moderate Energy Leak',
+          whyBreaks: flaw.description || 'Movement diverged from the gold standard joint trajectory.',
+          correctCue: flaw.quickCue || flaw.correction || 'Align posture with gold standard target arc.',
+          drillName: flaw.suggestedDrill || 'Dynamic Alignment Reps'
+        });
+      });
+    }
+    return list;
+  }, [aiReport, flawItems]);
+
+  const [activeFlawIndex, setActiveFlawIndex] = useState(0);
+  const [flawFixed, setFlawFixed] = useState(false);
+  const currentFlaw = dynamicFlawItems[activeFlawIndex] || dynamicFlawItems[0];
+
+  const handleFixFlaw = () => {
+    setFlawFixed(true);
+    playSound('success');
+    confetti({ particleCount: 70, spread: 60, origin: { y: 0.6 } });
+    setXp(x => x + 200);
+    if (!achievements.includes('Flaw Detective Master')) {
+      setAchievements(a => [...a, 'Flaw Detective Master']);
+    }
+  };
+
+  // --- MODE 5: MATCH SCENARIOS ---
   const [scenarioIndex, setScenarioIndex] = useState(0);
   const [selectedScenarioChoice, setSelectedScenarioChoice] = useState<number | null>(null);
   const [scenarioFeedback, setScenarioFeedback] = useState<string | null>(null);
@@ -174,67 +457,40 @@ export const BiomechanicalGameArena: React.FC<Props> = ({
   const sportScenarios = [
     {
       title: 'Late 4th Quarter Fatigue: Knee Collapse & Power Loss',
-      situation: 'In minute 78, your legs are heavy. You need to deliver a high-velocity strike/pass under heavy defensive pressure, but your plant knee is caving inward (dynamic valgus) and you feel your core sag.',
+      situation: 'In minute 78, your legs are heavy. You need to deliver a high-velocity strike/pass under heavy pressure, but your plant knee is caving inward.',
       question: 'What is the biomechanically optimal adjustment to restore 100% power and protect your joints?',
       options: [
         {
           text: 'Push harder using only your shoulder and arms to compensate for tired legs.',
           isCorrect: false,
-          explanation: '❌ Arm compensation places extreme shear on rotator cuff and elbow tendons while reducing ball velocity by 30% due to disconnected kinetic chain.'
+          explanation: '❌ Arm compensation places extreme shear on rotator cuff and reduces velocity by 30% due to kinetic disconnect.'
         },
         {
           text: 'Widen plant foot stance slightly, cue external hip abduction (knees over toes), and hinge hips 15° deeper.',
           isCorrect: true,
-          explanation: '✅ Perfect! External hip torque activates gluteus medius, realigns the knee-ankle axis, and creates a wider base of support to generate maximal ground reaction forces.'
+          explanation: '✅ Perfect! External hip torque activates gluteus medius and creates a solid base of support for maximal ground reaction forces.'
         },
         {
           text: 'Jump high into the air during contact to avoid leg fatigue.',
           isCorrect: false,
-          explanation: '❌ Airborne strikes lose all ground reaction anchoring, resulting in weak contact and high risk of uncontrolled landing injury.'
+          explanation: '❌ Airborne strikes lose all ground reaction anchoring, resulting in weak contact.'
         }
       ]
     },
     {
       title: 'High Crosswind Trajectory Control',
       situation: 'A 25 mph gusting crosswind is pushing your ball offline. You need pinpoint trajectory with penetrating forward drive.',
-      question: 'How do you adjust your trunk and contact point to maintain a piercing, wind-resistant trajectory?',
+      question: 'How do you adjust your trunk and contact point to maintain a piercing trajectory?',
       options: [
         {
-          text: 'Increase forward chest hinge by 10-15° and keep the release/contact point directly under your sternum.',
+          text: 'Increase forward chest hinge by 10-15° and keep release point under your sternum.',
           isCorrect: true,
-          explanation: '✅ Excellent! Keeping the sternum forward over the ball drives a flatter launch angle with heavy forward compression, minimizing aerodynamic ballooning.'
+          explanation: '✅ Excellent! Keeping sternum forward over ball drives a flatter launch angle with heavy forward compression.'
         },
         {
           text: 'Lean backwards 20° to launch the ball as high as possible above the wind.',
           isCorrect: false,
-          explanation: '❌ High launch angles expose the ball to maximum wind resistance, completely killing distance and accuracy.'
-        },
-        {
-          text: 'Swing as slowly as possible to let the ball float gently.',
-          isCorrect: false,
-          explanation: '❌ Low velocity gives crosswind more time to divert the ball trajectory.'
-        }
-      ]
-    },
-    {
-      title: 'Absorbing Heavy Contact & Preventing Spinal Shear',
-      situation: 'You are entering heavy physical contact or rapid deceleration. How should your spine and pelvis be configured at impact?',
-      question: 'Which anatomical posture best disperses high collision impact without causing lower back injury?',
-      options: [
-        {
-          text: 'Keep spine completely upright and erect with straight legs.',
-          isCorrect: false,
-          explanation: '❌ Upright, straight-legged posture transmits 100% of collision force directly into lumbar vertebrae facet joints and cervical spine.'
-        },
-        {
-          text: 'Maintain a 30-40° hip hinge with braced abdominal cylinder (360° intra-abdominal pressure) and chin tucked neutral.',
-          isCorrect: true,
-          explanation: '✅ Flawless! Hip hinging transfers impact energy into large posterior chain muscles (glutes/hamstrings) while 360° core bracing protects the lumbar discs.'
-        },
-        {
-          text: 'Arch your lower back backward while looking up at the sky.',
-          isCorrect: false,
-          explanation: '❌ Lumbar hyperextension under contact risks severe facet joint jamming and disc herniation.'
+          explanation: '❌ High launch angles expose the ball to maximum wind resistance, killing distance and accuracy.'
         }
       ]
     }
@@ -247,148 +503,14 @@ export const BiomechanicalGameArena: React.FC<Props> = ({
     const chosen = currentScenario.options[choiceIdx];
     setScenarioFeedback(chosen.explanation);
     if (chosen.isCorrect) {
+      playSound('success');
       setXp(prev => prev + 150);
       confetti({ particleCount: 50, spread: 60, origin: { y: 0.7 } });
       if (!achievements.includes('Master Tactician')) {
         setAchievements(prev => [...prev, 'Master Tactician']);
       }
-    }
-  };
-
-  const nextScenario = () => {
-    setSelectedScenarioChoice(null);
-    setScenarioFeedback(null);
-    setScenarioIndex(prev => (prev + 1) % sportScenarios.length);
-  };
-
-  // --- MODE 4: FAULT & X-RAY SIMULATOR ---
-  const [activeFaultId, setActiveFaultId] = useState<string>('valgus');
-
-  const faultData: Record<string, {
-    title: string;
-    joint: string;
-    dangerLevel: 'CRITICAL' | 'HIGH' | 'MODERATE';
-    forceLeak: string;
-    injuryRisk: string;
-    anatomyDetail: string;
-    correctiveCue: string;
-    bestDrill: string;
-    drillImage: string;
-    biomechanicsFormula: string;
-  }> = {
-    valgus: {
-      title: 'Inward Knee Collapse (Dynamic Valgus)',
-      joint: 'Anterior Cruciate Ligament (ACL) & Lateral Meniscus',
-      dangerLevel: 'CRITICAL',
-      forceLeak: '-32% Vertical Spring & Deceleration Power',
-      injuryRisk: 'Severe ACL tear risk, patellofemoral cartilage erosion, and MCL strain.',
-      anatomyDetail: 'When the knee buckles inward relative to the hip-ankle vector, ground reaction forces create extreme valgus torque (τ = F × d), multiplying tensile strain on the ACL by up to 400%.',
-      correctiveCue: '"Land like a panther: knees wide tracking directly over 2nd & 3rd toes!"',
-      bestDrill: 'Banded Gluteus Medius Monster Walks & Drop Landing Freezes',
-      drillImage: monsterWalkImg,
-      biomechanicsFormula: 'τ_valgus = F_GRF × sin(θ_valgus) × L_femur'
-    },
-    spine_extension: {
-      title: 'Loss of Spine Hinge / Early Extension',
-      joint: 'Lumbar L4-L5 Vertebrae & Quadratus Lumborum',
-      dangerLevel: 'HIGH',
-      forceLeak: '-24% Rotational Torque & Contact Penetration',
-      injuryRisk: 'Lumbar facet joint impingement, disc herniation, and severe hamstring strain.',
-      anatomyDetail: 'Standing up prematurely flattens pelvic tilt, locking out the posterior chain and forcing the arms to generate disconnected force without core rotational support.',
-      correctiveCue: '"Hips back, flat table back, feel glutes loaded like a coiled spring!"',
-      bestDrill: 'Wall Glute-Contact Spine Hinge Holds (3s Pause)',
-      drillImage: spineHingeImg,
-      biomechanicsFormula: 'Torque_core = F_glute × d_pelvis'
-    },
-    dropped_elbow: {
-      title: 'Dropped Elbow / Low Release Pocket',
-      joint: 'Rotator Cuff (Supraspinatus) & Medial Ulnar Collateral Ligament (UCL)',
-      dangerLevel: 'HIGH',
-      forceLeak: '-28% Release Height & Arm Lever Whip',
-      injuryRisk: 'Medial elbow UCL tear (Tommy John syndrome) and subacromial shoulder impingement.',
-      anatomyDetail: 'When the elbow sags below shoulder level during arm acceleration, the forearm rotates early, creating massive valgus extension overload on the medial elbow.',
-      correctiveCue: '"Elbow above the eyebrow, reach for the stars at release!"',
-      bestDrill: '90° Trophy Pose Wall Alignment Holds',
-      drillImage: trophyPoseImg,
-      biomechanicsFormula: 'v_terminal = ω_shoulder × r_arm'
-    },
-    leaning_back: {
-      title: 'Trunk Hyperextension / Leaning Back at Impact',
-      joint: 'Hamstring Proximal Tendon & Thoracic Paraspinals',
-      dangerLevel: 'MODERATE',
-      forceLeak: '-35% Ball Compression Velocity',
-      injuryRisk: 'High hamstring strain and erratic skyward ball trajectory.',
-      anatomyDetail: 'Shifting the center of mass behind the contact zone reduces the horizontal impact impulse (J = ∫F dt), causing strikes to balloon with zero forward penetration.',
-      correctiveCue: '"Nose and sternum directly over the strike zone!"',
-      bestDrill: 'Weighted Chest-Over-Ball Impact Holds',
-      drillImage: chestOverBallImg,
-      biomechanicsFormula: 'Impulse (J) = Δp = m × (v_final - v_initial)'
-    }
-  };
-
-  const currentFault = faultData[activeFaultId] || faultData.valgus;
-
-  // --- MODE 5: BIOMECHANICS TRIVIA ---
-  const [triviaIndex, setTriviaIndex] = useState(0);
-  const [selectedTriviaOption, setSelectedTriviaOption] = useState<number | null>(null);
-  const [triviaScore, setTriviaScore] = useState(0);
-  const [triviaCompleted, setTriviaCompleted] = useState(false);
-
-  const triviaQuestions = [
-    {
-      question: `In elite sports biomechanics, what does "Proximal-to-Distal Sequencing" mean?`,
-      options: [
-        'Moving smaller arm muscles first to get them out of the way',
-        'Initiating force with large central muscles (legs/pelvis) and transferring energy outward into fast extremities',
-        'Rotating your neck before planting your feet',
-        'A video editing filter technique'
-      ],
-      correctIndex: 1,
-      explanation: 'Proximal-to-distal sequencing channels ground reaction force through massive core muscles first, multiplying angular velocity into lighter extremities for peak terminal speed.'
-    },
-    {
-      question: 'How does a 3-second isometric hold in a drill build muscle memory faster than rapid repetitions?',
-      options: [
-        'It stimulates muscle spindles and neuromuscular Golgi tendon organs to lock the precise joint coordinate into motor cortex memory',
-        'It lets the coach take better photos for social media',
-        'It makes the video run slower',
-        'It has no proven neurological benefit'
-      ],
-      correctIndex: 0,
-      explanation: 'Isometric holds maximize proprioceptive afferent feedback to the motor cortex, building durable neural pathways for the target joint angle.'
-    },
-    {
-      question: 'What is the relationship between lever arm length and linear speed at release (v = ω × r)?',
-      options: [
-        'Longer lever radius (r) creates higher linear speed (v) at the same rotational speed (ω)',
-        'Shorter levers always create faster releases',
-        'Lever length has no impact on velocity',
-        'Rotating backwards doubles forward speed'
-      ],
-      correctIndex: 0,
-      explanation: 'Linear exit speed is directly proportional to lever arm length (v = ω × r). Maintaining full arm extension maximizes the release arc speed.'
-    }
-  ];
-
-  const handleTriviaAnswer = (optIdx: number) => {
-    if (selectedTriviaOption !== null) return;
-    setSelectedTriviaOption(optIdx);
-    if (optIdx === triviaQuestions[triviaIndex].correctIndex) {
-      setTriviaScore(prev => prev + 1);
-      setXp(prev => prev + 100);
-      confetti({ particleCount: 40, spread: 50, origin: { y: 0.7 } });
-    }
-  };
-
-  const handleNextTrivia = () => {
-    if (triviaIndex < triviaQuestions.length - 1) {
-      setTriviaIndex(prev => prev + 1);
-      setSelectedTriviaOption(null);
     } else {
-      setTriviaCompleted(true);
-      if (!achievements.includes('Biomechanical Scholar Badge')) {
-        setAchievements(prev => [...prev, 'Biomechanical Scholar Badge']);
-      }
+      playSound('strike');
     }
   };
 
@@ -396,46 +518,56 @@ export const BiomechanicalGameArena: React.FC<Props> = ({
     <motion.div 
       initial={{ opacity: 0, y: 15 }}
       animate={{ opacity: 1, y: 0 }}
-      className="bg-zinc-950 border border-zinc-800 rounded-3xl p-5 sm:p-7 flex flex-col gap-6 shadow-2xl relative overflow-hidden text-zinc-100"
+      className="bg-zinc-950 border border-zinc-800 rounded-3xl p-4 sm:p-7 flex flex-col gap-6 shadow-2xl relative overflow-hidden text-zinc-100"
     >
-      {/* Visual background accents */}
+      {/* Background Glow */}
       <div className="absolute -top-24 -right-24 w-80 h-80 bg-red-600/10 rounded-full blur-3xl pointer-events-none" />
       <div className="absolute -bottom-24 -left-24 w-80 h-80 bg-amber-500/10 rounded-full blur-3xl pointer-events-none" />
       
-      {/* HEADER WITH GAMIFICATION STATUS */}
-      <div className="border-b border-zinc-800/80 pb-5 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+      {/* HEADER WITH GAMIFICATION STATUS & SOUND TOGGLE */}
+      <div className="border-b border-zinc-800/80 pb-4 sm:pb-5 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
         <div className="flex items-center gap-3.5">
-          <div className="bg-gradient-to-br from-red-600 to-amber-600 p-3 rounded-2xl border border-white/10 shadow-lg text-white">
-            <Gamepad2 className="w-6 h-6" />
+          <div className="bg-gradient-to-br from-amber-500 to-red-600 p-3 rounded-2xl border border-white/10 shadow-lg text-zinc-950">
+            <Flame className="w-6 h-6 stroke-[2.5]" />
           </div>
           <div>
             <h2 className="text-base sm:text-lg font-black uppercase italic tracking-tight text-white flex items-center gap-2">
-              <span>Biomechanics Mastery Academy</span>
+              <span>Active Biomechanics Arena</span>
               <span className="bg-amber-500/20 text-amber-400 text-[10px] px-2.5 py-0.5 rounded-full border border-amber-500/30 not-italic font-mono">
-                LAB_v3.0
+                {sportRule.name} Challenge
               </span>
             </h2>
             <p className="text-xs text-zinc-400 font-medium">
-              Interactive physics engine: master kinetic chains, joint shear safety, and motor control.
+              Interactive physics & physical movement trials that teach real power and injury-free mechanics.
             </p>
           </div>
         </div>
 
-        {/* XP & LEVEL BADGE */}
-        <div className="flex items-center gap-4 bg-zinc-900/90 border border-zinc-800 px-4 py-2 rounded-2xl shadow-inner">
-          <div className="flex flex-col">
-            <span className="text-[9px] uppercase font-black text-zinc-500 tracking-widest">Mastery Rank</span>
-            <span className="text-xs font-black text-amber-400 flex items-center gap-1.5">
-              <Trophy className="w-3.5 h-3.5" /> Level {level} Scholar
-            </span>
-          </div>
-          <div className="flex flex-col items-end gap-1">
-            <span className="text-[9px] font-mono text-zinc-400">{xp} / {(level + 1) * 500} XP</span>
-            <div className="w-20 bg-zinc-950 h-1.5 rounded-full overflow-hidden border border-zinc-800">
-              <div 
-                className="bg-gradient-to-r from-red-600 to-amber-500 h-full rounded-full transition-all duration-500" 
-                style={{ width: `${Math.min(100, (xp % 500) / 5)}%` }}
-              />
+        {/* XP, LEVEL & AUDIO CONTROL */}
+        <div className="flex items-center gap-3 w-full sm:w-auto justify-between sm:justify-end">
+          <button
+            onClick={() => setSoundEnabled(!soundEnabled)}
+            className="p-2.5 bg-zinc-900 hover:bg-zinc-800 text-zinc-400 hover:text-white rounded-xl border border-zinc-800 transition-all cursor-pointer"
+            title={soundEnabled ? 'Mute Sound Effects' : 'Enable Sound Effects'}
+          >
+            {soundEnabled ? <Volume2 className="w-4 h-4 text-amber-400" /> : <VolumeX className="w-4 h-4 text-zinc-600" />}
+          </button>
+
+          <div className="flex items-center gap-3 bg-zinc-900/90 border border-zinc-800 px-3.5 py-2 rounded-2xl shadow-inner">
+            <div className="flex flex-col">
+              <span className="text-[8px] uppercase font-black text-zinc-500 tracking-widest">Mastery</span>
+              <span className="text-xs font-black text-amber-400 flex items-center gap-1">
+                <Trophy className="w-3.5 h-3.5" /> Lvl {Math.floor(xp / 500) + 1}
+              </span>
+            </div>
+            <div className="flex flex-col items-end gap-1">
+              <span className="text-[9px] font-mono text-zinc-400">{xp} XP</span>
+              <div className="w-16 bg-zinc-950 h-1.5 rounded-full overflow-hidden border border-zinc-800">
+                <div 
+                  className="bg-gradient-to-r from-red-600 to-amber-500 h-full rounded-full transition-all duration-500" 
+                  style={{ width: `${Math.min(100, (xp % 500) / 5)}%` }}
+                />
+              </div>
             </div>
           </div>
         </div>
@@ -444,55 +576,59 @@ export const BiomechanicalGameArena: React.FC<Props> = ({
       {/* GAME MODE NAVIGATION TABS */}
       <div className="grid grid-cols-2 sm:grid-cols-5 gap-2 bg-zinc-900/70 p-1.5 rounded-2xl border border-zinc-800">
         {[
-          { id: 'pose_matcher', label: 'Angle Sandbox', icon: '🎯' },
-          { id: 'kinetic_puzzle', label: 'Kinetic Whip', icon: '⚡' },
-          { id: 'match_scenarios', label: 'Game Scenarios', icon: '🎮' },
-          { id: 'xray_simulator', label: 'Fault & Fix Lab', icon: '🩻' },
-          { id: 'trivia', label: 'Bio Quiz', icon: '🧠' }
+          { id: 'strike_sim', label: '🔥 Strike Sim', desc: 'Tune & Fire' },
+          { id: 'active_reps', label: '🏃 Stand & Move', desc: '3-Rep Drill' },
+          { id: 'kinetic_wave', label: '⚡ Force Wave', desc: 'Kinetic Chain' },
+          { id: 'flaw_detective', label: '🕵️ Spot The Flaw', desc: 'Fault Fixer' },
+          { id: 'match_scenarios', label: '🎮 Match Lab', desc: 'Game Decisions' }
         ].map(tab => (
           <button
             key={tab.id}
-            onClick={() => setGameMode(tab.id as any)}
-            className={`px-3 py-2.5 rounded-xl text-[11px] font-black uppercase tracking-wider flex items-center justify-center gap-1.5 transition-all ${
+            onClick={() => {
+              setGameMode(tab.id as any);
+              playSound('tick');
+            }}
+            className={`p-2 sm:p-2.5 rounded-xl text-left flex flex-col transition-all cursor-pointer ${
               gameMode === tab.id
                 ? 'bg-amber-500 text-zinc-950 font-black shadow-md'
                 : 'text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800/60'
             }`}
           >
-            <span>{tab.icon}</span>
-            <span className="truncate">{tab.label}</span>
+            <span className="text-xs font-black uppercase tracking-tight">{tab.label}</span>
+            <span className={`text-[9px] font-medium ${gameMode === tab.id ? 'text-zinc-950/80 font-bold' : 'text-zinc-500'}`}>
+              {tab.desc}
+            </span>
           </button>
         ))}
       </div>
 
       <AnimatePresence mode="wait">
         {/* ========================================================= */}
-        {/* MODE 1: INTERACTIVE ANGLE & SKELETON SANDBOX */}
+        {/* MODE 1: ACTIVE STRIKE SIMULATOR & LIVE KINETIC FIRE */}
         {/* ========================================================= */}
-        {gameMode === 'pose_matcher' && (
+        {gameMode === 'strike_sim' && (
           <motion.div 
-            key="pose_matcher"
+            key="strike_sim"
             initial={{ opacity: 0, y: 10 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: -10 }}
             className="grid grid-cols-1 lg:grid-cols-12 gap-5"
           >
-            {/* SLIDERS COLUMN */}
+            {/* TUNING SLIDERS */}
             <div className="lg:col-span-7 flex flex-col gap-3.5">
               <div className="bg-zinc-900/80 border border-zinc-800 p-4 sm:p-5 rounded-2xl flex flex-col gap-4">
                 <div className="flex items-center justify-between border-b border-zinc-800 pb-2.5">
                   <span className="text-xs font-black uppercase text-amber-400 flex items-center gap-2">
-                    <Sliders className="w-4 h-4" /> Joint Dial Calibration ({sportRule.name})
+                    <Sliders className="w-4 h-4" /> Joint Angle Calibration
                   </span>
                   <span className="text-[10px] font-mono text-zinc-400">
-                    Adjust angles to see live physics reaction
+                    Match gold targets to unlock max exit velocity
                   </span>
                 </div>
 
                 <div className="space-y-3">
                   {joints.map((joint) => {
                     const inRange = joint.current >= joint.idealMin && joint.current <= joint.idealMax;
-                    const isTooLow = joint.current < joint.idealMin;
 
                     return (
                       <div key={joint.id} className="flex flex-col gap-2 bg-zinc-950/80 border border-zinc-800/80 p-3.5 rounded-xl hover:border-zinc-700 transition-colors">
@@ -533,8 +669,8 @@ export const BiomechanicalGameArena: React.FC<Props> = ({
 
                         {/* Mechanical Principle Explanation */}
                         <div className="text-[10px] text-zinc-400 bg-zinc-900/90 p-2 rounded border border-zinc-800 flex flex-col gap-0.5">
-                          <span className="text-amber-400/90 font-bold uppercase text-[8.5px] flex items-center gap-1">
-                            <BookOpen className="w-3 h-3" /> Biomechanical Principle:
+                          <span className="text-amber-400 font-bold uppercase text-[8.5px] flex items-center gap-1">
+                            <BookOpen className="w-3 h-3" /> Why It Matters:
                           </span>
                           <p className="leading-snug">{joint.mechanicalPrinciple}</p>
                         </div>
@@ -545,14 +681,20 @@ export const BiomechanicalGameArena: React.FC<Props> = ({
 
                 <div className="flex items-center gap-2 pt-1">
                   <button
-                    onClick={() => setJoints(prev => prev.map(j => ({ ...j, current: Math.round((j.idealMin + j.idealMax) / 2) })))}
-                    className="flex-1 bg-amber-500 hover:bg-amber-400 text-zinc-950 text-xs font-black uppercase tracking-wider py-2.5 rounded-xl shadow-md transition-all active:scale-95 flex items-center justify-center gap-1.5"
+                    onClick={() => {
+                      setJoints(prev => prev.map(j => ({ ...j, current: Math.round((j.idealMin + j.idealMax) / 2) })));
+                      playSound('power');
+                    }}
+                    className="flex-1 bg-zinc-800 hover:bg-zinc-700 text-zinc-200 text-xs font-black uppercase tracking-wider py-2.5 rounded-xl border border-zinc-700 transition-all flex items-center justify-center gap-1.5 cursor-pointer"
                   >
-                    <Sparkles className="w-4 h-4" /> Snap to Gold Standard
+                    <Sparkles className="w-4 h-4 text-amber-400" /> Snap to Gold Standard
                   </button>
                   <button
-                    onClick={() => setJoints(initialJoints)}
-                    className="p-2.5 bg-zinc-950 hover:bg-zinc-800 text-zinc-400 hover:text-white rounded-xl border border-zinc-800 transition-all"
+                    onClick={() => {
+                      setJoints(initialJoints);
+                      playSound('tick');
+                    }}
+                    className="p-2.5 bg-zinc-950 hover:bg-zinc-800 text-zinc-400 hover:text-white rounded-xl border border-zinc-800 transition-all cursor-pointer"
                     title="Reset dials"
                   >
                     <RotateCcw className="w-4 h-4" />
@@ -561,32 +703,35 @@ export const BiomechanicalGameArena: React.FC<Props> = ({
               </div>
             </div>
 
-            {/* LIVE KINEMATIC SIMULATOR & PHYSICS GAUGES */}
+            {/* LIVE SKELETON MANNEQUIN & ACTIVE EXECUTE BUTTON */}
             <div className="lg:col-span-5 flex flex-col gap-3.5">
-              <div className="bg-zinc-900/80 border border-zinc-800 p-4 sm:p-5 rounded-2xl flex flex-col gap-4 h-full shadow-lg">
+              <div className="bg-zinc-900/80 border border-zinc-800 p-4 sm:p-5 rounded-2xl flex flex-col justify-between gap-4 h-full shadow-lg">
                 <div className="flex items-center justify-between border-b border-zinc-800 pb-2">
                   <span className="text-xs font-black uppercase text-amber-400 flex items-center gap-1.5">
-                    <Activity className="w-4 h-4" /> Live Physics Simulation
+                    <Activity className="w-4 h-4" /> Real-Time Physics Projection
                   </span>
-                  <span className="text-[10px] font-mono text-zinc-500 uppercase">
+                  <span className="text-[10px] font-mono text-zinc-400 uppercase">
                     {matchPercentage}% Form Sync
                   </span>
                 </div>
 
-                {/* 2D Interactive Kinematic Figure Preview */}
-                <div className="bg-zinc-950 border border-zinc-800/80 rounded-xl p-3 flex flex-col items-center justify-center relative min-h-[160px]">
-                  <svg className="w-48 h-36" viewBox="0 0 200 160">
-                    {/* Ground line */}
+                {/* Animated Kinematic Mannequin */}
+                <div className="bg-zinc-950 border border-zinc-800/80 rounded-xl p-4 flex flex-col items-center justify-center relative min-h-[170px] overflow-hidden">
+                  {isStriking && (
+                    <div className="absolute inset-0 bg-amber-500/10 animate-ping pointer-events-none rounded-xl" />
+                  )}
+                  
+                  <svg className="w-52 h-40" viewBox="0 0 200 160">
                     <line x1="20" y1="145" x2="180" y2="145" stroke="#3f3f46" strokeWidth="2" strokeDasharray="4 4" />
-                    <text x="25" y="155" fill="#71717a" fontSize="8" fontFamily="monospace">GROUND CONTACT</text>
+                    <text x="25" y="155" fill="#71717a" fontSize="8" fontFamily="monospace">GROUND ANCHOR</text>
                     
-                    {/* Torso & Head */}
+                    {/* Head */}
                     <circle cx="100" cy="30" r="10" fill={matchPercentage === 100 ? '#34d399' : '#fbbf24'} />
                     {/* Spine */}
                     <line x1="100" y1="40" x2="95" y2="85" stroke={matchPercentage > 70 ? '#34d399' : '#f87171'} strokeWidth="4" strokeLinecap="round" />
                     {/* Pelvis/Hips */}
                     <line x1="80" y1="85" x2="110" y2="85" stroke="#ffffff" strokeWidth="3" />
-                    {/* Lead Leg (Femur & Tibia) */}
+                    {/* Lead Leg */}
                     <line x1="95" y1="85" x2="120" y2="115" stroke={matchPercentage > 50 ? '#34d399' : '#f87171'} strokeWidth="3" strokeLinecap="round" />
                     <line x1="120" y1="115" x2="125" y2="145" stroke="#ffffff" strokeWidth="3" strokeLinecap="round" />
                     {/* Trail Leg */}
@@ -594,21 +739,22 @@ export const BiomechanicalGameArena: React.FC<Props> = ({
                     <line x1="65" y1="120" x2="55" y2="145" stroke="#71717a" strokeWidth="2.5" strokeLinecap="round" />
                     {/* Arms / Lever */}
                     <line x1="100" y1="45" x2="135" y2="55" stroke={matchPercentage === 100 ? '#34d399' : '#fbbf24'} strokeWidth="3" strokeLinecap="round" />
-                    <line x1="135" y1="55" x2="155" y2="40" stroke="#ffffff" strokeWidth="3" strokeLinecap="round" />
+                    <line x1="135" y1="55" x2={isStriking ? 170 : 155} y2={isStriking ? 30 : 40} stroke="#ffffff" strokeWidth="3.5" strokeLinecap="round" />
                     
                     {/* Kinetic Force Vector Arrow */}
-                    <path d="M 125 145 L 140 100 L 165 35" fill="none" stroke="#f59e0b" strokeWidth="2" strokeDasharray="3 3" />
-                    <polygon points="165,30 160,38 170,36" fill="#f59e0b" />
+                    <path d="M 125 145 L 140 100 L 165 35" fill="none" stroke={isStriking ? '#ef4444' : '#f59e0b'} strokeWidth={isStriking ? 4 : 2} strokeDasharray={isStriking ? 'none' : '3 3'} />
+                    <polygon points="165,30 160,38 170,36" fill={isStriking ? '#ef4444' : '#f59e0b'} />
                   </svg>
-                  <span className="text-[9px] font-mono text-zinc-400 absolute top-2 right-2 bg-zinc-900 px-2 py-0.5 rounded border border-zinc-800">
-                    GRF Vector: {powerWatts} W
+
+                  <span className="text-[9px] font-mono text-amber-400 absolute top-2 right-2 bg-zinc-900 px-2 py-0.5 rounded border border-zinc-800">
+                    Calculated Exit: {exitVelocityMph} MPH
                   </span>
                 </div>
 
                 {/* Gauges Grid */}
                 <div className="grid grid-cols-2 gap-2.5">
                   <div className="bg-zinc-950 p-3 rounded-xl border border-zinc-800 flex flex-col gap-1">
-                    <span className="text-[9px] font-mono text-zinc-500 uppercase">Kinetic Power Output</span>
+                    <span className="text-[9px] font-mono text-zinc-500 uppercase">Kinetic Output</span>
                     <span className="text-base font-black text-amber-400 font-mono">{powerWatts} Watts</span>
                     <div className="w-full bg-zinc-800 h-1.5 rounded-full overflow-hidden">
                       <div className="bg-amber-400 h-full rounded" style={{ width: `${(powerWatts / 950) * 100}%` }} />
@@ -616,162 +762,342 @@ export const BiomechanicalGameArena: React.FC<Props> = ({
                   </div>
 
                   <div className="bg-zinc-950 p-3 rounded-xl border border-zinc-800 flex flex-col gap-1">
-                    <span className="text-[9px] font-mono text-zinc-500 uppercase">ACL / Spine Safety</span>
+                    <span className="text-[9px] font-mono text-zinc-500 uppercase">Joint Safety</span>
                     <span className={`text-base font-black font-mono ${jointSafetyPercent > 80 ? 'text-emerald-400' : 'text-red-400'}`}>
                       {jointSafetyPercent}% Safe
                     </span>
                     <div className="w-full bg-zinc-800 h-1.5 rounded-full overflow-hidden">
-                      <div className={`h-full rounded ${jointSafetyPercent > 80 ? 'bg-emerald-400' : 'bg-red-400'}`} style={{ width: `${jointSafetyPercent}%` }} />
-                    </div>
-                  </div>
-
-                  <div className="bg-zinc-950 p-3 rounded-xl border border-zinc-800 flex flex-col gap-1">
-                    <span className="text-[9px] font-mono text-zinc-500 uppercase">Est. Exit Velocity</span>
-                    <span className="text-base font-black text-white font-mono">{exitVelocityMph} MPH</span>
-                    <div className="w-full bg-zinc-800 h-1.5 rounded-full overflow-hidden">
-                      <div className="bg-blue-400 h-full rounded" style={{ width: `${(exitVelocityMph / 90) * 100}%` }} />
-                    </div>
-                  </div>
-
-                  <div className="bg-zinc-950 p-3 rounded-xl border border-zinc-800 flex flex-col gap-1">
-                    <span className="text-[9px] font-mono text-zinc-500 uppercase">Energy Transmission</span>
-                    <span className="text-base font-black text-purple-400 font-mono">{kineticEfficiency}%</span>
-                    <div className="w-full bg-zinc-800 h-1.5 rounded-full overflow-hidden">
-                      <div className="bg-purple-400 h-full rounded" style={{ width: `${kineticEfficiency}%` }} />
+                      <div className={`h-full rounded ${jointSafetyPercent > 80 ? 'bg-emerald-400' : 'bg-red-500'}`} style={{ width: `${jointSafetyPercent}%` }} />
                     </div>
                   </div>
                 </div>
 
-                {/* Coaching Diagnosis Takeaway */}
-                <div className="bg-zinc-950 p-3.5 rounded-xl border border-zinc-800/80 text-[11px] text-zinc-300 leading-relaxed">
-                  <span className="text-[10px] font-bold text-amber-400 uppercase tracking-wider block mb-1">
-                    ⚡ Real-Time Physics Takeaway:
-                  </span>
-                  {matchPercentage === 100 ? (
-                    <span className="text-emerald-300">
-                      Perfect alignment! Proximal momentum converts to terminal release whip with zero joint shear or force dissipation.
-                    </span>
-                  ) : matchPercentage >= 66 ? (
-                    <span className="text-amber-300">
-                      Partial kinetic sync. Minor {100 - matchPercentage}% energy leak detected in red joint markers. Refine angles to unlock full power.
-                    </span>
-                  ) : (
-                    <span className="text-red-300">
-                      Severe kinetic breakdown. Force is leaking before reaching contact, placing dangerous shear on stabilizing ligaments.
-                    </span>
-                  )}
-                </div>
+                {/* BIG ACTIVE FIRE BUTTON */}
+                <button
+                  onClick={handleExecuteStrike}
+                  disabled={isStriking}
+                  className="w-full bg-gradient-to-r from-red-600 via-amber-500 to-amber-400 hover:from-red-500 hover:to-amber-300 text-zinc-950 text-xs font-black uppercase tracking-wider py-3.5 rounded-xl shadow-lg shadow-amber-500/20 transition-all active:scale-95 flex items-center justify-center gap-2 cursor-pointer"
+                >
+                  <Flame className="w-4 h-4 fill-current" />
+                  <span>{isStriking ? 'Simulating Force Transfer...' : '⚡ TEST & EXECUTE STRIKE'}</span>
+                </button>
+
+                {strikeFeedback && (
+                  <motion.div 
+                    initial={{ opacity: 0, y: 5 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    className="p-3 bg-zinc-950 border border-amber-500/30 rounded-xl text-xs text-zinc-300 leading-snug"
+                  >
+                    {strikeFeedback}
+                  </motion.div>
+                )}
               </div>
             </div>
           </motion.div>
         )}
 
         {/* ========================================================= */}
-        {/* MODE 2: KINETIC WHIP SEQUENCING PUZZLE */}
+        {/* MODE 2: ACTIVE 3-REP COACHING CHALLENGE (STAND UP & MOVE) */}
         {/* ========================================================= */}
-        {gameMode === 'kinetic_puzzle' && (
+        {gameMode === 'active_reps' && (
           <motion.div 
-            key="kinetic_puzzle"
+            key="active_reps"
             initial={{ opacity: 0, y: 10 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: -10 }}
-            className="bg-zinc-900/80 border border-zinc-800 p-5 rounded-2xl flex flex-col gap-4"
+            className="bg-zinc-900/80 border border-zinc-800 rounded-2xl p-5 sm:p-6 flex flex-col gap-5 shadow-xl"
           >
-            <div className="border-b border-zinc-800 pb-3 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2">
-              <div>
-                <h3 className="text-xs font-black uppercase text-amber-400 flex items-center gap-2">
-                  <Zap className="w-4 h-4" /> Kinetic Firing Sequence & Whip Simulator
-                </h3>
-                <p className="text-[11px] text-zinc-400">
-                  Arrange segments in true Proximal-to-Distal order (Ground Reaction → Pelvis → Torso → Terminal Release).
-                </p>
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-zinc-800 pb-4">
+              <div className="flex items-center gap-3">
+                <div className="p-3 bg-emerald-500/10 text-emerald-400 rounded-2xl border border-emerald-500/20">
+                  <Footprints className="w-6 h-6" />
+                </div>
+                <div>
+                  <h3 className="text-base font-black text-white uppercase italic">
+                    {currentActiveDrill.title} (Active 3-Rep Trial)
+                  </h3>
+                  <span className="text-xs text-zinc-400">
+                    Stand up and physically execute 3 muscle-memory repetitions with proper biomechanics!
+                  </span>
+                </div>
               </div>
-              <span className={`text-xs font-black px-3 py-1 rounded-lg border font-mono ${isPuzzleCorrect ? 'bg-emerald-950 text-emerald-300 border-emerald-500/40' : 'bg-red-950 text-red-300 border-red-500/40'}`}>
-                {isPuzzleCorrect ? '✓ FLAWLESS PROXIMAL-TO-DISTAL FLOW' : '⚠️ KINETIC HITCH DETECTED'}
-              </span>
+
+              <div className="flex items-center gap-2 bg-zinc-950 border border-zinc-800 px-3.5 py-1.5 rounded-xl font-mono text-xs">
+                <span className="text-zinc-500 uppercase font-bold">Progress:</span>
+                <span className="text-amber-400 font-black">{repCount} / 3 Reps Completed</span>
+              </div>
             </div>
 
-            <div className="flex flex-col gap-2.5">
+            {/* Drill Instructions Card */}
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <div className="bg-zinc-950 p-4 rounded-xl border border-zinc-800 flex flex-col gap-1.5">
+                <span className="text-[10px] font-mono text-amber-400 uppercase font-bold">1. Physical Cue</span>
+                <p className="text-xs text-zinc-200 font-medium leading-relaxed">{currentActiveDrill.cue}</p>
+              </div>
+
+              <div className="bg-zinc-950 p-4 rounded-xl border border-zinc-800 flex flex-col gap-1.5">
+                <span className="text-[10px] font-mono text-emerald-400 uppercase font-bold">2. The Biomechanical Why</span>
+                <p className="text-xs text-zinc-300 leading-relaxed">{currentActiveDrill.why}</p>
+              </div>
+
+              <div className="bg-zinc-950 p-4 rounded-xl border border-zinc-800 flex flex-col gap-1.5">
+                <span className="text-[10px] font-mono text-blue-400 uppercase font-bold">3. Target Posture</span>
+                <p className="text-xs text-zinc-300 font-mono font-bold">{currentActiveDrill.targetPose}</p>
+              </div>
+            </div>
+
+            {/* Rep Counter Stage */}
+            <div className="bg-zinc-950/90 border border-zinc-800 rounded-2xl p-6 flex flex-col items-center justify-center gap-4 text-center">
+              {repState === 'idle' && (
+                <div className="flex flex-col items-center gap-3">
+                  <span className="text-sm font-bold text-zinc-300">
+                    {repCount === 0 ? 'Ready for Rep 1? Get into position on your feet!' : `Great job! Ready for Rep ${repCount + 1}?`}
+                  </span>
+                  <button
+                    onClick={startActiveRep}
+                    className="px-6 py-3 bg-emerald-500 hover:bg-emerald-400 text-zinc-950 font-black text-xs uppercase tracking-wider rounded-xl shadow-lg transition-all active:scale-95 flex items-center gap-2 cursor-pointer"
+                  >
+                    <Play className="w-4 h-4 fill-current" />
+                    <span>Start 3-Second Form Hold (Rep {repCount + 1})</span>
+                  </button>
+                </div>
+              )}
+
+              {repState === 'countdown' && (
+                <div className="flex flex-col items-center gap-2 animate-bounce">
+                  <span className="text-xs font-mono text-zinc-400 uppercase">Get in Position!</span>
+                  <span className="text-5xl font-black text-amber-400 font-mono">{timerSeconds}</span>
+                  <span className="text-xs text-zinc-400">Locking joints into position...</span>
+                </div>
+              )}
+
+              {repState === 'holding' && (
+                <div className="flex flex-col items-center gap-2">
+                  <span className="text-xs font-mono text-emerald-400 uppercase font-bold">HOLD FORM PERFECTLY!</span>
+                  <div className="w-16 h-16 rounded-full border-4 border-emerald-400 border-t-transparent animate-spin flex items-center justify-center" />
+                  <span className="text-xs text-zinc-300 font-medium">Feel the glutes, core, and posture engaged...</span>
+                </div>
+              )}
+
+              {repState === 'completed' && (
+                <div className="flex flex-col items-center gap-2">
+                  <div className="p-3 bg-emerald-500/20 text-emerald-400 rounded-full">
+                    <Check className="w-8 h-8 stroke-[3]" />
+                  </div>
+                  <span className="text-base font-black text-white uppercase italic">
+                    3/3 PHYSICAL REPS COMPLETED! (+300 XP)
+                  </span>
+                  <span className="text-xs text-zinc-400 max-w-md">
+                    You have successfully embedded this neural pathway and muscle-memory alignment into your motor cortex.
+                  </span>
+                  <button
+                    onClick={() => {
+                      setRepCount(0);
+                      setRepState('idle');
+                    }}
+                    className="mt-2 px-4 py-2 bg-zinc-800 hover:bg-zinc-700 text-zinc-200 text-xs font-bold uppercase rounded-xl border border-zinc-700 transition-all cursor-pointer"
+                  >
+                    🔄 Repeat Training Set
+                  </button>
+                </div>
+              )}
+            </div>
+          </motion.div>
+        )}
+
+        {/* ========================================================= */}
+        {/* MODE 3: KINETIC WHIP FORCE WAVE */}
+        {/* ========================================================= */}
+        {gameMode === 'kinetic_wave' && (
+          <motion.div 
+            key="kinetic_wave"
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -10 }}
+            className="bg-zinc-900/80 border border-zinc-800 rounded-2xl p-5 sm:p-6 flex flex-col gap-5 shadow-xl"
+          >
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-zinc-800 pb-4">
+              <div className="flex items-center gap-3">
+                <div className="p-3 bg-amber-500/10 text-amber-400 rounded-2xl border border-amber-500/20">
+                  <Zap className="w-6 h-6" />
+                </div>
+                <div>
+                  <h3 className="text-base font-black text-white uppercase italic">
+                    Kinetic Whip Sequence Sequencer
+                  </h3>
+                  <span className="text-xs text-zinc-400">
+                    Arrange the power transfer stages in order from ground reaction to release.
+                  </span>
+                </div>
+              </div>
+
+              <button
+                onClick={handleTestKineticWave}
+                className="px-4 py-2.5 bg-amber-500 hover:bg-amber-400 text-zinc-950 text-xs font-black uppercase tracking-wider rounded-xl shadow-md transition-all active:scale-95 flex items-center gap-2 cursor-pointer"
+              >
+                <Zap className="w-4 h-4 fill-current" />
+                <span>{waveActive ? 'PULSING ENERGY...' : '⚡ TEST FORCE TRANSFER'}</span>
+              </button>
+            </div>
+
+            {/* Kinetic Steps Sequence */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
               {puzzleSteps.map((step, idx) => {
-                const isStepCorrect = step.idealIndex === idx;
+                const isCorrectSlot = step.idealIndex === idx;
 
                 return (
                   <div
                     key={step.id}
-                    className={`border p-3.5 rounded-xl flex items-center justify-between transition-all ${
-                      isStepCorrect 
-                        ? 'bg-zinc-950 border-emerald-500/40 text-zinc-200 shadow-md' 
-                        : 'bg-zinc-950/70 border-zinc-800 text-zinc-400'
+                    className={`p-4 rounded-2xl border flex flex-col justify-between gap-3 transition-all relative ${
+                      isCorrectSlot
+                        ? 'bg-zinc-950/90 border-emerald-500/40 shadow-emerald-500/5'
+                        : 'bg-zinc-950/60 border-zinc-800'
                     }`}
                   >
-                    <div className="flex items-center gap-3">
-                      <span className={`w-7 h-7 rounded-lg font-mono text-xs font-black flex items-center justify-center border ${isStepCorrect ? 'bg-emerald-500/20 text-emerald-400 border-emerald-500/40' : 'bg-zinc-900 text-zinc-500 border-zinc-800'}`}>
-                        #{idx + 1}
-                      </span>
-                      <span className="text-base">{step.icon}</span>
-                      <div className="flex flex-col">
-                        <span className="text-xs font-black text-white">{step.name}</span>
-                        <span className="text-[10px] text-zinc-400">{step.desc}</span>
+                    <div className="flex items-center justify-between">
+                      <span className="text-2xl">{step.icon}</span>
+                      <div className="flex items-center gap-1">
+                        <button
+                          onClick={() => moveStep(idx, idx - 1)}
+                          disabled={idx === 0}
+                          className="p-1.5 bg-zinc-900 hover:bg-zinc-800 disabled:opacity-30 rounded-lg text-zinc-300 border border-zinc-800 cursor-pointer"
+                        >
+                          <ArrowUp className="w-3.5 h-3.5" />
+                        </button>
+                        <button
+                          onClick={() => moveStep(idx, idx + 1)}
+                          disabled={idx === puzzleSteps.length - 1}
+                          className="p-1.5 bg-zinc-900 hover:bg-zinc-800 disabled:opacity-30 rounded-lg text-zinc-300 border border-zinc-800 cursor-pointer"
+                        >
+                          <ArrowDown className="w-3.5 h-3.5" />
+                        </button>
                       </div>
                     </div>
 
-                    <div className="flex items-center gap-1.5">
-                      <button
-                        disabled={idx === 0}
-                        onClick={() => moveStep(idx, idx - 1)}
-                        className="p-1.5 bg-zinc-900 hover:bg-zinc-800 disabled:opacity-30 border border-zinc-800 rounded-lg text-zinc-300 transition-all"
-                        title="Move Up in sequence"
-                      >
-                        <ArrowUp className="w-3.5 h-3.5" />
-                      </button>
-                      <button
-                        disabled={idx === puzzleSteps.length - 1}
-                        onClick={() => moveStep(idx, idx + 1)}
-                        className="p-1.5 bg-zinc-900 hover:bg-zinc-800 disabled:opacity-30 border border-zinc-800 rounded-lg text-zinc-300 transition-all"
-                        title="Move Down in sequence"
-                      >
-                        <ArrowDown className="w-3.5 h-3.5" />
-                      </button>
+                    <div className="flex flex-col gap-1">
+                      <span className="text-xs font-bold text-white">{step.name}</span>
+                      <p className="text-[10px] text-zinc-400 leading-snug">{step.desc}</p>
+                    </div>
+
+                    <div className="text-[9px] font-mono uppercase font-bold pt-2 border-t border-zinc-850">
+                      {isCorrectSlot ? (
+                        <span className="text-emerald-400 flex items-center gap-1">
+                          <CheckCircle2 className="w-3 h-3" /> Slot {idx + 1} Aligned
+                        </span>
+                      ) : (
+                        <span className="text-zinc-500">Slot {idx + 1} (Out of Sequence)</span>
+                      )}
                     </div>
                   </div>
                 );
               })}
             </div>
-
-            {/* Kinetic diagnostics */}
-            {isPuzzleCorrect ? (
-              <div className="bg-emerald-950/40 border border-emerald-500/40 p-4 rounded-xl flex items-center justify-between">
-                <div className="flex items-center gap-3">
-                  <Flame className="w-6 h-6 text-emerald-400 animate-bounce" />
-                  <div>
-                    <span className="text-xs font-black uppercase text-emerald-300 block">100% Elastic Recoil Unlocked!</span>
-                    <p className="text-[11px] text-zinc-300">
-                      Linear ground force converts cleanly into rotational hip momentum, accelerates through the thoracic spine, and snaps terminal levers with zero force leakage.
-                    </p>
-                  </div>
-                </div>
-                <span className="text-xs font-mono font-black text-emerald-400 bg-emerald-950 px-3 py-1.5 rounded-lg border border-emerald-500/30 shrink-0">
-                  +300 XP
-                </span>
-              </div>
-            ) : (
-              <div className="bg-red-950/30 border border-red-500/30 p-3.5 rounded-xl flex items-center justify-between text-xs">
-                <span className="text-red-300">
-                  ⚠️ Firing out of order forces smaller arm muscles to generate velocity without hip momentum, reducing power by ~35%.
-                </span>
-                <button
-                  onClick={() => setPuzzleSteps([...baseKineticSteps].sort((a, b) => a.idealIndex - b.idealIndex))}
-                  className="text-[10px] font-bold text-amber-400 bg-zinc-950 px-3 py-1.5 rounded-lg border border-zinc-800 hover:bg-zinc-900 shrink-0"
-                >
-                  Snap to Proper Sequence
-                </button>
-              </div>
-            )}
           </motion.div>
         )}
 
         {/* ========================================================= */}
-        {/* MODE 3: REAL MATCH SCENARIOS */}
+        {/* MODE 4: FLAW DETECTIVE & FIXER */}
+        {/* ========================================================= */}
+        {gameMode === 'flaw_detective' && (
+          <motion.div 
+            key="flaw_detective"
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -10 }}
+            className="bg-zinc-900/80 border border-zinc-800 rounded-2xl p-5 sm:p-6 flex flex-col gap-5 shadow-xl"
+          >
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-zinc-800 pb-4">
+              <div className="flex items-center gap-3">
+                <div className="p-3 bg-red-600/10 text-red-500 rounded-2xl border border-red-500/20">
+                  <ShieldAlert className="w-6 h-6" />
+                </div>
+                <div>
+                  <h3 className="text-base font-black text-white uppercase italic">
+                    Biomechanical Flaw Detective Lab
+                  </h3>
+                  <span className="text-xs text-zinc-400">
+                    Diagnose structural breakdown risks and apply the golden corrective cue.
+                  </span>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2 flex-wrap">
+                {dynamicFlawItems.map((flaw, fIdx) => (
+                  <button
+                    key={flaw.id}
+                    onClick={() => {
+                      setActiveFlawIndex(fIdx);
+                      setFlawFixed(false);
+                      playSound('tick');
+                    }}
+                    className={`px-3 py-1.5 rounded-xl text-xs font-bold uppercase cursor-pointer transition-all ${
+                      activeFlawIndex === fIdx
+                        ? 'bg-amber-500 text-zinc-950 font-black'
+                        : 'bg-zinc-950 text-zinc-400 border border-zinc-800'
+                    }`}
+                  >
+                    Case #{fIdx + 1}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Diagnostic Card */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+              <div className="bg-zinc-950 p-4 sm:p-5 rounded-2xl border border-zinc-800 flex flex-col gap-3.5">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-mono text-red-400 uppercase font-bold">⚠️ Identified Flaw</span>
+                  <span className="text-[10px] font-mono bg-red-500/10 text-red-400 px-2 py-0.5 rounded border border-red-500/20 font-bold">
+                    {currentFlaw.affectedJoint}
+                  </span>
+                </div>
+
+                <h4 className="text-sm font-black text-white">{currentFlaw.name}</h4>
+                <p className="text-xs text-zinc-300 leading-relaxed"><strong className="text-zinc-100">Why It Occurs:</strong> {currentFlaw.whyBreaks}</p>
+                <div className="p-3 bg-red-500/5 rounded-xl border border-red-500/20 text-xs text-red-300 font-mono">
+                  <strong>Injury / Power Hazard:</strong> {currentFlaw.risk}
+                </div>
+              </div>
+
+              <div className="bg-zinc-950 p-4 sm:p-5 rounded-2xl border border-zinc-800 flex flex-col justify-between gap-4">
+                <div className="flex flex-col gap-2">
+                  <span className="text-xs font-mono text-emerald-400 uppercase font-bold">🛡️ Golden Fix & Corrective Cue</span>
+                  <p className="text-xs text-zinc-200 font-medium leading-relaxed bg-zinc-900 p-3 rounded-xl border border-zinc-800">
+                    "{currentFlaw.correctCue}"
+                  </p>
+                  <span className="text-[11px] text-zinc-400 font-mono">
+                    Prescribed Drill: <strong className="text-amber-400">{currentFlaw.drillName}</strong>
+                  </span>
+                </div>
+
+                <button
+                  onClick={handleFixFlaw}
+                  disabled={flawFixed}
+                  className={`w-full py-3 rounded-xl text-xs font-black uppercase tracking-wider transition-all flex items-center justify-center gap-2 cursor-pointer ${
+                    flawFixed
+                      ? 'bg-emerald-500 text-zinc-950 shadow-md'
+                      : 'bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-zinc-950 shadow-md shadow-amber-500/20'
+                  }`}
+                >
+                  {flawFixed ? (
+                    <>
+                      <CheckCircle2 className="w-4 h-4" />
+                      <span>FLAW RESOLVED (+200 XP)</span>
+                    </>
+                  ) : (
+                    <>
+                      <Sparkles className="w-4 h-4 fill-current" />
+                      <span>APPLY NEURO-MOTOR CUE & FIX FORM</span>
+                    </>
+                  )}
+                </button>
+              </div>
+            </div>
+          </motion.div>
+        )}
+
+        {/* ========================================================= */}
+        {/* MODE 5: MATCH TACTICS & DECISION LAB */}
         {/* ========================================================= */}
         {gameMode === 'match_scenarios' && (
           <motion.div 
@@ -779,273 +1105,91 @@ export const BiomechanicalGameArena: React.FC<Props> = ({
             initial={{ opacity: 0, y: 10 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: -10 }}
-            className="bg-zinc-900/80 border border-zinc-800 p-5 rounded-2xl flex flex-col gap-4"
+            className="bg-zinc-900/80 border border-zinc-800 rounded-2xl p-5 sm:p-6 flex flex-col gap-5 shadow-xl"
           >
-            <div className="border-b border-zinc-800 pb-3 flex items-center justify-between">
-              <span className="text-xs font-black uppercase text-amber-400 flex items-center gap-1.5">
-                <Target className="w-4 h-4" /> Match Situation Biomechanical Decision Lab ({scenarioIndex + 1}/{sportScenarios.length})
-              </span>
-              <button
-                onClick={nextScenario}
-                className="text-[10px] font-bold text-zinc-400 hover:text-white flex items-center gap-1 bg-zinc-950 px-2.5 py-1 rounded border border-zinc-800"
-              >
-                <span>Next Scenario</span>
-                <ChevronRight className="w-3 h-3" />
-              </button>
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-zinc-800 pb-4">
+              <div className="flex items-center gap-3">
+                <div className="p-3 bg-blue-500/10 text-blue-400 rounded-2xl border border-blue-500/20">
+                  <Target className="w-6 h-6" />
+                </div>
+                <div>
+                  <h3 className="text-base font-black text-white uppercase italic">
+                    Match Decision Simulation ({scenarioIndex + 1}/{sportScenarios.length})
+                  </h3>
+                  <span className="text-xs text-zinc-400">
+                    Real in-game tactical situations requiring instant biomechanical adjustment.
+                  </span>
+                </div>
+              </div>
+
+              {scenarioIndex < sportScenarios.length - 1 && (
+                <button
+                  onClick={() => {
+                    setScenarioIndex(prev => prev + 1);
+                    setSelectedScenarioChoice(null);
+                    setScenarioFeedback(null);
+                    playSound('tick');
+                  }}
+                  className="px-3.5 py-1.5 bg-zinc-950 hover:bg-zinc-800 text-zinc-300 text-xs font-bold uppercase rounded-xl border border-zinc-800 flex items-center gap-1.5 cursor-pointer"
+                >
+                  <span>Next Match Scenario</span>
+                  <ArrowRight className="w-3.5 h-3.5" />
+                </button>
+              )}
             </div>
 
-            <div className="bg-zinc-950 p-4 rounded-xl border border-zinc-800 flex flex-col gap-2">
-              <h4 className="text-sm font-black text-white uppercase italic">{currentScenario.title}</h4>
+            <div className="bg-zinc-950 p-4 sm:p-5 rounded-2xl border border-zinc-800 flex flex-col gap-3">
+              <h4 className="text-sm font-black text-white">{currentScenario.title}</h4>
               <p className="text-xs text-zinc-300 leading-relaxed">{currentScenario.situation}</p>
-              <div className="text-xs font-bold text-amber-400 pt-1">{currentScenario.question}</div>
+              <div className="p-3 bg-amber-500/10 rounded-xl border border-amber-500/20 text-xs text-amber-300 font-bold">
+                🎯 {currentScenario.question}
+              </div>
             </div>
 
-            <div className="flex flex-col gap-2.5">
-              {currentScenario.options.map((opt, idx) => {
-                const isSelected = selectedScenarioChoice === idx;
+            <div className="space-y-2.5">
+              {currentScenario.options.map((opt, oIdx) => {
+                const isSelected = selectedScenarioChoice === oIdx;
+                let btnStyle = 'bg-zinc-950 hover:bg-zinc-900 border-zinc-800 text-zinc-300';
+                if (isSelected) {
+                  btnStyle = opt.isCorrect ? 'bg-emerald-950/60 border-emerald-500 text-emerald-200' : 'bg-red-950/60 border-red-500 text-red-200';
+                }
+
                 return (
                   <button
-                    key={idx}
-                    onClick={() => handleScenarioChoice(idx)}
-                    className={`p-3.5 rounded-xl text-left text-xs font-bold transition-all border flex items-start gap-3 ${
-                      isSelected
-                        ? opt.isCorrect
-                          ? 'bg-emerald-950/70 border-emerald-500 text-white'
-                          : 'bg-red-950/70 border-red-500 text-white'
-                        : 'bg-zinc-950/70 hover:bg-zinc-800/80 border-zinc-800 text-zinc-300'
-                    }`}
+                    key={oIdx}
+                    onClick={() => handleScenarioChoice(oIdx)}
+                    className={`w-full text-left p-4 rounded-xl border text-xs font-medium transition-all flex items-start gap-3 cursor-pointer ${btnStyle}`}
                   >
-                    <span className="font-mono text-amber-400 text-xs font-black">{String.fromCharCode(65 + idx)}.</span>
-                    <span className="flex-1">{opt.text}</span>
+                    <span className="font-mono text-amber-400 font-black">{String.fromCharCode(65 + oIdx)}.</span>
+                    <span className="flex-1 leading-relaxed">{opt.text}</span>
                   </button>
                 );
               })}
             </div>
 
             {scenarioFeedback && (
-              <div className="bg-zinc-950 p-4 rounded-xl border border-zinc-800 text-xs leading-relaxed animate-fadeIn">
-                <span className="text-[10px] font-mono text-zinc-500 uppercase font-black block mb-1">
-                  Coach Biomechanical Debrief:
-                </span>
-                <p className="text-zinc-200">{scenarioFeedback}</p>
-              </div>
-            )}
-          </motion.div>
-        )}
-
-        {/* ========================================================= */}
-        {/* MODE 4: FAULT & X-RAY SIMULATOR */}
-        {/* ========================================================= */}
-        {gameMode === 'xray_simulator' && (
-          <motion.div 
-            key="xray_simulator"
-            initial={{ opacity: 0, y: 10 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -10 }}
-            className="grid grid-cols-1 lg:grid-cols-12 gap-5"
-          >
-            <div className="lg:col-span-4 flex flex-col gap-2 bg-zinc-900/80 border border-zinc-800 p-4 rounded-2xl">
-              <span className="text-[10px] font-black uppercase tracking-wider text-zinc-500 px-1 mb-1">
-                Select Movement Fault:
-              </span>
-
-              {[
-                { id: 'valgus', name: 'Knee Collapse (Valgus)', icon: '🦵', danger: 'CRITICAL' },
-                { id: 'spine_extension', name: 'Early Spine Extension', icon: '🦴', danger: 'HIGH' },
-                { id: 'dropped_elbow', name: 'Dropped Elbow Pitch', icon: '💪', danger: 'HIGH' },
-                { id: 'leaning_back', name: 'Trunk Hyperextension', icon: '🏃', danger: 'MODERATE' }
-              ].map(f => (
-                <button
-                  key={f.id}
-                  onClick={() => setActiveFaultId(f.id)}
-                  className={`p-3 rounded-xl text-left text-xs font-bold flex items-center justify-between transition-all ${
-                    activeFaultId === f.id
-                      ? 'bg-red-600 text-white shadow-md'
-                      : 'bg-zinc-950 hover:bg-zinc-800 border border-zinc-800 text-zinc-400 hover:text-zinc-200'
-                  }`}
-                >
-                  <div className="flex items-center gap-2.5">
-                    <span>{f.icon}</span>
-                    <span className="font-black uppercase tracking-tight">{f.name}</span>
-                  </div>
-                  <span className={`text-[8.5px] font-mono px-1.5 py-0.5 rounded font-black ${activeFaultId === f.id ? 'bg-white/20' : 'bg-zinc-900 text-zinc-500'}`}>
-                    {f.danger}
-                  </span>
-                </button>
-              ))}
-            </div>
-
-            <div className="lg:col-span-8 bg-zinc-900/80 border border-zinc-800 p-5 rounded-2xl flex flex-col gap-4 shadow-lg">
-              <div className="flex items-center justify-between border-b border-zinc-800 pb-3">
-                <div className="flex items-center gap-2.5">
-                  <ShieldAlert className="w-5 h-5 text-red-500" />
-                  <h4 className="text-xs sm:text-sm font-black uppercase text-white tracking-wide">
-                    {currentFault.title}
-                  </h4>
-                </div>
-                <span className="text-[9px] font-mono bg-red-500/10 border border-red-500/30 text-red-400 px-2.5 py-0.5 rounded-full font-bold">
-                  {currentFault.forceLeak}
-                </span>
-              </div>
-
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div className="flex flex-col gap-3">
-                  <div className="bg-zinc-950 p-3 rounded-xl border border-zinc-800 text-xs">
-                    <span className="text-[9px] font-mono text-zinc-500 uppercase block mb-1">Target Anatomy & Joint:</span>
-                    <span className="text-xs font-bold text-amber-400">{currentFault.joint}</span>
-                    <p className="text-zinc-300 mt-1 leading-snug">{currentFault.anatomyDetail}</p>
-                  </div>
-
-                  <div className="bg-red-950/30 border border-red-500/20 p-3 rounded-xl text-xs">
-                    <span className="text-[9px] font-mono text-red-400 uppercase font-black block mb-0.5">Injury Mechanism:</span>
-                    <p className="text-zinc-300 leading-snug">{currentFault.injuryRisk}</p>
-                  </div>
-
-                  <div className="bg-zinc-950 p-2.5 rounded-xl border border-zinc-800 text-[10px] font-mono text-zinc-400">
-                    <span>Physics Formula: </span>
-                    <strong className="text-amber-400">{currentFault.biomechanicsFormula}</strong>
-                  </div>
-                </div>
-
-                <div className="flex flex-col gap-2">
-                  <span className="text-[9px] font-mono text-zinc-500 uppercase">Corrective Drill Model:</span>
-                  <div className="aspect-video bg-zinc-950 rounded-xl border border-zinc-800 overflow-hidden relative">
-                    <img 
-                      src={currentFault.drillImage} 
-                      alt="Drill"
-                      className="w-full h-full object-cover"
-                      referrerPolicy="no-referrer"
-                    />
-                    <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent" />
-                    <div className="absolute bottom-2 left-2 right-2 flex justify-between items-center text-[10px]">
-                      <span className="text-white font-bold">{currentFault.bestDrill}</span>
-                    </div>
-                  </div>
-                  <div className="bg-zinc-950 p-2.5 rounded-xl border border-zinc-800 text-xs">
-                    <span className="text-[9px] font-mono text-emerald-400 uppercase font-bold block">Internal Coaching Cue:</span>
-                    <span className="text-zinc-200 italic">{currentFault.correctiveCue}</span>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </motion.div>
-        )}
-
-        {/* ========================================================= */}
-        {/* MODE 5: BIOMECHANICS TRIVIA */}
-        {/* ========================================================= */}
-        {gameMode === 'trivia' && (
-          <motion.div 
-            key="trivia"
-            initial={{ opacity: 0, y: 10 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -10 }}
-            className="bg-zinc-900/80 border border-zinc-800 p-5 rounded-2xl flex flex-col gap-4"
-          >
-            {!triviaCompleted ? (
-              <div className="flex flex-col gap-4">
-                <div className="flex justify-between items-center border-b border-zinc-800 pb-3">
-                  <span className="text-xs font-black uppercase text-amber-400 flex items-center gap-1.5">
-                    <HelpCircle className="w-4 h-4" /> Biomechanics Master Quiz ({triviaIndex + 1}/{triviaQuestions.length})
-                  </span>
-                  <span className="text-[10px] font-mono text-zinc-400 bg-zinc-950 px-2.5 py-0.5 rounded border border-zinc-800">
-                    Score: {triviaScore}/{triviaQuestions.length}
-                  </span>
-                </div>
-
-                <h3 className="text-sm font-black text-white leading-snug italic">
-                  {triviaQuestions[triviaIndex].question}
-                </h3>
-
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-                  {triviaQuestions[triviaIndex].options.map((opt, optIdx) => {
-                    const isSelected = selectedTriviaOption === optIdx;
-                    const isCorrect = optIdx === triviaQuestions[triviaIndex].correctIndex;
-
-                    return (
-                      <button
-                        key={optIdx}
-                        disabled={selectedTriviaOption !== null}
-                        onClick={() => handleTriviaAnswer(optIdx)}
-                        className={`p-3.5 rounded-xl text-left text-xs font-bold border transition-all ${
-                          selectedTriviaOption === null
-                            ? 'bg-zinc-950 hover:bg-zinc-800 border-zinc-800 text-zinc-300'
-                            : isCorrect
-                            ? 'bg-emerald-950 border-emerald-500 text-white'
-                            : isSelected
-                            ? 'bg-red-950 border-red-500 text-white'
-                            : 'bg-zinc-950/40 border-zinc-850 text-zinc-600'
-                        }`}
-                      >
-                        <div className="flex items-center gap-2">
-                          <span className="font-mono text-amber-400">{String.fromCharCode(65 + optIdx)}.</span>
-                          <span>{opt}</span>
-                        </div>
-                      </button>
-                    );
-                  })}
-                </div>
-
-                {selectedTriviaOption !== null && (
-                  <div className="bg-zinc-950 p-4 rounded-xl border border-zinc-800 flex flex-col gap-2 animate-fadeIn">
-                    <span className="text-[10px] font-mono text-amber-400 uppercase font-black">
-                      Scientific Explanation:
-                    </span>
-                    <p className="text-xs text-zinc-300 leading-relaxed">
-                      {triviaQuestions[triviaIndex].explanation}
-                    </p>
-                    <div className="flex justify-end pt-1">
-                      <button
-                        onClick={handleNextTrivia}
-                        className="bg-amber-500 hover:bg-amber-400 text-zinc-950 font-black text-xs px-4 py-1.5 rounded-lg flex items-center gap-1 transition-all"
-                      >
-                        <span>Next Question</span>
-                        <ChevronRight className="w-3.5 h-3.5" />
-                      </button>
-                    </div>
-                  </div>
-                )}
-              </div>
-            ) : (
-              <div className="text-center py-6 flex flex-col items-center gap-3">
-                <Award className="w-12 h-12 text-amber-400 animate-bounce" />
-                <h3 className="text-base font-black uppercase text-white">Quiz Completed!</h3>
-                <p className="text-xs text-zinc-400 font-mono">
-                  Final Score: <strong className="text-amber-400">{triviaScore} / {triviaQuestions.length}</strong>
-                </p>
-                <button
-                  onClick={() => {
-                    setTriviaIndex(0);
-                    setSelectedTriviaOption(null);
-                    setTriviaScore(0);
-                    setTriviaCompleted(false);
-                  }}
-                  className="mt-2 bg-zinc-800 hover:bg-zinc-700 text-white text-xs font-bold px-4 py-2 rounded-xl border border-zinc-700"
-                >
-                  Retake Quiz
-                </button>
-              </div>
+              <motion.div 
+                initial={{ opacity: 0, y: 5 }}
+                animate={{ opacity: 1, y: 0 }}
+                className="p-4 bg-zinc-950 border border-zinc-800 rounded-xl text-xs text-zinc-300 leading-relaxed font-sans"
+              >
+                {scenarioFeedback}
+              </motion.div>
             )}
           </motion.div>
         )}
       </AnimatePresence>
 
-      {/* FOOTER ACHIEVEMENTS */}
-      <div className="bg-zinc-900/90 border border-zinc-800 p-3.5 rounded-2xl flex flex-wrap items-center justify-between gap-3 text-xs">
-        <div className="flex items-center gap-2">
-          <Trophy className="w-4 h-4 text-amber-400" />
-          <span className="text-[10px] font-black uppercase text-zinc-400">Mastery Badges Unlocked:</span>
-        </div>
-        <div className="flex flex-wrap gap-2">
-          {achievements.map((badge, bIdx) => (
-            <span 
-              key={bIdx}
-              className="bg-zinc-950 border border-amber-500/30 text-amber-400 text-[10px] font-bold uppercase px-2.5 py-1 rounded-lg flex items-center gap-1.5 shadow"
-            >
-              <span>🏆</span> {badge}
-            </span>
-          ))}
-        </div>
+      {/* ACHIEVEMENTS STRIP */}
+      <div className="flex items-center gap-2 flex-wrap pt-3 border-t border-zinc-800/80">
+        <span className="text-[10px] font-mono uppercase text-zinc-500 font-bold flex items-center gap-1">
+          <Award className="w-3.5 h-3.5 text-amber-400" /> Unlocked Badges:
+        </span>
+        {achievements.map((badge, bIdx) => (
+          <span key={bIdx} className="bg-amber-500/10 text-amber-300 text-[10px] font-bold px-2.5 py-1 rounded-lg border border-amber-500/20 flex items-center gap-1">
+            ✨ {badge}
+          </span>
+        ))}
       </div>
     </motion.div>
   );
