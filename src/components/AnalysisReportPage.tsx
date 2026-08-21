@@ -23,7 +23,6 @@ import {
   SkipBack,
   SkipForward,
   Save,
-  Printer,
   Sparkles,
   ShieldCheck,
   Activity,
@@ -1409,13 +1408,7 @@ export const AnalysisReportPage: React.FC<AnalysisReportPageProps> = ({
             </span>
           </button>
 
-          <button
-            onClick={() => window.print()}
-            className="hidden sm:flex bg-zinc-800 hover:bg-zinc-700 text-zinc-300 hover:text-white font-extrabold text-xs px-3.5 py-2.5 rounded-xl border border-zinc-700 items-center gap-2 transition-all"
-          >
-            <Printer className="w-4 h-4" />
-            <span>PDF</span>
-          </button>
+
         </div>
       </div>
 
@@ -1460,8 +1453,7 @@ export const AnalysisReportPage: React.FC<AnalysisReportPageProps> = ({
                 dynamicMetrics: dynamicMetrics || undefined,
                 authorName: currentUser?.name || 'Coach',
                 coachNotes: coachNotes,
-                cloudSynced: athlete.syncToCloud || false,
-                cloudSyncedAt: athlete.syncToCloud ? new Date().toISOString() : undefined
+
               };
               onSaveReport(fullReport);
             }
@@ -1474,7 +1466,7 @@ export const AnalysisReportPage: React.FC<AnalysisReportPageProps> = ({
       {/* Zero Server Storage Policy Banner */}
       <div className="bg-zinc-900/90 border border-amber-500/30 text-amber-200 text-xs py-2.5 px-4 rounded-xl flex items-center justify-between gap-3 shadow-md">
         <div className="flex items-center gap-2">
-          <Cloud className="w-4 h-4 text-amber-400 shrink-0" />
+          <ShieldCheck className="w-4 h-4 text-amber-400 shrink-0" />
           <span>
             <strong>Zero Server Cost Storage:</strong> Export your full report file (<strong>.klutchh</strong>) to store on your own device or Drive. Re-import it into Klutchh anytime—<strong>as soon as you exit, the report is completely removed from session memory!</strong>
           </span>

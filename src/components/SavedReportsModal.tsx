@@ -24,12 +24,8 @@ import {
   CheckCircle2,
   Flame,
   CreditCard,
-  Cloud,
-  CloudCheck,
-  CloudOff,
   FolderDown,
   FolderPlus,
-  RefreshCw,
   Sparkles
 } from 'lucide-react';
 import {
@@ -51,13 +47,10 @@ interface SavedReportsModalProps {
   onDeleteReport: (id: string) => void;
   onImportReport?: (data: any) => void;
   onDeleteTrophyCard?: (id: string) => void;
-  onSyncReportToCloud?: (report: SavedReport) => Promise<void>;
-  onSyncFolderToCloud?: (athleteId: string, reportsInFolder: SavedReport[]) => Promise<void>;
   initialTab?: 'folders' | 'all' | 'cards' | 'roster';
 }
 
 import { TrophyCardViewerModal } from './TrophyCardViewerModal';
-import { PersonalCloudSettingsModal } from './PersonalCloudSettingsModal';
 import { UNIFIED_CARD_THEMES } from './UnifiedTradingCard';
 
 export const SavedReportsModal: React.FC<SavedReportsModalProps> = ({
@@ -68,13 +61,10 @@ export const SavedReportsModal: React.FC<SavedReportsModalProps> = ({
   onDeleteReport,
   onImportReport,
   onDeleteTrophyCard,
-  onSyncReportToCloud,
-  onSyncFolderToCloud,
   initialTab = 'folders',
 }) => {
   const [activeTab, setActiveTab] = useState<'folders' | 'all' | 'cards' | 'roster'>(initialTab);
   const [selectedCard, setSelectedCard] = useState<TrophyCard | null>(null);
-  const [showCloudSettings, setShowCloudSettings] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   const [filterSport, setFilterSport] = useState<string>('all');
   const [athletes, setAthletes] = useState<AthleteProfile[]>([]);
@@ -184,15 +174,6 @@ export const SavedReportsModal: React.FC<SavedReportsModalProps> = ({
           </div>
 
           <div className="flex items-center gap-1.5 sm:gap-2 overflow-x-auto sm:overflow-visible pb-1 sm:pb-0">
-            <button
-              onClick={() => setShowCloudSettings(true)}
-              className="bg-zinc-800 hover:bg-zinc-700 text-sky-400 font-extrabold text-[10px] sm:text-xs px-2.5 sm:px-3 py-2 sm:py-2.5 rounded-xl border border-zinc-700 cursor-pointer flex items-center gap-1.5 transition-all shadow-sm shrink-0"
-              title="Personal Cloud Storage Settings (BYOC)"
-            >
-              <Cloud className="w-3.5 h-3.5 text-sky-400" />
-              <span className="hidden sm:inline">Personal Cloud</span>
-            </button>
-
             <button
               onClick={() => exportFullLibraryBundle(savedReports, athletes)}
               className="bg-zinc-800 hover:bg-zinc-700 text-emerald-400 font-extrabold text-[10px] sm:text-xs px-2.5 sm:px-3 py-2 sm:py-2.5 rounded-xl border border-zinc-700 cursor-pointer flex items-center gap-1.5 transition-all shadow-sm shrink-0"
@@ -474,25 +455,7 @@ export const SavedReportsModal: React.FC<SavedReportsModalProps> = ({
                         </button>
                       )}
 
-                      {/* Sync Entire Folder to Personal API (Optional) */}
-                      {onSyncFolderToCloud && folderReports.length > 0 && (
-                        <button
-                          onClick={async () => {
-                            setSyncingMap((prev) => ({ ...prev, [group.athlete.id]: true }));
-                            try {
-                              await onSyncFolderToCloud(group.athlete.id, folderReports);
-                            } finally {
-                              setSyncingMap((prev) => ({ ...prev, [group.athlete.id]: false }));
-                            }
-                          }}
-                          disabled={isFolderSyncing}
-                          className="bg-zinc-900 hover:bg-sky-950/60 text-sky-300 text-[11px] font-bold px-2.5 py-1.5 rounded-xl border border-zinc-800 hover:border-sky-500/50 flex items-center gap-1.5 transition-all cursor-pointer"
-                          title="Sync all reports in this athlete folder to your own Personal API"
-                        >
-                          <RefreshCw className={`w-3.5 h-3.5 text-sky-400 ${isFolderSyncing ? 'animate-spin' : ''}`} />
-                          <span>{isFolderSyncing ? 'Syncing...' : 'API Sync'}</span>
-                        </button>
-                      )}
+
                     </div>
                   </div>
 
@@ -522,15 +485,9 @@ export const SavedReportsModal: React.FC<SavedReportsModalProps> = ({
                                   <div className="min-w-0">
                                     <div className="flex items-center gap-2 flex-wrap">
                                       <h4 className="text-xs font-black text-white truncate">{report.title}</h4>
-                                      {report.cloudSynced ? (
-                                        <span className="flex items-center gap-1 text-[9px] bg-sky-500/20 text-sky-300 font-mono font-bold px-2 py-0.5 rounded">
-                                          <RefreshCw className="w-2.5 h-2.5 text-sky-400" /> API Synced
-                                        </span>
-                                      ) : (
-                                        <span className="flex items-center gap-1 text-[9px] bg-emerald-500/20 text-emerald-300 font-mono font-bold px-2 py-0.5 rounded">
-                                          <ShieldCheck className="w-2.5 h-2.5 text-emerald-400" /> Local Storage
-                                        </span>
-                                      )}
+                                       <span className="flex items-center gap-1 text-[9px] bg-emerald-500/20 text-emerald-300 font-mono font-bold px-2 py-0.5 rounded">
+                                         <ShieldCheck className="w-2.5 h-2.5 text-emerald-400" /> Local Storage
+                                       </span>
                                     </div>
                                     <div className="flex flex-wrap items-center gap-2 text-[10px] text-zinc-500 font-mono mt-0.5">
                                       <span className="text-amber-500/90 font-bold">{report.sportName}</span>
@@ -552,28 +509,7 @@ export const SavedReportsModal: React.FC<SavedReportsModalProps> = ({
                                     <Download className="w-3.5 h-3.5" />
                                   </button>
 
-                                  {/* Personal API Sync Button */}
-                                  {onSyncReportToCloud && (
-                                    <button
-                                      onClick={async () => {
-                                        setSyncingMap((prev) => ({ ...prev, [report.id]: true }));
-                                        try {
-                                          await onSyncReportToCloud(report);
-                                        } finally {
-                                          setSyncingMap((prev) => ({ ...prev, [report.id]: false }));
-                                        }
-                                      }}
-                                      disabled={isReportSyncing}
-                                      className={`p-2 rounded-xl border transition-all cursor-pointer ${
-                                        report.cloudSynced
-                                          ? 'bg-sky-950/40 text-sky-300 border-sky-600/40 hover:bg-sky-900/50'
-                                          : 'bg-zinc-900 text-zinc-400 border-zinc-800 hover:text-sky-300 hover:border-sky-500/40'
-                                      }`}
-                                      title={report.cloudSynced ? "Personal API Synced (Click to re-sync)" : "Sync this report to your own Personal API (BYOC)"}
-                                    >
-                                      <RefreshCw className={`w-3.5 h-3.5 ${isReportSyncing ? 'animate-spin text-sky-400' : ''}`} />
-                                    </button>
-                                  )}
+                                  
 
                                   {/* Open Scrubber */}
                                   <button
@@ -713,15 +649,9 @@ export const SavedReportsModal: React.FC<SavedReportsModalProps> = ({
                               📁 {report.athleteName}
                             </span>
                           )}
-                          {report.cloudSynced ? (
-                            <span className="flex items-center gap-1 text-[9px] bg-sky-500/20 text-sky-300 font-mono font-bold px-2 py-0.5 rounded">
-                              <Cloud className="w-2.5 h-2.5 text-sky-400" /> Cloud Synced
-                            </span>
-                          ) : (
-                            <span className="flex items-center gap-1 text-[9px] bg-emerald-500/20 text-emerald-300 font-mono font-bold px-2 py-0.5 rounded">
-                              <ShieldCheck className="w-2.5 h-2.5 text-emerald-400" /> Local Storage
-                            </span>
-                          )}
+                          <span className="flex items-center gap-1 text-[9px] bg-emerald-500/20 text-emerald-300 font-mono font-bold px-2 py-0.5 rounded">
+                            <ShieldCheck className="w-2.5 h-2.5 text-emerald-400" /> Local Storage
+                          </span>
                         </div>
                         <div className="flex flex-wrap items-center gap-3 text-[11px] text-zinc-400 mt-1 font-mono">
                           <span className="text-amber-500 font-bold">{report.sportName}</span>
@@ -740,27 +670,7 @@ export const SavedReportsModal: React.FC<SavedReportsModalProps> = ({
                         <Download className="w-3.5 h-3.5" />
                       </button>
 
-                      {onSyncReportToCloud && (
-                        <button
-                          onClick={async () => {
-                            setSyncingMap((prev) => ({ ...prev, [report.id]: true }));
-                            try {
-                              await onSyncReportToCloud(report);
-                            } finally {
-                              setSyncingMap((prev) => ({ ...prev, [report.id]: false }));
-                            }
-                          }}
-                          disabled={isReportSyncing}
-                          className={`p-2 rounded-xl border transition-all cursor-pointer ${
-                            report.cloudSynced
-                              ? 'bg-sky-950/40 text-sky-300 border-sky-600/40 hover:bg-sky-900/50'
-                              : 'bg-zinc-900 text-zinc-400 border-zinc-800 hover:text-sky-300 hover:border-sky-500/40'
-                          }`}
-                          title={report.cloudSynced ? "Personal Cloud Synced (Click to re-sync)" : "Sync this report to your Personal Cloud (BYOC)"}
-                        >
-                          <Cloud className={`w-3.5 h-3.5 ${isReportSyncing ? 'animate-pulse text-sky-400' : ''}`} />
-                        </button>
-                      )}
+
 
                       <button
                         onClick={() => {
@@ -988,11 +898,7 @@ export const SavedReportsModal: React.FC<SavedReportsModalProps> = ({
           />
         )}
 
-        {/* Personal Cloud Storage Settings (BYOC) */}
-        <PersonalCloudSettingsModal
-          isOpen={showCloudSettings}
-          onClose={() => setShowCloudSettings(false)}
-        />
+
       </div>
     </div>
   );

@@ -251,8 +251,7 @@ export interface SavedReport {
   cloudVideoUrl?: string;
   processingMode?: 'pro_30fps_cloud' | 'standard_client';
   preRenderedFrames?: { timestamp: number; dataUrl: string }[];
-  cloudSynced?: boolean;
-  cloudSyncedAt?: string;
+
 }
 
 export interface AnalysisResult {

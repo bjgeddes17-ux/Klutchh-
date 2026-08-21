@@ -14,7 +14,7 @@ import { auth, logoutFirebase } from './lib/firebase';
 import { onAuthStateChanged } from 'firebase/auth';
 import { set, get, del } from 'idb-keyval';
 import { autoPurgeExpiredLocalVideos, saveLocalVideoWithTTL, getLocalVideo, safeJsonStringify } from './utils/privacyStorage';
-import { syncReportToPersonalCloud, syncAthleteFolderToPersonalCloud, getPersonalCloudConfig } from './utils/personalCloudStorage';
+
 import { getCoachAthletes, formatAthleteFolderName, saveCoachAthlete } from './utils/rosterStorage';
 
 import { MagicProcessingScreen } from './components/MagicProcessingScreen';
@@ -22,6 +22,7 @@ import { VideoCropAndScrubber } from './components/VideoCropAndScrubber';
 import { detectCapableDevice, buildBareFallbackResult } from './utils/videoAnalyzer';
 import { PinPromptModal } from './components/PinPromptModal';
 import { parseZeroKnowledgeShareHash } from './utils/shareReportUrl';
+import { wakeLock, soundCues, triggerHaptic, setupAppLifecycleHandlers, notifications } from './utils/nativeEnhancements';
 
 export default function App() {
   const [isInitialLoading, setIsInitialLoading] = useState(true);
@@ -38,6 +39,8 @@ export default function App() {
   useEffect(() => {
     const timer = setTimeout(() => {
       setIsInitialLoading(false);
+      // Request notification permissions early for production APK
+      notifications.requestPermission();
     }, 2800); // Elegantly show animated loading logo for 2.8s
     return () => clearTimeout(timer);
   }, []);
@@ -202,6 +205,40 @@ export default function App() {
     }
   }, [savedReports]);
 
+  // Screen Wake Lock & Background Lifecycle Management
+  useEffect(() => {
+    if (viewMode === 'crop_and_scrub' || viewMode === 'processing') {
+      wakeLock.request();
+    } else {
+      wakeLock.release();
+    }
+
+    const cleanupLifecycle = setupAppLifecycleHandlers(
+      () => {
+        // App went to background: release wake lock and persist state checkpoint
+        wakeLock.release();
+        notifications.showBackgroundRunning();
+        try {
+          localStorage.setItem('klutchh_saved_reports', safeJsonStringify(savedReports));
+        } catch {
+          // Ignore
+        }
+      },
+      () => {
+        // App came to foreground
+        notifications.hideBackgroundRunning();
+        if (viewMode === 'crop_and_scrub' || viewMode === 'processing') {
+          wakeLock.request();
+        }
+      }
+    );
+
+    return () => {
+      wakeLock.release();
+      cleanupLifecycle();
+    };
+  }, [viewMode, savedReports]);
+
   const handleSelectSport = (id: SportId) => {
     setSelectedSportId(id);
     const newSport = SPORTS_RULES.find((s) => s.id === id) || SPORTS_RULES[0];
@@ -361,63 +398,7 @@ export default function App() {
     });
   };
 
-  const handleSyncReportToCloud = async (report: SavedReport) => {
-    const cloudConfig = getPersonalCloudConfig();
-    try {
-      const res = await syncReportToPersonalCloud(report, cloudConfig);
-      if (res.success) {
-        const updatedReport: SavedReport = {
-          ...report,
-          cloudSynced: true,
-          cloudSyncedAt: new Date().toISOString()
-        };
-        setSavedReports((prev) => prev.map((r) => r.id === report.id ? updatedReport : r));
-        alert(res.message);
-      } else {
-        alert(`Personal API Sync Note: ${res.message}`);
-      }
-    } catch (err: any) {
-      alert(`Personal API Sync error: ${err.message || 'Check connection'}`);
-    }
-  };
 
-  const handleSyncFolderToCloud = async (athleteId: string, reportsInFolder: SavedReport[]) => {
-    const athletesList = await getCoachAthletes();
-    const athlete = athletesList.find((a) => a.id === athleteId) || {
-      id: athleteId,
-      name: reportsInFolder[0]?.athleteName || 'Athlete',
-      sport: selectedSportId,
-      category: athleteCategory,
-      folderName: formatAthleteFolderName(reportsInFolder[0]?.athleteName || 'Athlete'),
-      totalReports: reportsInFolder.length,
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString()
-    };
-
-    const folderGroup = {
-      athlete,
-      folderName: formatAthleteFolderName(athlete.name),
-      reports: reportsInFolder,
-      trophyCards: []
-    };
-
-    const cloudConfig = getPersonalCloudConfig();
-    try {
-      const res = await syncAthleteFolderToPersonalCloud(folderGroup, cloudConfig);
-      if (res.success) {
-        const now = new Date().toISOString();
-        setSavedReports((prev) => prev.map((r) => {
-          const match = reportsInFolder.find((f) => f.id === r.id);
-          return match ? { ...r, cloudSynced: true, cloudSyncedAt: now } : r;
-        }));
-        alert(res.message);
-      } else {
-        alert(`Personal API Sync: ${res.message}`);
-      }
-    } catch (err: any) {
-      alert(`Personal API Sync error: ${err.message || 'Check connection'}`);
-    }
-  };
 
   const handleDeleteReport = async (id: string) => {
     setSavedReports((prev) => prev.filter((r) => r.id !== id));
@@ -807,8 +788,7 @@ export default function App() {
         onDeleteReport={handleDeleteReport}
         onImportReport={handleImportKlutchhReport}
         onDeleteTrophyCard={handleDeleteTrophyCard}
-        onSyncReportToCloud={handleSyncReportToCloud}
-        onSyncFolderToCloud={handleSyncFolderToCloud}
+
         initialTab={savedReportsTab}
       />
 

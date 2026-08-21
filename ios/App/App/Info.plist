@@ -66,5 +66,11 @@
 	</array>
 	<key>UIViewControllerBasedStatusBarAppearance</key>
 	<true/>
+	<key>NSCameraUsageDescription</key>
+	<string>Klutchh uses the camera to record athlete biomechanical drills and perform real-time pose tracking.</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>Klutchh accesses your photo library to save and load athlete analysis reports and session videos.</string>
+	<key>NSPhotoLibraryAddUsageDescription</key>
+	<string>Klutchh saves athlete reports and recorded session bundles to your device photo library.</string>
 </dict>
 </plist>

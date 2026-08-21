@@ -18,7 +18,7 @@ import {
 interface SaveToAthleteModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onConfirmSave: (athlete: { id: string; name: string; folderName: string; syncToCloud?: boolean }) => void;
+  onConfirmSave: (athlete: { id: string; name: string; folderName: string }) => void;
   sportId: SportId;
   defaultAthleteCategory?: AthleteCategory;
   currentTitle: string;
@@ -38,7 +38,7 @@ export const SaveToAthleteModal: React.FC<SaveToAthleteModalProps> = ({
   const [newAthleteName, setNewAthleteName] = useState('');
   const [newAthleteCategory, setNewAthleteCategory] = useState<AthleteCategory>(defaultAthleteCategory);
   const [newAthleteJersey, setNewAthleteJersey] = useState('');
-  const [syncToCloud, setSyncToCloud] = useState(false);
+
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
@@ -86,7 +86,7 @@ export const SaveToAthleteModal: React.FC<SaveToAthleteModalProps> = ({
     }
 
     const folderName = formatAthleteFolderName(athleteName);
-    onConfirmSave({ id: athleteId, name: athleteName, folderName, syncToCloud });
+    onConfirmSave({ id: athleteId, name: athleteName, folderName });
     onClose();
   };
 
@@ -253,25 +253,12 @@ export const SaveToAthleteModal: React.FC<SaveToAthleteModalProps> = ({
           </div>
         )}
 
-        {/* Privacy & Personal Cloud Sync Options */}
+        {/* Local Storage Notice */}
         <div className="space-y-2 bg-zinc-950 p-3 rounded-2xl border border-zinc-800">
           <div className="flex items-center gap-2 text-[11px] text-zinc-300">
             <ShieldCheck className="w-4 h-4 text-emerald-400 shrink-0" />
-            <span>Stored on your device under <strong className="text-amber-300">📁 {displayFolderName}</strong></span>
+            <span>Stored securely on your device under <strong className="text-amber-300">📁 {displayFolderName}</strong></span>
           </div>
-
-          <label className="flex items-center gap-2.5 pt-1.5 border-t border-zinc-800/80 cursor-pointer">
-            <input
-              type="checkbox"
-              checked={syncToCloud}
-              onChange={(e) => setSyncToCloud(e.target.checked)}
-              className="w-4 h-4 rounded text-amber-500 bg-zinc-900 border-zinc-700 focus:ring-0 focus:ring-offset-0 cursor-pointer"
-            />
-            <div className="text-[11px]">
-              <span className="font-bold text-zinc-200">Also sync to my Personal Cloud (BYOC)</span>
-              <p className="text-[10px] text-zinc-400">Zero-storage guarantee: Data is never stored on our servers, only on your local disk and personal cloud.</p>
-            </div>
-          </label>
         </div>
 
         {/* Actions */}
