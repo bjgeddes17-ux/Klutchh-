@@ -1100,16 +1100,34 @@ export const AnalysisReportPage: React.FC<AnalysisReportPageProps> = ({
   };
 
   const stepFrame = (deltaSeconds: number) => {
-    if (!videoRef.current) return;
-    videoRef.current.pause();
-    setIsPlaying(false);
-    videoRef.current.currentTime = Math.max(startTime, Math.min(endTime || duration, videoRef.current.currentTime + deltaSeconds));
+    const currentT = currentTimeRef.current;
+    const newTime = Math.max(startTime, Math.min(endTime || duration || 30, currentT + deltaSeconds));
+    currentTimeRef.current = newTime;
+    setCurrentTime(newTime);
+
+    if (videoRef.current) {
+      videoRef.current.pause();
+      setIsPlaying(false);
+      if (typeof (videoRef.current as any).fastSeek === 'function') {
+        (videoRef.current as any).fastSeek(newTime);
+      } else {
+        videoRef.current.currentTime = newTime;
+      }
+    }
   };
 
   const handleSeek = (time: number) => {
-    if (!videoRef.current) return;
-    videoRef.current.currentTime = time;
-    setCurrentTime(time);
+    const clampedTime = Math.max(startTime, Math.min(endTime || duration || 30, time));
+    currentTimeRef.current = clampedTime;
+    setCurrentTime(clampedTime);
+
+    if (videoRef.current) {
+      if (typeof (videoRef.current as any).fastSeek === 'function') {
+        (videoRef.current as any).fastSeek(clampedTime);
+      } else {
+        videoRef.current.currentTime = clampedTime;
+      }
+    }
   };
 
   useEffect(() => {
@@ -1531,17 +1549,13 @@ export const AnalysisReportPage: React.FC<AnalysisReportPageProps> = ({
               className="absolute inset-0 w-full h-full object-contain pointer-events-none z-10"
             />
 
-            {/* Center Big Play/Pause Overlay Indicator */}
-            <div
-              className={`absolute inset-0 z-25 flex items-center justify-center pointer-events-none transition-all duration-300 ${
-                !isPlaying ? 'opacity-100 scale-100' : 'opacity-0 scale-90 group-hover:opacity-60'
-              }`}
-            >
-              <div className="w-16 h-16 sm:w-20 sm:h-20 rounded-full bg-zinc-950/80 border-2 border-amber-400 text-amber-400 flex items-center justify-center shadow-2xl backdrop-blur-md transition-transform transform group-hover:scale-110">
+            {/* Subtle Desktop Hover Play/Pause Indicator (Never blocks athlete when paused) */}
+            <div className="absolute inset-0 z-25 flex items-center justify-center pointer-events-none opacity-0 group-hover:opacity-40 transition-opacity duration-200">
+              <div className="w-14 h-14 rounded-full bg-zinc-950/80 border border-amber-400/80 text-amber-400 flex items-center justify-center shadow-xl backdrop-blur-sm">
                 {isPlaying ? (
-                  <Pause className="w-7 h-7 sm:w-8 sm:h-8 fill-current" />
+                  <Pause className="w-6 h-6 fill-current" />
                 ) : (
-                  <Play className="w-7 h-7 sm:w-8 sm:h-8 fill-current ml-1" />
+                  <Play className="w-6 h-6 fill-current ml-0.5" />
                 )}
               </div>
             </div>
@@ -1639,7 +1653,11 @@ export const AnalysisReportPage: React.FC<AnalysisReportPageProps> = ({
         </div>
 
         {/* Bottom Overlay Non-Blocking Glassmorphism Scrubber Bar */}
-        <div className="absolute inset-x-0 bottom-0 z-30 bg-gradient-to-t from-black via-black/95 to-transparent pt-8 pb-3 px-3 sm:px-5 flex flex-col gap-2">
+        <div
+          onClick={(e) => e.stopPropagation()}
+          onTouchStart={(e) => e.stopPropagation()}
+          className="absolute inset-x-0 bottom-0 z-30 bg-gradient-to-t from-black via-black/95 to-transparent pt-8 pb-3 px-3 sm:px-5 flex flex-col gap-2"
+        >
           
           {/* Sleek, Non-Intrusive Telemetry HUD Overlay */}
           {activeFrameMetrics && (
@@ -1681,10 +1699,32 @@ export const AnalysisReportPage: React.FC<AnalysisReportPageProps> = ({
               type="range"
               min={0}
               max={duration || 30}
-              step={1 / calibratedFps}
+              step={1 / (calibratedFps || 24)}
               value={currentTime}
-              onChange={(e) => handleSeek(parseFloat(e.target.value))}
-              className="w-full accent-red-600 bg-zinc-800/90 h-3 rounded-full cursor-pointer shadow-inner [&::-webkit-slider-thumb]:w-5 [&::-webkit-slider-thumb]:h-5 [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-red-600 [&::-webkit-slider-thumb]:border-2 [&::-webkit-slider-thumb]:border-white"
+              onPointerDown={(e) => {
+                e.stopPropagation();
+                if (isPlaying && videoRef.current) {
+                  videoRef.current.pause();
+                  setIsPlaying(false);
+                }
+              }}
+              onTouchStart={(e) => {
+                e.stopPropagation();
+                if (isPlaying && videoRef.current) {
+                  videoRef.current.pause();
+                  setIsPlaying(false);
+                }
+              }}
+              onClick={(e) => e.stopPropagation()}
+              onChange={(e) => {
+                e.stopPropagation();
+                handleSeek(parseFloat(e.target.value));
+              }}
+              onInput={(e) => {
+                e.stopPropagation();
+                handleSeek(parseFloat(e.currentTarget.value));
+              }}
+              className="w-full accent-red-600 bg-zinc-800/90 h-3.5 rounded-full cursor-pointer shadow-inner touch-none [&::-webkit-slider-thumb]:w-5 [&::-webkit-slider-thumb]:h-5 [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-red-600 [&::-webkit-slider-thumb]:border-2 [&::-webkit-slider-thumb]:border-white"
             />
           </div>
 
@@ -1707,7 +1747,10 @@ export const AnalysisReportPage: React.FC<AnalysisReportPageProps> = ({
                 </button>
 
                 <button
-                  onClick={() => stepFrame(-5 / calibratedFps)}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    stepFrame(-5 / (calibratedFps || 24));
+                  }}
                   className="px-2 py-1 bg-zinc-900/90 hover:bg-zinc-800 border border-zinc-800 text-zinc-300 hover:text-white rounded-lg transition-all text-xs flex items-center gap-1 font-mono font-bold cursor-pointer"
                   title="Step Back 5 Frames"
                 >
@@ -1716,7 +1759,10 @@ export const AnalysisReportPage: React.FC<AnalysisReportPageProps> = ({
                 </button>
 
                 <button
-                  onClick={() => stepFrame(-1 / calibratedFps)}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    stepFrame(-1 / (calibratedFps || 24));
+                  }}
                   className="px-2 py-1 bg-zinc-900/90 hover:bg-zinc-800 border border-zinc-800 text-zinc-300 hover:text-white rounded-lg transition-all text-xs flex items-center gap-1 font-mono font-bold cursor-pointer"
                   title="Step Back 1 Frame"
                 >
@@ -1725,7 +1771,10 @@ export const AnalysisReportPage: React.FC<AnalysisReportPageProps> = ({
                 </button>
 
                 <button
-                  onClick={() => stepFrame(1 / calibratedFps)}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    stepFrame(1 / (calibratedFps || 24));
+                  }}
                   className="px-2 py-1 bg-zinc-900/90 hover:bg-zinc-800 border border-zinc-800 text-zinc-300 hover:text-white rounded-lg transition-all text-xs flex items-center gap-1 font-mono font-bold cursor-pointer"
                   title="Step Forward 1 Frame"
                 >
@@ -1734,7 +1783,10 @@ export const AnalysisReportPage: React.FC<AnalysisReportPageProps> = ({
                 </button>
 
                 <button
-                  onClick={() => stepFrame(5 / calibratedFps)}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    stepFrame(5 / (calibratedFps || 24));
+                  }}
                   className="px-2 py-1 bg-zinc-900/90 hover:bg-zinc-800 border border-zinc-800 text-zinc-300 hover:text-white rounded-lg transition-all text-xs flex items-center gap-1 font-mono font-bold cursor-pointer"
                   title="Step Forward 5 Frames"
                 >

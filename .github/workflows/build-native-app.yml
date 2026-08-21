@@ -1,4 +1,4 @@
-name: Build Native Mobile Apps (Android & iOS)
+name: Build Native Android App (APK & AAB)
 
 on:
   push:
@@ -93,42 +93,3 @@ jobs:
           path: android/app/build/outputs/bundle/**/*.aab
           retention-days: 14
           if-no-files-found: ignore
-
-  build-ios:
-    name: 🍎 3. Build Native iOS Project
-    needs: build-web
-    runs-on: macos-latest
-    steps:
-      - name: Checkout Codebase
-        uses: actions/checkout@v4
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: 22
-
-      - name: Install Dependencies
-        run: |
-          rm -f package-lock.json
-          npm install
-
-      - name: Download Web Build
-        uses: actions/download-artifact@v4
-        with:
-          name: web-dist
-          path: dist/
-
-      - name: Sync Capacitor iOS
-        run: npx cap sync ios
-
-      - name: Verify & Build iOS Xcode Project
-        run: |
-          cd ios/App
-          xcodebuild -workspace App.xcworkspace -scheme App -destination 'generic/platform=iOS' CODE_SIGNING_ALLOWED=NO -configuration Debug build || true
-
-      - name: Upload iOS Xcode Project
-        uses: actions/upload-artifact@v4
-        with:
-          name: klutchh-ios-project
-          path: ios/
-          retention-days: 14
