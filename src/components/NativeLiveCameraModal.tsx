@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Camera, Video, Square, Play, RotateCcw, X, Sparkles, CheckCircle2, ShieldAlert, Sliders, Smartphone, Activity } from 'lucide-react';
 import { Capacitor } from '@capacitor/core';
+import { Camera as CapCamera } from '@capacitor/camera';
 import { NativeHardwarePoseService } from '../utils/nativeHardwarePose';
 import { detectPoseForVideoFrame, generateSyntheticSportsPose } from '../utils/mediapipePose';
 import { drawPoseSkeleton, calculateAngle, calculateSymmetry, calculateKneeValgusScore } from '../utils/geometry';
@@ -30,6 +31,7 @@ export const NativeLiveCameraModal: React.FC<NativeLiveCameraModalProps> = ({
   
   const [error, setError] = useState<string | null>(null);
   const [isEngineReady, setIsEngineReady] = useState(false);
+  const [retryCount, setRetryCount] = useState(0);
   
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -53,36 +55,75 @@ export const NativeLiveCameraModal: React.FC<NativeLiveCameraModalProps> = ({
     checkNative();
   }, []);
 
-  // Start webcam feed and pose detection loop
-  useEffect(() => {
+  const initCamera = async () => {
     if (!isOpen) return;
     setError(null);
     setIsEngineReady(false);
 
-    const constraints = { 
+    const constraints: MediaStreamConstraints = { 
       video: { 
         facingMode: 'environment',
         width: { ideal: 1280 },
         height: { ideal: 720 }
       }, 
-      audio: true 
+      audio: false // Remove audio to reduce permission friction
     };
 
-    navigator.mediaDevices?.getUserMedia(constraints)
-      .then((stream) => {
-        if (videoRef.current) {
-          videoRef.current.srcObject = stream;
-          setIsEngineReady(true);
+    if (Capacitor.isNativePlatform()) {
+      try {
+        console.log('Native platform detected, checking system permissions...');
+        const check = await CapCamera.checkPermissions();
+        if (check.camera !== 'granted') {
+          const request = await CapCamera.requestPermissions({ permissions: ['camera'] });
+          if (request.camera !== 'granted') {
+            setError('Camera permission denied at the system level. Please go to Settings > Apps > Klutchh and enable Camera access.');
+            return;
+          }
         }
-      })
-      .catch((err) => {
-        console.warn('Webcam stream unavailable:', err);
-        if (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError') {
-          setError('Camera access denied. Please enable permissions or open the app in a new tab.');
-        } else {
-          setError('Could not initialize camera. Ensure you are on a secure connection (HTTPS).');
+      } catch (pErr) {
+        console.warn('Capacitor permission request failed, attempting browser-level getUserMedia anyway:', pErr);
+      }
+    }
+
+    let stream: MediaStream | null = null;
+    
+    try {
+      // Primary attempt: Environment (back) camera, no audio
+      stream = await navigator.mediaDevices?.getUserMedia(constraints);
+    } catch (err: any) {
+      console.warn('Primary camera initialization failed, attempting fallback...', err);
+      try {
+        // Fallback 1: Video only, generic environment
+        stream = await navigator.mediaDevices?.getUserMedia({ 
+          video: { facingMode: 'environment' } 
+        });
+      } catch (err2) {
+        try {
+          // Fallback 2: Any video (usually front camera if back fails)
+          stream = await navigator.mediaDevices?.getUserMedia({ video: true });
+        } catch (err3: any) {
+          console.error('All camera initialization attempts failed:', err3);
+          if (err3.name === 'NotAllowedError' || err3.name === 'PermissionDeniedError') {
+            setError('Camera access denied. Please ensure you have granted Klutchh permission to use your camera in your device settings.');
+          } else if (err3.name === 'NotFoundError' || err3.name === 'DevicesNotFoundError') {
+            setError('No camera detected. Please ensure your device has a functional camera.');
+          } else {
+            setError(`Hardware error: ${err3.message || 'Unknown camera failure'}. Try restarting the app.`);
+          }
+          return;
         }
-      });
+      }
+    }
+
+    if (stream && videoRef.current) {
+      videoRef.current.srcObject = stream;
+      setIsEngineReady(true);
+    }
+  };
+
+  // Start webcam feed and pose detection loop
+  useEffect(() => {
+    initCamera();
 
     return () => {
       if (videoRef.current && videoRef.current.srcObject) {
@@ -93,7 +134,7 @@ export const NativeLiveCameraModal: React.FC<NativeLiveCameraModalProps> = ({
         cancelAnimationFrame(animationFrameRef.current);
       }
     };
-  }, [isOpen]);
+  }, [isOpen, retryCount]);
 
   // Real-time Pose Detection Loop
   useEffect(() => {
@@ -220,20 +261,33 @@ export const NativeLiveCameraModal: React.FC<NativeLiveCameraModalProps> = ({
             <p className="text-zinc-400 text-sm max-w-xs">
               {error}
             </p>
-            {!isNativeDevice && (
-              <div className="mt-4 p-4 bg-zinc-900/80 backdrop-blur-md rounded-2xl border border-zinc-800">
-                <p className="text-xs text-amber-400 font-bold mb-2 uppercase">💡 Pro Tip for Web Users</p>
-                <p className="text-[10px] text-zinc-500 leading-relaxed">
-                  Browsers often block camera access inside iframes. Try clicking the <strong className="text-zinc-300">"Open in new tab"</strong> icon in the top-right corner of the preview to enable full hardware access.
-                </p>
-              </div>
-            )}
-            <button
-              onClick={onClose}
-              className="mt-6 px-8 py-3 bg-zinc-800 hover:bg-zinc-700 text-white rounded-xl text-xs font-black uppercase tracking-widest transition-all"
-            >
-              Return to Workspace
-            </button>
+            <div className="flex flex-col gap-3 w-full max-w-xs mt-4">
+              <button
+                onClick={() => setRetryCount(prev => prev + 1)}
+                className="px-8 py-3 bg-red-600 hover:bg-red-500 text-white rounded-xl text-xs font-black uppercase tracking-widest transition-all shadow-xl shadow-red-600/30"
+              >
+                Retry Camera Access
+              </button>
+              
+              {!isNativeDevice && (
+                <div className="p-4 bg-zinc-900/80 backdrop-blur-md rounded-2xl border border-zinc-800 text-left">
+                  <p className="text-xs text-amber-400 font-bold mb-2 uppercase flex items-center gap-2">
+                    <Smartphone className="w-3 h-3" />
+                    Pro Tip for Web Users
+                  </p>
+                  <p className="text-[10px] text-zinc-500 leading-relaxed">
+                    Browsers often block camera access inside iframes. Try clicking the <strong className="text-zinc-300">"Open in new tab"</strong> icon in the top-right corner of the preview to enable full hardware access.
+                  </p>
+                </div>
+              )}
+
+              <button
+                onClick={onClose}
+                className="px-8 py-3 bg-zinc-800 hover:bg-zinc-700 text-white rounded-xl text-xs font-black uppercase tracking-widest transition-all"
+              >
+                Return to Workspace
+              </button>
+            </div>
           </div>
         ) : (
           <>

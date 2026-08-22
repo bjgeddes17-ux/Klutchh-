@@ -1,7 +1,7 @@
 {
   "name": "Klutchh",
   "description": "Klutchh - Elite Sports Video Pose & Biometrics Analyzer for School Kids & Rising Athletes (Rugby, Soccer, Netball, Hockey, Cricket, Tennis, Golf).",
-  "requestFramePermissions": [],
+  "requestFramePermissions": ["camera", "microphone"],
   "majorCapabilities": [
     "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
   ]
