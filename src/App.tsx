@@ -22,6 +22,7 @@ import { VideoCropAndScrubber } from './components/VideoCropAndScrubber';
 import { detectCapableDevice, buildBareFallbackResult } from './utils/videoAnalyzer';
 import { PinPromptModal } from './components/PinPromptModal';
 import { parseZeroKnowledgeShareHash } from './utils/shareReportUrl';
+import { NativeLiveCameraModal } from './components/NativeLiveCameraModal';
 import { wakeLock, soundCues, triggerHaptic, setupAppLifecycleHandlers, notifications } from './utils/nativeEnhancements';
 
 export default function App() {
@@ -137,6 +138,7 @@ export default function App() {
   const [currentCropBox, setCurrentCropBox] = useState<{ x: number; y: number; width: number; height: number } | undefined>(undefined);
   const [activeReportId, setActiveReportId] = useState<string | null>(null);
   const [isPinPromptOpen, setIsPinPromptOpen] = useState(false);
+  const [isNativeCameraOpen, setIsNativeCameraOpen] = useState(false);
 
   const currentSport = SPORTS_RULES.find((s) => s.id === selectedSportId) || SPORTS_RULES[0];
 
@@ -746,6 +748,7 @@ export default function App() {
             selectedMovementPhase={selectedMovementPhase}
             onChangeMovementPhase={setSelectedMovementPhase}
             onVideoSelected={handleVideoSelected}
+            onOpenNativeCamera={() => setIsNativeCameraOpen(true)}
             customVideoUrl={customVideoUrl}
             analysisCount={analysisCount}
             maxAnalyses={maxAnalyses}
@@ -813,6 +816,14 @@ export default function App() {
         onSuccess={(report) => {
           handleLoadSavedReport(report);
         }}
+      />
+
+      {/* Native Live Camera Modal */}
+      <NativeLiveCameraModal
+        isOpen={isNativeCameraOpen}
+        onClose={() => setIsNativeCameraOpen(false)}
+        onRecordingComplete={handleVideoSelected}
+        sportName={currentSport.name}
       />
 
       {/* Footer */}

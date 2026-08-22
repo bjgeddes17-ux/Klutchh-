@@ -1,7 +1,10 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Camera, Video, Square, Play, RotateCcw, X, Sparkles, CheckCircle2, ShieldAlert, Sliders, Smartphone } from 'lucide-react';
+import { Camera, Video, Square, Play, RotateCcw, X, Sparkles, CheckCircle2, ShieldAlert, Sliders, Smartphone, Activity } from 'lucide-react';
 import { Capacitor } from '@capacitor/core';
 import { NativeHardwarePoseService } from '../utils/nativeHardwarePose';
+import { detectPoseForVideoFrame, generateSyntheticSportsPose } from '../utils/mediapipePose';
+import { drawPoseSkeleton, calculateAngle, calculateSymmetry, calculateKneeValgusScore } from '../utils/geometry';
+import { MediaPipeLandmark } from '../types';
 
 interface NativeLiveCameraModalProps {
   isOpen: boolean;
@@ -25,10 +28,15 @@ export const NativeLiveCameraModal: React.FC<NativeLiveCameraModalProps> = ({
   const [liveSpineAngle, setLiveSpineAngle] = useState(135);
   const [liveStabilityScore, setLiveStabilityScore] = useState(94);
   
+  const [error, setError] = useState<string | null>(null);
+  const [isEngineReady, setIsEngineReady] = useState(false);
+  
   const videoRef = useRef<HTMLVideoElement>(null);
+  const canvasRef = useRef<HTMLCanvasElement>(null);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const recordedChunksRef = useRef<Blob[]>([]);
   const timerRef = useRef<any>(null);
+  const animationFrameRef = useRef<number | null>(null);
 
   useEffect(() => {
     const checkNative = async () => {
@@ -45,17 +53,35 @@ export const NativeLiveCameraModal: React.FC<NativeLiveCameraModalProps> = ({
     checkNative();
   }, []);
 
-  // Start webcam feed for preview simulation / web testing
+  // Start webcam feed and pose detection loop
   useEffect(() => {
     if (!isOpen) return;
-    navigator.mediaDevices?.getUserMedia({ video: { facingMode: 'environment' }, audio: true })
+    setError(null);
+    setIsEngineReady(false);
+
+    const constraints = { 
+      video: { 
+        facingMode: 'environment',
+        width: { ideal: 1280 },
+        height: { ideal: 720 }
+      }, 
+      audio: true 
+    };
+
+    navigator.mediaDevices?.getUserMedia(constraints)
       .then((stream) => {
         if (videoRef.current) {
           videoRef.current.srcObject = stream;
+          setIsEngineReady(true);
         }
       })
       .catch((err) => {
         console.warn('Webcam stream unavailable:', err);
+        if (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError') {
+          setError('Camera access denied. Please enable permissions or open the app in a new tab.');
+        } else {
+          setError('Could not initialize camera. Ensure you are on a secure connection (HTTPS).');
+        }
       });
 
     return () => {
@@ -63,19 +89,70 @@ export const NativeLiveCameraModal: React.FC<NativeLiveCameraModalProps> = ({
         const stream = videoRef.current.srcObject as MediaStream;
         stream.getTracks().forEach(t => t.stop());
       }
+      if (animationFrameRef.current) {
+        cancelAnimationFrame(animationFrameRef.current);
+      }
     };
   }, [isOpen]);
 
-  // Simulate live joint angle oscillation for realism in free range mode
+  // Real-time Pose Detection Loop
   useEffect(() => {
-    if (!isOpen || mode !== 'free_range') return;
-    const interval = setInterval(() => {
-      setLiveKneeAngle(prev => Math.round(115 + Math.sin(Date.now() / 400) * 18));
-      setLiveSpineAngle(prev => Math.round(130 + Math.cos(Date.now() / 500) * 12));
-      setLiveStabilityScore(prev => Math.min(99, Math.max(88, Math.round(92 + Math.sin(Date.now() / 600) * 6))));
-    }, 200);
-    return () => clearInterval(interval);
-  }, [isOpen, mode]);
+    if (!isOpen || !isEngineReady) return;
+
+    const runDetection = async () => {
+      if (!videoRef.current || !canvasRef.current) {
+        animationFrameRef.current = requestAnimationFrame(runDetection);
+        return;
+      }
+
+      const video = videoRef.current;
+      const canvas = canvasRef.current;
+      const ctx = canvas.getContext('2d');
+
+      if (ctx && video.readyState >= 2) {
+        // Match canvas to video display size
+        if (canvas.width !== video.clientWidth || canvas.height !== video.clientHeight) {
+          canvas.width = video.clientWidth;
+          canvas.height = video.clientHeight;
+        }
+
+        const timestamp = performance.now();
+        const result = await detectPoseForVideoFrame(video, timestamp);
+        
+        const landmarks = result.landmarks;
+        
+        // Clear canvas for every frame to ensure no ghosting
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+        if (landmarks && landmarks.length > 0) {
+          // Draw skeleton ONLY if player is detected
+          drawPoseSkeleton(ctx, canvas.width, canvas.height, landmarks, {}, {}, undefined, undefined, true, 'sleek');
+
+          // Calculate real-time metrics
+          const knee = calculateAngle(landmarks[24], landmarks[26], landmarks[28]);
+          const spine = calculateAngle(landmarks[12], landmarks[24], landmarks[26]);
+          const stability = calculateSymmetry(landmarks);
+
+          setLiveKneeAngle(Math.round(knee));
+          setLiveSpineAngle(Math.round(spine));
+          setLiveStabilityScore(Math.round(stability));
+        } else {
+          // Reset metrics if no player detected
+          setLiveKneeAngle(0);
+          setLiveSpineAngle(0);
+          setLiveStabilityScore(0);
+        }
+      }
+
+      animationFrameRef.current = requestAnimationFrame(runDetection);
+    };
+
+    animationFrameRef.current = requestAnimationFrame(runDetection);
+
+    return () => {
+      if (animationFrameRef.current) cancelAnimationFrame(animationFrameRef.current);
+    };
+  }, [isOpen, isEngineReady]);
 
   const startRecording = () => {
     recordedChunksRef.current = [];
@@ -131,154 +208,190 @@ export const NativeLiveCameraModal: React.FC<NativeLiveCameraModalProps> = ({
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-50 bg-black/90 backdrop-blur-xl flex items-center justify-center p-4">
-      <div className="bg-zinc-950 border border-red-600/40 rounded-3xl w-full max-w-4xl overflow-hidden shadow-2xl flex flex-col max-h-[90vh]">
-        
-        {/* Header */}
-        <div className="bg-gradient-to-r from-zinc-900 to-zinc-950 px-6 py-4 border-b border-zinc-800 flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <div className="bg-red-600 p-2 rounded-xl text-white shadow-lg shadow-red-600/30">
-              <Smartphone className="w-5 h-5" />
+    <div className="fixed inset-0 z-50 bg-black overflow-hidden flex flex-col">
+      {/* Cinematic Full-Screen Viewport */}
+      <div className="relative flex-1 bg-black overflow-hidden flex items-center justify-center">
+        {error ? (
+          <div className="flex flex-col items-center justify-center p-8 text-center gap-4 z-10">
+            <div className="bg-red-600/20 p-4 rounded-full text-red-500 mb-2">
+              <ShieldAlert className="w-12 h-12" />
             </div>
-            <div>
-              <h2 className="text-lg font-black text-white uppercase tracking-wider">Native Hardware Camera & Pose Stream</h2>
-              <p className="text-xs text-zinc-400">{hardwareInfo} • Sport: <span className="text-yellow-400 capitalize">{sportName}</span></p>
-            </div>
-          </div>
-          <button
-            onClick={onClose}
-            className="p-2 text-zinc-400 hover:text-white rounded-xl bg-zinc-900 hover:bg-zinc-800 transition-colors"
-          >
-            <X className="w-5 h-5" />
-          </button>
-        </div>
-
-        {/* Mode Selector Tabs */}
-        <div className="bg-zinc-900/60 p-3 border-b border-zinc-800 flex items-center justify-center gap-4">
-          <button
-            onClick={() => setMode('free_range')}
-            className={`px-5 py-2 rounded-xl text-xs font-black uppercase tracking-wider transition-all flex items-center gap-2 ${
-              mode === 'free_range'
-                ? 'bg-gradient-to-r from-red-600 to-yellow-500 text-zinc-950 shadow-lg shadow-red-600/30'
-                : 'bg-zinc-800 text-zinc-300 hover:bg-zinc-700'
-            }`}
-          >
-            <Sparkles className="w-4 h-4" />
-            Free Range Live Overlay
-          </button>
-          <button
-            onClick={() => setMode('record_analyze')}
-            className={`px-5 py-2 rounded-xl text-xs font-black uppercase tracking-wider transition-all flex items-center gap-2 ${
-              mode === 'record_analyze'
-                ? 'bg-gradient-to-r from-red-600 to-yellow-500 text-zinc-950 shadow-lg shadow-red-600/30'
-                : 'bg-zinc-800 text-zinc-300 hover:bg-zinc-700'
-            }`}
-          >
-            <Video className="w-4 h-4" />
-            Record & Analyze
-          </button>
-        </div>
-
-        {/* Camera Viewport & Real-Time Skeleton Overlay */}
-        <div className="relative flex-1 bg-black overflow-hidden flex items-center justify-center min-h-[380px]">
-          <video
-            ref={videoRef}
-            autoPlay
-            playsInline
-            muted
-            className="absolute inset-0 w-full h-full object-cover opacity-80"
-          />
-
-          {/* Simulated MediaPipe Skeleton SVG Overlay */}
-          <svg className="absolute inset-0 w-full h-full pointer-events-none" viewBox="0 0 100 100" preserveAspectRatio="none">
-            {/* Spine & Torso Wireframe */}
-            <line x1="50" y1="30" x2="50" y2="65" stroke="#ef4444" strokeWidth="0.8" strokeDasharray="1,1" />
-            <line x1="42" y1="38" x2="58" y2="38" stroke="#eab308" strokeWidth="0.8" />
-            <line x1="42" y1="38" x2="38" y2="52" stroke="#eab308" strokeWidth="0.8" />
-            <line x1="58" y1="38" x2="62" y2="52" stroke="#eab308" strokeWidth="0.8" />
-            
-            {/* Legs */}
-            <line x1="47" y1="65" x2="44" y2="82" stroke="#10b981" strokeWidth="0.8" />
-            <line x1="44" y1="82" x2="43" y2="95" stroke="#10b981" strokeWidth="0.8" />
-            <line x1="53" y1="65" x2="56" y2="82" stroke="#10b981" strokeWidth="0.8" />
-            <line x1="56" y1="82" x2="57" y2="95" stroke="#10b981" strokeWidth="0.8" />
-
-            {/* Joints */}
-            <circle cx="50" cy="30" r="1.5" fill="#ef4444" />
-            <circle cx="50" cy="65" r="1.5" fill="#eab308" />
-            <circle cx="44" cy="82" r="1.5" fill="#10b981" />
-            <circle cx="56" cy="82" r="1.5" fill="#10b981" />
-          </svg>
-
-          {/* Live Telemetry HUD Overlays */}
-          <div className="absolute top-4 left-4 bg-zinc-950/80 backdrop-blur-md border border-zinc-800 p-3 rounded-2xl flex flex-col gap-1 shadow-xl">
-            <span className="text-[10px] font-black uppercase text-zinc-400 tracking-wider">Live Joint Metrics</span>
-            <div className="flex items-center gap-3 text-xs font-mono font-bold text-white">
-              <span>Knee Flexion: <strong className="text-yellow-400">{liveKneeAngle}°</strong></span>
-              <span>Spine Hinge: <strong className="text-emerald-400">{liveSpineAngle}°</strong></span>
-            </div>
-            <div className="flex items-center gap-2 text-[11px] text-zinc-300">
-              <span>Stability:</span>
-              <div className="w-24 bg-zinc-800 h-2 rounded-full overflow-hidden">
-                <div className="bg-emerald-500 h-full" style={{ width: `${liveStabilityScore}%` }} />
+            <h3 className="text-white font-black uppercase tracking-wider">Camera Access Required</h3>
+            <p className="text-zinc-400 text-sm max-w-xs">
+              {error}
+            </p>
+            {!isNativeDevice && (
+              <div className="mt-4 p-4 bg-zinc-900/80 backdrop-blur-md rounded-2xl border border-zinc-800">
+                <p className="text-xs text-amber-400 font-bold mb-2 uppercase">💡 Pro Tip for Web Users</p>
+                <p className="text-[10px] text-zinc-500 leading-relaxed">
+                  Browsers often block camera access inside iframes. Try clicking the <strong className="text-zinc-300">"Open in new tab"</strong> icon in the top-right corner of the preview to enable full hardware access.
+                </p>
               </div>
-              <span className="text-emerald-400 font-bold">{liveStabilityScore}%</span>
-            </div>
+            )}
+            <button
+              onClick={onClose}
+              className="mt-6 px-8 py-3 bg-zinc-800 hover:bg-zinc-700 text-white rounded-xl text-xs font-black uppercase tracking-widest transition-all"
+            >
+              Return to Workspace
+            </button>
           </div>
+        ) : (
+          <>
+            <video
+              ref={videoRef}
+              autoPlay
+              playsInline
+              muted
+              className="absolute inset-0 w-full h-full object-cover"
+            />
 
-          {/* Recording Timer Badge */}
-          {isRecording && (
-            <div className="absolute top-4 right-4 bg-red-600/90 text-white px-4 py-2 rounded-full flex items-center gap-2 shadow-2xl animate-pulse">
-              <div className="w-3 h-3 bg-white rounded-full animate-ping" />
-              <span className="font-mono font-black text-xs">REC 00:{recordingDuration < 10 ? `0${recordingDuration}` : recordingDuration}</span>
+            {/* Real-time Dynamic Pose Overlay Canvas */}
+            <canvas
+              ref={canvasRef}
+              className="absolute inset-0 w-full h-full pointer-events-none z-10"
+            />
+
+            {/* TOP OVERLAY: Header & Exit */}
+            <div className="absolute top-0 left-0 right-0 p-6 flex items-start justify-between z-20 bg-gradient-to-b from-black/60 to-transparent">
+              <div className="flex items-center gap-4">
+                <div className="bg-red-600 p-2.5 rounded-2xl text-white shadow-xl shadow-red-600/30 animate-pulse">
+                  <Activity className="w-6 h-6" />
+                </div>
+                <div>
+                  <h2 className="text-xl font-black text-white uppercase tracking-tighter leading-none">Klutchh Live HUD</h2>
+                  <div className="flex items-center gap-2 mt-1">
+                    <span className="text-[10px] font-black bg-yellow-500 text-black px-1.5 py-0.5 rounded leading-none uppercase">{sportName}</span>
+                    <span className="text-[10px] text-zinc-300 font-bold opacity-80">{hardwareInfo}</span>
+                  </div>
+                </div>
+              </div>
+              
+              <button
+                onClick={onClose}
+                className="p-3 text-white/70 hover:text-white rounded-2xl bg-white/10 hover:bg-white/20 backdrop-blur-xl border border-white/10 transition-all active:scale-90"
+              >
+                <X className="w-6 h-6" />
+              </button>
             </div>
-          )}
 
-          {/* Free Range Helper Banner */}
-          {mode === 'free_range' && (
-            <div className="absolute bottom-4 bg-zinc-950/85 backdrop-blur-md border border-zinc-800 px-6 py-3 rounded-2xl text-center max-w-md mx-auto">
-              <p className="text-xs font-bold text-white">Free Range Continuous Tracking Active</p>
-              <p className="text-[10px] text-zinc-400 mt-0.5">Move freely in camera view. Skeleton angles and biomechanical stability indicators update instantly at 30 FPS.</p>
+            {/* LEFT OVERLAY: Live Telemetry HUD */}
+            <div className="absolute top-28 left-6 bg-zinc-950/40 backdrop-blur-2xl border border-white/10 p-4 rounded-[2rem] flex flex-col gap-3 shadow-2xl z-20 min-w-[200px]">
+              <div className="flex items-center justify-between gap-4 border-b border-white/5 pb-2">
+                <span className="text-[10px] font-black uppercase text-zinc-400 tracking-widest">Biometrics</span>
+                {liveStabilityScore === 0 && (
+                  <div className="flex items-center gap-1.5 px-2 py-0.5 rounded bg-amber-500/20 border border-amber-500/30">
+                    <div className="w-1.5 h-1.5 bg-amber-500 rounded-full animate-pulse" />
+                    <span className="text-[8px] font-black text-amber-500 uppercase tracking-tighter">Searching</span>
+                  </div>
+                )}
+              </div>
+              
+              <div className="space-y-3">
+                <div className={`transition-all duration-500 ${liveStabilityScore === 0 ? 'opacity-20 blur-[2px]' : 'opacity-100'}`}>
+                  <div className="flex items-center justify-between text-xs font-bold text-white/60 mb-1 uppercase tracking-tighter">
+                    <span>Knee Flexion</span>
+                    <span className="text-yellow-400 font-black text-sm">{liveKneeAngle}°</span>
+                  </div>
+                  <div className="w-full bg-white/5 h-1.5 rounded-full overflow-hidden">
+                    <div className="bg-yellow-500 h-full transition-all duration-300" style={{ width: `${Math.min(100, (liveKneeAngle / 180) * 100)}%` }} />
+                  </div>
+                </div>
+
+                <div className={`transition-all duration-500 ${liveStabilityScore === 0 ? 'opacity-20 blur-[2px]' : 'opacity-100'}`}>
+                  <div className="flex items-center justify-between text-xs font-bold text-white/60 mb-1 uppercase tracking-tighter">
+                    <span>Spine Hinge</span>
+                    <span className="text-emerald-400 font-black text-sm">{liveSpineAngle}°</span>
+                  </div>
+                  <div className="w-full bg-white/5 h-1.5 rounded-full overflow-hidden">
+                    <div className="bg-emerald-500 h-full transition-all duration-300" style={{ width: `${Math.min(100, (liveSpineAngle / 180) * 100)}%` }} />
+                  </div>
+                </div>
+
+                <div className={`transition-all duration-500 ${liveStabilityScore === 0 ? 'opacity-20 blur-[2px]' : 'opacity-100'}`}>
+                  <div className="flex items-center justify-between text-xs font-bold text-white/60 mb-1 uppercase tracking-tighter">
+                    <span>Stability Index</span>
+                    <span className="text-white font-black text-sm">{liveStabilityScore}%</span>
+                  </div>
+                  <div className="w-full bg-white/5 h-1.5 rounded-full overflow-hidden">
+                    <div className="bg-white h-full transition-all duration-300" style={{ width: `${liveStabilityScore}%` }} />
+                  </div>
+                </div>
+              </div>
             </div>
-          )}
-        </div>
 
-        {/* Footer Actions */}
-        <div className="bg-zinc-900 px-6 py-4 border-t border-zinc-800 flex items-center justify-between">
-          <span className="text-xs text-zinc-400">
-            {mode === 'free_range' ? 'Real-time Hardware Accelerated Feed' : 'Tap record to capture session clip for full AI report'}
-          </span>
-
-          <div className="flex items-center gap-3">
-            {mode === 'record_analyze' ? (
-              isRecording ? (
-                <button
-                  onClick={stopRecording}
-                  className="bg-red-600 hover:bg-red-500 text-white px-6 py-3 rounded-xl text-xs font-black uppercase tracking-wider flex items-center gap-2 shadow-xl shadow-red-600/40 transition-all"
-                >
-                  <Square className="w-4 h-4 fill-current" />
-                  Stop & Analyze
-                </button>
-              ) : (
-                <button
-                  onClick={startRecording}
-                  className="bg-gradient-to-r from-red-600 to-yellow-500 hover:from-red-500 hover:to-yellow-400 text-zinc-950 px-8 py-3 rounded-xl text-xs font-black uppercase tracking-wider flex items-center gap-2 shadow-xl shadow-red-600/30 transition-all"
-                >
-                  <div className="w-3 h-3 bg-zinc-950 rounded-full" />
-                  Start Recording Session
-                </button>
-              )
-            ) : (
+            {/* RIGHT OVERLAY: Mode Toggles */}
+            <div className="absolute top-28 right-6 flex flex-col gap-3 z-20">
+              <button
+                onClick={() => setMode('free_range')}
+                className={`p-4 rounded-3xl backdrop-blur-2xl border transition-all flex flex-col items-center gap-1 shadow-2xl ${
+                  mode === 'free_range'
+                    ? 'bg-red-600/20 border-red-500/50 text-red-500'
+                    : 'bg-white/5 border-white/10 text-white/40 hover:bg-white/10'
+                }`}
+              >
+                <Sparkles className="w-6 h-6" />
+                <span className="text-[9px] font-black uppercase tracking-tighter">Live</span>
+              </button>
               <button
                 onClick={() => setMode('record_analyze')}
-                className="bg-zinc-800 hover:bg-zinc-700 text-white px-6 py-3 rounded-xl text-xs font-black uppercase tracking-wider transition-all"
+                className={`p-4 rounded-3xl backdrop-blur-2xl border transition-all flex flex-col items-center gap-1 shadow-2xl ${
+                  mode === 'record_analyze'
+                    ? 'bg-yellow-500/20 border-yellow-500/50 text-yellow-500'
+                    : 'bg-white/5 border-white/10 text-white/40 hover:bg-white/10'
+                }`}
               >
-                Switch to Record & Analyze
+                <Video className="w-6 h-6" />
+                <span className="text-[9px] font-black uppercase tracking-tighter">Record</span>
               </button>
-            )}
-          </div>
-        </div>
+            </div>
 
+            {/* BOTTOM OVERLAY: Primary Action & Info */}
+            <div className="absolute bottom-0 left-0 right-0 p-8 flex flex-col items-center gap-6 z-30 bg-gradient-to-t from-black/80 via-black/40 to-transparent">
+              {isRecording && (
+                <div className="bg-red-600 px-6 py-2 rounded-full flex items-center gap-3 shadow-2xl animate-pulse">
+                  <div className="w-3 h-3 bg-white rounded-full animate-ping" />
+                  <span className="font-mono font-black text-sm text-white tracking-widest">
+                    RECORDING 00:{recordingDuration < 10 ? `0${recordingDuration}` : recordingDuration}
+                  </span>
+                </div>
+              )}
+
+              <div className="flex items-center gap-6">
+                {mode === 'record_analyze' ? (
+                  isRecording ? (
+                    <button
+                      onClick={stopRecording}
+                      className="group relative"
+                    >
+                      <div className="absolute inset-0 bg-red-600 rounded-full animate-ping opacity-20" />
+                      <div className="relative bg-white text-red-600 w-20 h-20 rounded-full flex items-center justify-center shadow-2xl transition-transform active:scale-90">
+                        <Square className="w-8 h-8 fill-current" />
+                      </div>
+                    </button>
+                  ) : (
+                    <button
+                      onClick={startRecording}
+                      className="relative bg-red-600 w-20 h-20 rounded-full flex items-center justify-center shadow-2xl shadow-red-600/40 transition-transform active:scale-90 group"
+                    >
+                      <div className="absolute inset-0 border-4 border-white/20 rounded-full scale-110 group-hover:scale-125 transition-transform" />
+                      <div className="w-6 h-6 bg-white rounded-full" />
+                    </button>
+                  )
+                ) : (
+                  <div className="px-8 py-3 bg-white/10 backdrop-blur-xl border border-white/10 rounded-full text-white/70 text-xs font-black uppercase tracking-widest">
+                    Free Range Tracking Active
+                  </div>
+                )}
+              </div>
+
+              <p className="text-[10px] text-white/40 font-bold uppercase tracking-[0.2em] max-w-xs text-center leading-relaxed">
+                {mode === 'free_range' 
+                  ? 'Move freely. Joint angles and skeleton stability update instantly at 30 FPS.' 
+                  : 'Capture a session clip. Klutchh AI will perform full biomechanical extraction upon completion.'}
+              </p>
+            </div>
+          </>
+        )}
       </div>
     </div>
   );

@@ -13,6 +13,7 @@ interface UnifiedSetupCardProps {
   selectedMovementPhase: string;
   onChangeMovementPhase: (phase: string) => void;
   onVideoSelected: (url: string, file?: File) => void;
+  onOpenNativeCamera?: () => void;
   customVideoUrl: string | null;
   analysisCount: number;
   maxAnalyses: number;
@@ -31,6 +32,7 @@ export const UnifiedSetupCard: React.FC<UnifiedSetupCardProps> = ({
   selectedMovementPhase,
   onChangeMovementPhase,
   onVideoSelected,
+  onOpenNativeCamera,
   customVideoUrl,
   analysisCount,
   maxAnalyses,
@@ -283,7 +285,7 @@ export const UnifiedSetupCard: React.FC<UnifiedSetupCardProps> = ({
                 2
               </span>
               <h3 className="text-xs font-black uppercase text-white tracking-wider">
-                Upload Athlete Video Clip
+                Capture or Upload Athlete Clip
               </h3>
             </div>
             <div className="flex flex-col items-end gap-1">
@@ -300,6 +302,30 @@ export const UnifiedSetupCard: React.FC<UnifiedSetupCardProps> = ({
               </div>
             </div>
           </div>
+
+          {/* Native Camera Integration Button */}
+          <button
+            onClick={onOpenNativeCamera}
+            className="group relative overflow-hidden bg-gradient-to-br from-red-600 to-yellow-500 p-[1px] rounded-2xl shadow-xl shadow-red-600/20 active:scale-95 transition-all"
+          >
+            <div className="bg-zinc-950/90 group-hover:bg-zinc-950/40 transition-colors rounded-[15px] px-6 py-4 flex items-center justify-between gap-4">
+              <div className="flex items-center gap-4 text-left">
+                <div className="bg-red-600 p-3 rounded-xl text-white shadow-lg shadow-red-600/40 group-hover:scale-110 transition-transform">
+                  <Activity className="w-6 h-6 stroke-[2.5]" />
+                </div>
+                <div>
+                  <h4 className="text-sm font-black text-white uppercase tracking-wider flex items-center gap-2">
+                    Open Native Live Camera
+                    <span className="bg-white/10 text-[8px] px-1.5 py-0.5 rounded border border-white/20">PREMIUM</span>
+                  </h4>
+                  <p className="text-[10px] text-zinc-400 mt-0.5 max-w-[240px]">
+                    Capture real-time biomechanical data with hardware-accelerated pose extraction.
+                  </p>
+                </div>
+              </div>
+              <Sparkles className="w-5 h-5 text-yellow-400 animate-pulse" />
+            </div>
+          </button>
 
           {/* Athlete Position Selector */}
           <div className="flex flex-col gap-2">
