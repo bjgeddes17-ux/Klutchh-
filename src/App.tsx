@@ -217,7 +217,20 @@ export default function App() {
       () => {
         // App went to background: release wake lock and persist state checkpoint
         wakeLock.release();
-        notifications.showBackgroundRunning();
+        
+        let title = 'Klutchh is active';
+        let body = 'Biomechanics engine is ready in the background.';
+        
+        if (viewMode === 'processing') {
+          title = 'Analyzing Video...';
+          body = `Processing your ${currentSport.name} performance. Don't close the app!`;
+        } else if (viewMode === 'full_report') {
+          title = 'Report Ready';
+          body = `Your ${currentSport.name} analysis is loaded and ready for review.`;
+        }
+
+        notifications.showBackgroundRunning(title, body);
+        
         try {
           localStorage.setItem('klutchh_saved_reports', safeJsonStringify(savedReports));
         } catch {
@@ -330,6 +343,7 @@ export default function App() {
       }
       
       setCurrentAIReport(reportObj);
+      notifications.send('Analysis Complete! 🚀', `Your ${currentSport.name} Titan profile has been updated with new kinetic data.`);
 
       if (res.sequenceComparison) {
         setCurrentSequenceComparison(res.sequenceComparison);

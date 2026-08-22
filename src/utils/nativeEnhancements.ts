@@ -127,7 +127,7 @@ class NotificationManager {
     });
   }
 
-  public async showBackgroundRunning() {
+  public async showBackgroundRunning(title = 'Klutchh is active', body = 'Biomechanics engine is ready in the background.') {
     if (typeof window === 'undefined') return;
     if (!this.hasPermission) await this.requestPermission();
     if (!this.hasPermission) return;
@@ -135,11 +135,12 @@ class NotificationManager {
     await LocalNotifications.schedule({
       notifications: [
         {
-          title: 'Klutchh is active',
-          body: 'Biomechanics engine is ready in the background.',
+          title,
+          body,
           id: this.BACKGROUND_NOTIF_ID,
           ongoing: true,
-          autoCancel: false
+          autoCancel: false,
+          group: 'background_status'
         }
       ]
     });

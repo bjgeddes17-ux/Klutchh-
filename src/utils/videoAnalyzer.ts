@@ -10,6 +10,7 @@ import PoseWorker from './pose.worker?worker';
 import { safeJsonStringify } from './privacyStorage';
 import { getDrillsForErrors } from '../data/drillLibrary';
 import { evaluateScenarios } from '../data/scenarioLibrary';
+import { generateDynamicReport } from './dynamicNarrativeEngine';
 
 // Device Capability Detector
 export function detectCapableDevice(): boolean {
@@ -535,12 +536,11 @@ async function synthesizeAnalysis(
   }
 
   const keyframes = ensureMinimumKeyframes(rawKeyframes, allSampledFrames, sportRule, skillLevel, calibratedFps, 6);
+  const dynamicReport = generateDynamicReport(keyframes, sportRule, athleteCategory);
+
   const measuredAngles: Record<string, number> = {};
   const ruleResultsSummary: Record<string, 'optimal' | 'good' | 'warning' | 'error'> = {};
   
-  let totalRuleScore = 0;
-  let rulesCalculated = 0;
-
   sportRule.jointRules.forEach((rule) => {
     let relevantFrames = allSampledFrames.filter(f => f.detectedPhase === rule.phase);
     let relevantAngles = relevantFrames
@@ -553,96 +553,29 @@ async function synthesizeAnalysis(
         .filter((a): a is number => a !== undefined && !isNaN(a));
     }
 
-    if (relevantAngles.length === 0 && rule.keypoints.length === 3) {
-      const [p1, v, p3] = rule.keypoints;
-      relevantAngles = allSampledFrames
-        .map(f => {
-          if (f.landmarks && f.landmarks[p1] && f.landmarks[v] && f.landmarks[p3]) {
-            return calculateAngle(f.landmarks[p1], f.landmarks[v], f.landmarks[p3]);
-          }
-          return undefined;
-        })
-        .filter((a): a is number => a !== undefined && !isNaN(a));
-    }
-
     if (relevantAngles.length > 0) {
-      const tolerance = rule.tolerancesByLevel[skillLevel] || { idealMin: rule.idealMin, idealMax: rule.idealMax, toleranceMargin: 10 };
       const avg = relevantAngles.reduce((a, b) => a + b, 0) / relevantAngles.length;
       measuredAngles[rule.id] = Math.round(avg);
       
-      // Pure Math Scorer: Linear falloff based on deviation from ideal range
-      const mid = (tolerance.idealMin + tolerance.idealMax) / 2;
-      const range = (tolerance.idealMax - tolerance.idealMin) / 2;
-      const deviation = Math.abs(avg - mid);
-      
-      let score = 100;
-      if (deviation > range) {
-        const excess = deviation - range;
-        // Drop score by 2 points for every 1 degree of deviation outside the range
-        score = Math.max(0, 100 - (excess * 2));
-      }
-      
-      let status: 'optimal' | 'good' | 'warning' | 'error' = score >= 90 ? 'optimal' : score >= 75 ? 'good' : score >= 50 ? 'warning' : 'error';
-      ruleResultsSummary[rule.id] = status;
-      
-      totalRuleScore += score;
-      rulesCalculated++;
+      const tolerance = rule.tolerancesByLevel[skillLevel] || { idealMin: rule.idealMin, idealMax: rule.idealMax };
+      const isOptimal = avg >= tolerance.idealMin && avg <= tolerance.idealMax;
+      ruleResultsSummary[rule.id] = isOptimal ? 'optimal' : 'warning';
     } else {
       measuredAngles[rule.id] = Math.round((rule.idealMin + rule.idealMax) / 2);
       ruleResultsSummary[rule.id] = 'good';
     }
   });
 
-  const overallSymmetry = Math.round(totalSymmetry / validFrames);
-  const overallKneeSafety = Math.round(totalKneeSafety / validFrames);
+  const overallSymmetry = dynamicReport.kineticDataSummary.symmetryIndex;
+  const overallKneeSafety = Math.round(totalKneeSafety / (validFrames || 1));
   
-  // Refined Biometric Score Calculation
-  const ruleAvg = rulesCalculated > 0 ? totalRuleScore / rulesCalculated : 85;
-  // Weighting: 70% Joint Angles, 15% Symmetry, 15% Knee Safety
-  const overallBiometricScore = (ruleAvg * 0.7 + overallSymmetry * 0.15 + overallKneeSafety * 0.15) / 10;
-
-  const detectedIssues: string[] = [];
-  const positiveFormPoints: string[] = [];
-  const injuryFindings: string[] = [];
-
-  sportRule.jointRules.forEach((rule) => {
-    const val = measuredAngles[rule.id];
-    const status = ruleResultsSummary[rule.id];
-    if (status === 'warning' || status === 'error') {
-      detectedIssues.push(`Your ${rule.name} (at ${val}°) is outside ideal range. ${rule.impactOnPerformance}`);
-      
-      // Medical Logic Table: Identify critical safety violations
-      if (rule.importance === 'critical_safety') {
-        injuryFindings.push(rule.injuryRiskFactor);
-      }
-    } else {
-      positiveFormPoints.push(`Great ${rule.name} control! You hit ${val}° consistently.`);
-    }
-  });
-
-  const aiReport = await fetchOrBuildReport(
-    sportRule,
-    athleteCategory,
-    measuredAngles,
-    overallSymmetry,
-    overallKneeSafety,
-    overallBiometricScore,
-    detectedIssues,
-    positiveFormPoints,
-    sequenceComparison,
-    kineticSequence,
-    injuryFindings,
-    averageVelocities,
-    averageTorques
-  );
-
   return {
     startTime,
     endTime,
     cropBox,
     keyframes,
     allFrames: allSampledFrames,
-    aiReport,
+    aiReport: dynamicReport.report,
     overallSymmetry,
     overallKneeSafety,
     measuredAngles,
@@ -650,14 +583,15 @@ async function synthesizeAnalysis(
     sequenceComparison,
     kineticSequence,
     dynamicMetrics: {
-      peakAngularVelocity: Math.round(Math.max(...Object.values(averageVelocities), 180)),
-      estimatedPeakTorque: Math.round(Math.max(...Object.values(averageTorques), 4.5) * 10) / 10,
-      explosivenessScore: Math.min(100, Math.round(Math.max(...Object.values(averageVelocities), 180) / 4))
+      peakAngularVelocity: dynamicReport.kineticDataSummary.peakAngularVelocity,
+      estimatedPeakTorque: dynamicReport.kineticDataSummary.estimatedPeakTorque,
+      explosivenessScore: dynamicReport.kineticDataSummary.explosivenessScore
     },
     isPro30FpsPipeline: useOptionBPipeline,
     processingMode: useOptionBPipeline ? 'pro_30fps_cloud' : 'standard_client'
   };
 }
+
 
 // Deterministic Template Matrix for friendly, easy-to-understand coach feedback
 const TEMPLATE_MATRIX = {

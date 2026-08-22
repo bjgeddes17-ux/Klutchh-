@@ -65,6 +65,40 @@ export const KineticTitanBattleCard: React.FC<Props> = ({
   const precisionScore = Math.min(98, Math.max(72, Math.round((dynamicMetrics?.estimatedPeakTorque || 8.2) * 10)));
   const flowScore = Math.min(98, Math.max(72, overallSymmetry || (sequenceComparison as any)?.overallSymmetry || 85));
 
+  const titanRank = aiReport?.kineticSummary?.headline?.split(' ')[0] || 'Base';
+
+  // Math Model Explanations for the user
+  const mathModels = [
+    {
+      label: '⚡ Kinetic Power (ω)',
+      value: `${dynamicMetrics?.peakAngularVelocity || 685}°/s`,
+      formula: 'ω = Δθ / Δt',
+      description: 'Peak angular velocity derived from joint coordinate displacement over time.',
+      status: powerScore > 85 ? 'ELITE' : 'STABLE'
+    },
+    {
+      label: '🛡️ Joint Armor (τ)',
+      value: `${dynamicMetrics?.estimatedPeakTorque || 215} Nm`,
+      formula: 'τ = I * α',
+      description: 'Estimated torque based on segment moment of inertia and angular acceleration.',
+      status: armorScore > 85 ? 'ARMORED' : 'REINFORCING'
+    },
+    {
+      label: '🎯 Precision Index (θ)',
+      value: `${precisionScore}%`,
+      formula: 'Σ|θ_act - θ_opt|',
+      description: 'Sum of absolute deviation from gold-standard pro biomechanical checkpoints.',
+      status: precisionScore > 80 ? 'TITAN' : 'LEARNER'
+    },
+    {
+      label: '🔄 Flow Coeff (η)',
+      value: `${flowScore}%`,
+      formula: 'η = P_out / P_in',
+      description: 'Efficiency of energy transfer through the proximal-to-distal kinetic chain.',
+      status: flowScore > 80 ? 'FLUID' : 'TURBULENT'
+    }
+  ];
+
   // Sound generator
   const playSound = (freq: number, type: OscillatorType = 'sine', duration: number = 0.15) => {
     if (!soundEnabled || typeof window === 'undefined') return;
@@ -406,56 +440,78 @@ export const KineticTitanBattleCard: React.FC<Props> = ({
           </div>
         </div>
       ) : (
-        /* VIEW 2: TELEMETRY STATS BARS */
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 pt-2 border-t border-amber-500/20 z-10">
-          {[
-            { 
-              id: 'explosive_power',
-              label: '⚡ Explosive Power', 
-              score: powerScore, 
-              color: 'from-amber-500 to-yellow-400',
-              meaning: 'Measures how rapidly ground force transfers into terminal movement velocity.'
-            },
-            { 
-              id: 'joint_armor',
-              label: '🛡️ Joint Armor', 
-              score: armorScore, 
-              color: 'from-emerald-500 to-teal-400',
-              meaning: 'Quantifies ligament protection and shock absorption capacity during plant.'
-            },
-            { 
-              id: 'precision',
-              label: '🎯 Precision', 
-              score: precisionScore, 
-              color: 'from-blue-500 to-cyan-400',
-              meaning: 'Evaluates alignment against gold standard pro biomechanical checkpoints.'
-            },
-            { 
-              id: 'kinetic_flow',
-              label: '🔄 Kinetic Flow', 
-              score: flowScore, 
-              color: 'from-purple-500 to-pink-400',
-              meaning: 'Measures seamless kinetic energy transmission through the whole body.'
-            }
-          ].map((attr) => (
-            <div 
-              key={attr.id} 
-              onClick={() => onExplainerClick && onExplainerClick(attr)}
-              className="bg-zinc-950/80 hover:bg-zinc-900 border border-zinc-800 hover:border-amber-500/50 p-2.5 rounded-xl flex flex-col gap-1 cursor-pointer transition-all group"
-            >
-              <div className="flex justify-between items-center text-[10px] font-bold">
-                <span className="text-zinc-300 group-hover:text-amber-300 transition-colors">{attr.label}</span>
-                <span className="font-mono text-amber-400 font-black">{attr.score}%</span>
+        /* VIEW 2: TELEMETRY STATS BARS & MATH MODELS */
+        <div className="flex flex-col gap-6 z-10 animate-fadeIn">
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 pt-2 border-t border-amber-500/20">
+            {[
+              { 
+                id: 'explosive_power',
+                label: '⚡ Explosive Power', 
+                score: powerScore, 
+                color: 'from-amber-500 to-yellow-400',
+                meaning: 'Measures how rapidly ground force transfers into terminal movement velocity.'
+              },
+              { 
+                id: 'joint_armor',
+                label: '🛡️ Joint Armor', 
+                score: armorScore, 
+                color: 'from-emerald-500 to-teal-400',
+                meaning: 'Quantifies ligament protection and shock absorption capacity during plant.'
+              },
+              { 
+                id: 'precision',
+                label: '🎯 Precision', 
+                score: precisionScore, 
+                color: 'from-blue-500 to-cyan-400',
+                meaning: 'Evaluates alignment against gold standard pro biomechanical checkpoints.'
+              },
+              { 
+                id: 'kinetic_flow',
+                label: '🔄 Kinetic Flow', 
+                score: flowScore, 
+                color: 'from-purple-500 to-pink-400',
+                meaning: 'Measures seamless kinetic energy transmission through the whole body.'
+              }
+            ].map((attr) => (
+              <div 
+                key={attr.id} 
+                className="bg-zinc-950/80 border border-zinc-800 p-2.5 rounded-xl flex flex-col gap-1 transition-all"
+              >
+                <div className="flex justify-between items-center text-[10px] font-bold">
+                  <span className="text-zinc-300">{attr.label}</span>
+                  <span className="font-mono text-amber-400 font-black">{attr.score}%</span>
+                </div>
+                <div className="w-full bg-zinc-900 h-2 rounded-full overflow-hidden border border-zinc-800">
+                  <div
+                    className={`bg-gradient-to-r ${attr.color} h-full rounded-full transition-all duration-1000`}
+                    style={{ width: `${attr.score}%` }}
+                  />
+                </div>
               </div>
-              <div className="w-full bg-zinc-900 h-2 rounded-full overflow-hidden border border-zinc-800">
-                <div
-                  className={`bg-gradient-to-r ${attr.color} h-full rounded-full transition-all duration-1000`}
-                  style={{ width: `${attr.score}%` }}
-                />
+            ))}
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            {mathModels.map((model, idx) => (
+              <div key={idx} className="bg-zinc-900/50 border border-zinc-800 p-4 rounded-2xl flex flex-col gap-2">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-black text-amber-400 uppercase tracking-widest">{model.label}</span>
+                  <span className="text-[10px] font-mono font-bold bg-amber-500/10 text-amber-500 px-2 py-0.5 rounded border border-amber-500/20">
+                    {model.status}
+                  </span>
+                </div>
+                <div className="flex items-end justify-between gap-4">
+                  <div className="flex flex-col">
+                    <span className="text-2xl font-black text-white">{model.value}</span>
+                    <span className="text-[10px] font-mono text-zinc-500 mt-1">MODEL: <code className="text-zinc-300">{model.formula}</code></span>
+                  </div>
+                  <p className="text-[10px] text-zinc-400 leading-relaxed text-right max-w-[150px]">
+                    {model.description}
+                  </p>
+                </div>
               </div>
-              <span className="text-[8px] font-mono text-zinc-500 group-hover:text-zinc-400 text-right">Tap for Telemetry ↗</span>
-            </div>
-          ))}
+            ))}
+          </div>
         </div>
       )}
     </div>
