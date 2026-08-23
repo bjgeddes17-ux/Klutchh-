@@ -1,6 +1,7 @@
 import express from "express";
 import path from "path";
 import { createServer as createViteServer } from "vite";
+import { GoogleGenAI } from "@google/genai";
 
 async function startServer() {
   const app = express();
@@ -11,6 +12,22 @@ async function startServer() {
 
   // In-memory / Cloud Video Storage Map for cross-device raw video streaming (Option B)
   const videoStorageMap = new Map<string, { buffer: Buffer; contentType: string; name: string }>();
+
+  // Initialize Gemini AI Client lazily/safely
+  const getGeminiClient = () => {
+    const apiKey = process.env.GEMINI_API_KEY;
+    if (!apiKey || apiKey === 'undefined' || apiKey === 'null' || apiKey.trim() === '' || apiKey.startsWith('Bearer ')) {
+      throw new Error("GEMINI_API_KEY environment variable is missing or invalid.");
+    }
+    return new GoogleGenAI({
+      apiKey,
+      httpOptions: {
+        headers: {
+          "User-Agent": "aistudio-build",
+        },
+      },
+    });
+  };
 
   // API Health Endpoint
   app.get("/api/health", (req, res) => {
@@ -84,7 +101,20 @@ async function startServer() {
   });
 
   // Serve & Stream Video Endpoint with HTTP Range requests (206 Partial Content)
+  app.options("/api/videos/:id", (req, res) => {
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
+    res.setHeader('Access-Control-Allow-Headers', 'Range, Content-Type');
+    res.setHeader('Access-Control-Expose-Headers', 'Content-Range, Content-Length, Accept-Ranges');
+    res.sendStatus(204);
+  });
+
   app.get("/api/videos/:id", (req, res) => {
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
+    res.setHeader('Access-Control-Allow-Headers', 'Range, Content-Type');
+    res.setHeader('Access-Control-Expose-Headers', 'Content-Range, Content-Length, Accept-Ranges');
+
     const videoId = req.params.id;
     const video = videoStorageMap.get(videoId);
 
@@ -1002,30 +1032,10 @@ function buildDynamicFallbackReport(data: any) {
       const isCorrectOrder = (hipsPeak < shouldersPeak) && (shouldersPeak < handsPeak) && ((shouldersPeak - hipsPeak) >= 0.02);
 
       const kineticKeyframes: any[] = [];
-      const totalFramesCount = allSampledFrames.length;
       const actualSteps = biomechanicalSteps.map((step: any, idx: number) => {
-        // Divide video timeline into 4 precise temporal windows for mathematical extrema selection
-        const windowSize = Math.max(1, Math.floor(totalFramesCount / biomechanicalSteps.length));
-        const startIdx = idx * windowSize;
-        const endIdx = Math.min(totalFramesCount - 1, (idx + 1) * windowSize + 2);
-        
-        const windowFrames = allSampledFrames.slice(startIdx, endIdx + 1);
-        
-        // Find extrema: frame with highest rotational velocity or deepest loading inflection point in this window
-        let bestFrame = windowFrames[0] || phaseWinners[step.phaseName]?.frame || allSampledFrames[0];
-        let maxExtremaScore = -1;
-
-        windowFrames.forEach((f: any) => {
-          const hipVel = smoothedVelocities.find((sv: any) => Math.abs(sv.timestamp - f.timestamp) < 0.05)?.velocities?.Hips || 0;
-          const shoulderVel = smoothedVelocities.find((sv: any) => Math.abs(sv.timestamp - f.timestamp) < 0.05)?.velocities?.Shoulders || 0;
-          const extScore = hipVel + shoulderVel + (f.symmetryScore ? f.symmetryScore * 0.01 : 0);
-          if (extScore > maxExtremaScore) {
-            maxExtremaScore = extScore;
-            bestFrame = f;
-          }
-        });
-
-        const winner = bestFrame || phaseWinners[step.phaseName]?.frame || allSampledFrames[Math.min(totalFramesCount - 1, idx * 5)];
+        const winner = phaseWinners[step.phaseName]?.frame || 
+                       allSampledFrames.find((f: any) => f.detectedPhase === step.phaseName) ||
+                       allSampledFrames[Math.min(allSampledFrames.length - 1, (step.stepNumber - 1) * 5)];
         
         if (winner && !kineticKeyframes.some((kf: any) => kf.timestamp === winner.timestamp)) {
           kineticKeyframes.push(winner);
@@ -1286,9 +1296,52 @@ Generate a JSON report matching the following exact JSON schema:
 }`;
 
       let responseText = "";
-      let modelUsed = "dynamic-rules-fallback-engine";
+      let modelUsed = "gemini-1.5-flash";
 
-      console.log("[Klutchh Engine] Gemini API disabled. Using dynamic rules analysis engine.");
+      if (process.env.GEMINI_API_KEY) {
+        const modelsToTry = ["gemini-1.5-flash", "gemini-1.5-pro"];
+        for (const modelName of modelsToTry) {
+          try {
+            console.log(`[Klutchh Engine] Attempting report generation with model: ${modelName}`);
+            const ai = getGeminiClient();
+            const geminiPromise = ai.models.generateContent({
+              model: modelName,
+              contents: prompt,
+              config: {
+                responseMimeType: "application/json",
+                temperature: 0.7,
+              },
+            });
+
+            // 15-second strict timeout per attempt to accommodate network latency
+            const timeoutPromise = new Promise<never>((_, reject) =>
+              setTimeout(() => reject(new Error(`Gemini API call timed out for ${modelName} (15s cap)`)), 15000)
+            );
+
+            const response = await Promise.race([geminiPromise, timeoutPromise]);
+            const text = response.text || "";
+            if (text.trim()) {
+              responseText = text;
+              modelUsed = modelName;
+              console.log(`[Klutchh Engine] Successfully generated report using model: ${modelName}`);
+              break;
+            }
+          } catch (primaryError: any) {
+            const errStr = primaryError?.message || String(primaryError);
+            const isQuota = errStr.includes("429") || errStr.includes("RESOURCE_EXHAUSTED") || errStr.includes("prepayment credits") || errStr.includes("resource_exhausted") || errStr.includes("quota") || errStr.includes("Exceeded");
+            const isAuth = errStr.includes("401") || errStr.includes("authentication") || errStr.includes("missing or invalid");
+            if (isQuota) {
+              console.log(`[Klutchh Engine] Model ${modelName} quota limit/resource exhausted reached. Trying next fallback...`);
+            } else if (isAuth) {
+              console.log(`[Klutchh Engine] Model ${modelName} auth failure. Trying next fallback...`);
+            } else {
+              console.log(`[Klutchh Engine] Model ${modelName} error: ${errStr.slice(0, 100)}. Trying next fallback...`);
+            }
+          }
+        }
+      } else {
+        console.log("[Klutchh Engine] GEMINI_API_KEY not configured. Using dynamic rules analysis engine.");
+      }
 
       let reportData: any = null;
       if (responseText) {

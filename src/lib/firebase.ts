@@ -13,9 +13,6 @@ import {
 } from 'firebase/auth';
 import { 
   getFirestore, 
-  initializeFirestore,
-  persistentLocalCache,
-  persistentMultipleTabManager,
   collection, 
   doc, 
   setDoc, 
@@ -29,7 +26,6 @@ import {
 } from 'firebase/firestore';
 import firebaseConfig from '../../firebase-applet-config.json';
 import { UserAccount, SavedReport, TrophyCard } from '../types';
-import { sanitizeForJSON, safeJsonStringify } from '../utils/privacyStorage';
 
 // Standardized Firestore Error Logger as per Firebase Skill guidelines
 export enum OperationType {
@@ -75,7 +71,7 @@ export function handleFirestoreError(error: unknown, operationType: OperationTyp
     operationType,
     path
   };
-  console.error('Firestore Error:', safeJsonStringify(errInfo));
+  console.error('Firestore Error:', JSON.stringify(errInfo));
   return errInfo;
 }
 
@@ -83,26 +79,20 @@ export function handleFirestoreError(error: unknown, operationType: OperationTyp
 const app = !getApps().length ? initializeApp(firebaseConfig) : getApps()[0];
 
 export const auth = getAuth(app);
-// CRITICAL: Initialize Firestore with persistent local cache to allow offline support
-export const db = initializeFirestore(app, {
-  localCache: persistentLocalCache({
-    tabManager: persistentMultipleTabManager()
-  })
-}, firebaseConfig.firestoreDatabaseId);
+// CRITICAL: Initialize Firestore with the provisioned firestoreDatabaseId
+export const db = getFirestore(app, firebaseConfig.firestoreDatabaseId);
 export const googleProvider = new GoogleAuthProvider();
 
 // Connection testing helper (lazy)
 async function testFirestoreConnection() {
   try {
     if (firebaseConfig.firestoreDatabaseId) {
-      await getDocFromServer(doc(db, 'test', 'connection'));
+      await getDocFromServer(doc(db, 'test', 'connection')).catch(() => {
+        // Suppress initial test document errors when database is idle or initializing
+      });
     }
-  } catch (error: any) {
-    if (error?.message?.includes('offline') || error?.code === 'unavailable') {
-      console.log("[Firestore Client] Running in offline persistence mode. Operations will sync automatically when connected.");
-    } else {
-      // Suppress initial test document permission errors when database is idle or initializing
-    }
+  } catch (error) {
+    // Ignore network unavailability warnings during offline/cold starts
   }
 }
 setTimeout(() => {
@@ -241,10 +231,9 @@ export const saveReportToFirestore = async (report: SavedReport, userId: string)
     return;
   }
   try {
-    const cleanReport = sanitizeForJSON(report) || {};
     const reportDocRef = doc(db, 'savedReports', report.id);
     await setDoc(reportDocRef, {
-      ...cleanReport,
+      ...report,
       userId,
       createdAt: report.createdAt || new Date().toISOString()
     });
@@ -303,10 +292,9 @@ export const updateUserProfileInFirestore = async (userId: string, updates: { na
 export const saveTrophyCardToFirestore = async (card: TrophyCard) => {
   if (!auth.currentUser) return;
   try {
-    const cleanCard = sanitizeForJSON(card) || {};
     const cardDocRef = doc(db, 'trophyCards', card.id);
     await setDoc(cardDocRef, {
-      ...cleanCard,
+      ...card,
       userId: auth.currentUser.uid,
       createdAt: card.createdAt || new Date().toISOString()
     });

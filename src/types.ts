@@ -47,6 +47,7 @@ export interface Drill {
   howToExecute?: string[];
   coachingCue?: string;
   targetJoint?: string;
+  difficultyTier?: SkillLevel;
 }
 
 export type CorrectiveDrill = Drill;
@@ -71,7 +72,7 @@ export interface FrameAnalysis {
   isRealDetection?: boolean;
   velocity?: Record<string, number>; // Angular velocity in deg/s
   torque?: Record<string, number>; // Estimated relative torque
-  dataUrl?: string;
+  triggerTag?: string; // Biomechanical marker for this specific frame
 }
 
 export interface PhaseTrigger {
@@ -81,6 +82,7 @@ export interface PhaseTrigger {
   jointId?: number; // For relative position triggers
   targetId?: number; // For relative position comparison
   threshold: number;
+  requiredBiomechanics?: string; // Descriptive tag of what must happen (e.g. "Lead arm must lock to 180°")
 }
 
 export interface MovementTechnique {
@@ -156,7 +158,6 @@ export interface KineticSummary {
 export interface AICoachingReport {
   overallGrade: string;
   summaryTitle: string;
-  summaryText?: string;
   keyStrengths: (string | StrengthItem)[];
   biomechanicInsights: string[];
   executiveDossier?: ExecutiveDossier;
@@ -207,9 +208,6 @@ export interface SavedReport {
   athleteName?: string;
   folderName?: string;
   videoUrl?: string;
-  startTime?: number;
-  endTime?: number;
-  cropBox?: { x: number; y: number; width: number; height: number };
   duration: number;
   overallGrade: string;
   overallScore: number;
@@ -251,14 +249,10 @@ export interface SavedReport {
   cloudVideoUrl?: string;
   processingMode?: 'pro_30fps_cloud' | 'standard_client';
   preRenderedFrames?: { timestamp: number; dataUrl: string }[];
-
 }
 
 export interface AnalysisResult {
   keyframes: FrameAnalysis[];
-  startTime?: number;
-  endTime?: number;
-  cropBox?: { x: number; y: number; width: number; height: number };
   allFrames?: FrameAnalysis[];
   aiReport: AICoachingReport;
   overallSymmetry: number;
@@ -301,16 +295,6 @@ export interface AnalysisResult {
   cloudVideoUrl?: string;
   processingMode?: 'pro_30fps_cloud' | 'standard_client';
   preRenderedFrames?: { timestamp: number; dataUrl: string }[];
-}
-
-export interface FilmStripFrame {
-  timestamp: number;
-  skeletonLandmarks?: MediaPipeLandmark[];
-  jointColors?: Record<string, string>;
-  bitmap?: ImageBitmap | null;
-  dataUrl?: string;
-  ruleResults?: Record<string, 'optimal' | 'good' | 'warning' | 'error'>;
-  angles?: Record<string, number>;
 }
 
 export interface TrophyCard {

@@ -9,8 +9,7 @@ import {
   Drill,
   TrophyCard
 } from '../types';
-import { sanitizeForJSON, safeJsonStringify } from '../utils/privacyStorage';
-import { KineticTitanBattleCard } from './KineticTitanBattleCard';
+import { D3SkeletonHeatmap } from './D3SkeletonHeatmap';
 import { ensureMinimumKeyframes } from '../utils/videoAnalyzer';
 import {
   ArrowLeft,
@@ -23,6 +22,7 @@ import {
   SkipBack,
   SkipForward,
   Save,
+  Printer,
   Sparkles,
   ShieldCheck,
   Activity,
@@ -46,24 +46,12 @@ import {
   ChevronLeft,
   ChevronRight,
   X,
-  Eye,
-  EyeOff,
   Cloud,
   Download,
   HardDrive,
   FolderOpen,
   Search,
-  Trophy,
-  Edit3,
-  Plus,
-  Tag,
-  ChevronDown,
-  ChevronUp,
-  Sliders,
-  Copy,
-  Check,
-  List,
-  LayoutGrid
+  Trophy
 } from 'lucide-react';
 import { get } from 'idb-keyval';
 import { drawPoseSkeleton, calculateAngle } from '../utils/geometry';
@@ -75,17 +63,10 @@ import { SequenceVerificationMatrix } from './SequenceVerificationMatrix';
 import { TrophyCardMaker, CARD_THEMES } from './TrophyCardMaker';
 import { BiomechanicalGameArena } from './BiomechanicalGameArena';
 import { BiomechanicalSkeletonComparison } from './BiomechanicalSkeletonComparison';
+import { MovementJourneyPath } from './MovementJourneyPath';
 import { SaveToAthleteModal } from './SaveToAthleteModal';
 import { formatAthleteFolderName } from '../utils/rosterStorage';
 import { motion } from 'motion/react';
-import {
-  Radar,
-  RadarChart,
-  PolarGrid,
-  PolarAngleAxis,
-  PolarRadiusAxis,
-  ResponsiveContainer
-} from 'recharts';
 
 import stiffLandingImg from '../assets/images/biomechanics_stiff_landing_1786390037620.jpg';
 import powerLeakImg from '../assets/images/biomechanics_power_leak_1786390053375.jpg';
@@ -139,9 +120,6 @@ interface AnalysisReportPageProps {
   videoFile?: File | null;
   initialDrillProgress?: Record<number, 'pending' | 'completed' | 'mastered'>;
   onUpdateDrillProgress?: (progress: Record<number, 'pending' | 'completed' | 'mastered'>) => void;
-  startTime?: number;
-  endTime?: number;
-  cropBox?: { x: number; y: number; width: number; height: number };
 }
 
 export const AnalysisReportPage: React.FC<AnalysisReportPageProps> = ({
@@ -163,10 +141,7 @@ export const AnalysisReportPage: React.FC<AnalysisReportPageProps> = ({
   activeReportId,
   videoFile,
   initialDrillProgress,
-  onUpdateDrillProgress,
-  startTime = 0,
-  endTime,
-  cropBox
+  onUpdateDrillProgress
 }) => {
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -177,22 +152,12 @@ export const AnalysisReportPage: React.FC<AnalysisReportPageProps> = ({
   const [duration, setDuration] = useState(30);
   const [playbackSpeed, setPlaybackSpeed] = useState(1.0);
   const [coachNotes, setCoachNotes] = useState(initialCoachNotes);
-  const [completedQuest, setCompletedQuest] = useState<boolean>(false);
-  const [activeFocusCues, setActiveFocusCues] = useState<string[]>([]);
-  const [activeScenarioPhase, setActiveScenarioPhase] = useState<string | null>(null);
-  const [customSymmetry, setCustomSymmetry] = useState<number | null>(null);
-  const [customKneeSafety, setCustomKneeSafety] = useState<number | null>(null);
-  const [customVelocity, setCustomVelocity] = useState<number | null>(null);
-  const [customTorque, setCustomTorque] = useState<number | null>(null);
   const [showUploader, setShowUploader] = useState(false);
   const [showSaveAthleteModal, setShowSaveAthleteModal] = useState(false);
   const [showWhatsAppModal, setShowWhatsAppModal] = useState(false);
   const [assignedAthleteName, setAssignedAthleteName] = useState<string | null>(null);
   const [showExportSuccess, setShowExportSuccess] = useState(false);
-  const [activeTab, setActiveTab] = useState<'overview' | 'game' | 'drills' | 'notes' | 'trading_card' | 'trophy_shelf'>('overview');
-  const [dossierViewMode, setDossierViewMode] = useState<'all' | 'cards'>('all');
-  const [copiedSummary, setCopiedSummary] = useState(false);
-  const [completedDrills, setCompletedDrills] = useState<Record<string, boolean>>({});
+  const [activeTab, setActiveTab] = useState<'game' | 'drills' | 'notes' | 'trading_card' | 'trophy_shelf'>('game');
   const [deckCardIndex, setDeckCardIndex] = useState(0);
   const [touchStart, setTouchStart] = useState<number | null>(null);
   const [touchEnd, setTouchEnd] = useState<number | null>(null);
@@ -205,91 +170,40 @@ export const AnalysisReportPage: React.FC<AnalysisReportPageProps> = ({
   const [isMuted, setIsMuted] = useState(true);
   const [videoError, setVideoError] = useState(false);
   const [localSequenceComparison, setLocalSequenceComparison] = useState(sequenceComparison);
-  useEffect(() => {
-    setLocalSequenceComparison(sequenceComparison);
-  }, [sequenceComparison]);
-
-  useEffect(() => {
-    setCoachNotes(initialCoachNotes || '');
-  }, [initialCoachNotes]);
   const [activeQuestDrill, setActiveQuestDrill] = useState<any | null>(null);
   const [activeExplainerMetric, setActiveExplainerMetric] = useState<{ label: string; score: number; meaning: string; formula: string } | null>(null);
   const [isPlayingAudio, setIsPlayingAudio] = useState(false);
   const [hudHoverPos, setHudHoverPos] = useState({ x: 0, y: 0 });
   const [isExporting, setIsExporting] = useState(false);
-  const [isReportExported, setIsReportExported] = useState(false);
   const [activeQuestIndex, setActiveQuestIndex] = useState<number | null>(null);
   const [questReps, setQuestReps] = useState(0);
   const [questGoalReps, setQuestGoalReps] = useState(8);
   const [questXpEarned, setQuestXpEarned] = useState(0);
   const [questVictory, setQuestVictory] = useState(false);
   const [showStorageNoticeModal, setShowStorageNoticeModal] = useState<boolean>(true);
-  const [overlayMode, setOverlayMode] = useState<'sleek' | 'minimal' | 'off'>('sleek');
-  const overlayModeRef = useRef<'sleek' | 'minimal' | 'off'>('sleek');
-  useEffect(() => {
-    overlayModeRef.current = overlayMode;
-  }, [overlayMode]);
   const [viewMode, setViewMode] = useState<'student' | 'coach'>('student');
-
-  const radarData = useMemo(() => {
-    if (!kineticSequence?.steps || kineticSequence.steps.length === 0) {
-      // Fallback data if none provided
-      return [
-        { subject: 'Setup', A: 85, fullMark: 100 },
-        { subject: 'Load', A: 78, fullMark: 100 },
-        { subject: 'Impact', A: 92, fullMark: 100 },
-        { subject: 'Finish', A: 88, fullMark: 100 },
-      ];
-    }
-    return kineticSequence.steps.map(s => ({
-      subject: s.name.length > 10 ? s.name.substring(0, 8) + '..' : s.name,
-      A: s.score,
-      fullMark: 100,
-    }));
-  }, [kineticSequence]);
-
-  // Filmstrip ImageBitmap cache for zero-latency instant playback
-  const [filmStripFrames, setFilmStripFrames] = useState<any[]>([]);
-  useEffect(() => {
-    let isMounted = true;
-    const rawFrames = allFrames && allFrames.length > 0 ? allFrames : (keyframeList || []);
-    if (rawFrames.length > 0) {
-      Promise.all(
-        rawFrames.map(async (f: any) => {
-          const src = f.bitmap || f.dataUrl;
-          let bitmap: ImageBitmap | null = null;
-          if (src && typeof src === 'string') {
-            try {
-              const img = new Image();
-              img.crossOrigin = 'anonymous';
-              await new Promise((res, rej) => {
-                img.onload = res;
-                img.onerror = (e) => { console.error('Failed to load bitmap image:', e); rej(e); };
-                img.src = src;
-              });
-              bitmap = await createImageBitmap(img);
-            } catch (err) {
-              console.error('Error converting bitmap to ImageBitmap:', err);
-            }
-          } else {
-            console.warn('Bitmap source missing or invalid for frame', f.timestamp);
-          }
-          return {
-            timestamp: f.timestamp || 0,
-            landmarks: f.landmarks || f.skeletonLandmarks || [],
-            ruleResults: f.ruleResults || {},
-            angles: f.angles || {},
-            bitmap
-          };
-        })
-      ).then((loaded) => {
-        if (isMounted) setFilmStripFrames(loaded);
-      });
-    }
-    return () => {
-      isMounted = false;
-    };
+  
+  // Memoize sorted frames list for sub-millisecond pose interpolation during scrubbing and playback
+  const sortedFrames = useMemo(() => {
+    const list = allFrames && allFrames.length > 0 ? allFrames : keyframeList;
+    if (!list || list.length === 0) return [];
+    return [...list].sort((a, b) => a.timestamp - b.timestamp);
   }, [allFrames, keyframeList]);
+
+  const activePhase = useMemo(() => {
+    if (sortedFrames.length === 0) return sportRule.phases[0];
+    let closestFrame = sortedFrames[0];
+    let minDiff = Math.abs(currentTime - closestFrame.timestamp);
+    
+    for (const frame of sortedFrames) {
+      const diff = Math.abs(currentTime - frame.timestamp);
+      if (diff < minDiff) {
+        minDiff = diff;
+        closestFrame = frame;
+      }
+    }
+    return closestFrame.detectedPhase || sportRule.phases[0];
+  }, [sortedFrames, currentTime, sportRule]);
 
   // Sync preset profiles to our slider values
   useEffect(() => {
@@ -317,9 +231,6 @@ export const AnalysisReportPage: React.FC<AnalysisReportPageProps> = ({
 
   // Reset video error state when the URL changes
   useEffect(() => {
-    if (videoError) {
-      console.error('Video element encountered an error:', videoUrl);
-    }
     setVideoError(false);
   }, [videoUrl]);
 
@@ -339,145 +250,10 @@ export const AnalysisReportPage: React.FC<AnalysisReportPageProps> = ({
   const [stabilizedChecks, setStabilizedChecks] = useState<Record<string, boolean>>({});
   const drillSectionRef = useRef<HTMLDivElement>(null);
 
-  // Dynamic keyframe management state for user adjustments
-  const [customKeyframeList, setCustomKeyframeList] = useState<FrameAnalysis[]>(() => {
-    return keyframeList && keyframeList.length > 0 ? keyframeList : [];
-  });
-
-  useEffect(() => {
-    if (keyframeList && keyframeList.length > 0) {
-      setCustomKeyframeList(keyframeList);
-    }
-  }, [keyframeList]);
-
-  const [selectedTagPhase, setSelectedTagPhase] = useState<string>(() => {
-    return (sportRule.phases && sportRule.phases[0]) || 'Movement';
-  });
-  const [showKeyframeManager, setShowKeyframeManager] = useState<boolean>(true);
-
   // Guarantee at least 6 keyframes for analysis report and D3 heatmap visualization
   const safeKeyframeList = useMemo(() => {
-    return ensureMinimumKeyframes(customKeyframeList || [], [], sportRule, 'grassroots', calibratedFps, 6);
-  }, [customKeyframeList, sportRule, calibratedFps]);
-
-  const handleUpdateKeyframePhase = (idx: number, newPhase: string) => {
-    setCustomKeyframeList((prev) => {
-      const updated = [...prev];
-      if (updated[idx]) {
-        updated[idx] = {
-          ...updated[idx],
-          detectedPhase: newPhase
-        };
-      }
-      // Update sequence comparison to reflect new actual phase order
-      const updatedActual = updated.map((f) => f.detectedPhase);
-      setLocalSequenceComparison((prevComp) => {
-        const ideal = prevComp?.ideal || sportRule.phases || [];
-        const isCorrect = ideal.length > 0 && ideal.every((p, i) => updatedActual[i] === p);
-        return {
-          ideal,
-          actual: updatedActual,
-          isCorrect,
-          feedback: isCorrect
-            ? 'Kinetic chain firing order matches gold standard model!'
-            : `Sequence alignment: ${updatedActual.join(' → ')}`
-        };
-      });
-      return updated;
-    });
-  };
-
-  const handleSeekToKeyframe = (timestamp: number) => {
-    if (videoRef.current) {
-      videoRef.current.currentTime = timestamp;
-      setCurrentTime(timestamp);
-    }
-  };
-
-  const handleUpdateKeyframeTimestamp = (idx: number, newTimestamp: number) => {
-    const clampedTime = Math.max(0, Math.min(duration || 30, newTimestamp));
-    setCustomKeyframeList((prev) => {
-      const updated = [...prev];
-      if (updated[idx]) {
-        const closestAllFrame = allFrames.find(
-          (f) => Math.abs(f.timestamp - clampedTime) < 0.05
-        );
-        updated[idx] = closestAllFrame
-          ? { ...closestAllFrame, detectedPhase: updated[idx].detectedPhase, timestamp: clampedTime }
-          : { ...updated[idx], timestamp: clampedTime, frameNumber: Math.round(clampedTime * calibratedFps) };
-      }
-      return updated.sort((a, b) => a.timestamp - b.timestamp);
-    });
-    handleSeekToKeyframe(clampedTime);
-  };
-
-  const handleTagCurrentFrameAsPhase = (phaseName: string) => {
-    const currentT = currentTime;
-    const closestFrame = allFrames.find((f) => Math.abs(f.timestamp - currentT) < 0.05);
-
-    let newFrame: FrameAnalysis;
-    if (closestFrame) {
-      newFrame = {
-        ...closestFrame,
-        detectedPhase: phaseName,
-        timestamp: currentT,
-        frameNumber: Math.round(currentT * calibratedFps)
-      };
-    } else {
-      const defaultAngles: Record<string, number> = {};
-      const defaultRuleResults: Record<string, 'optimal' | 'warning' | 'error'> = {};
-      if (sportRule.jointRules) {
-        sportRule.jointRules.forEach((r) => {
-          defaultAngles[r.id] = (r.idealMin + r.idealMax) / 2;
-          defaultRuleResults[r.id] = 'optimal';
-        });
-      }
-      newFrame = {
-        timestamp: currentT,
-        frameNumber: Math.round(currentT * calibratedFps),
-        landmarks: [],
-        angles: defaultAngles,
-        ruleResults: defaultRuleResults,
-        detectedPhase: phaseName,
-        symmetryScore: customSymmetry || 92,
-        kneeSafetyScore: customKneeSafety || 94
-      };
-    }
-
-    setCustomKeyframeList((prev) => {
-      const existingIndex = prev.findIndex((f) => f.detectedPhase === phaseName);
-      let updated: FrameAnalysis[];
-      if (existingIndex !== -1) {
-        updated = [...prev];
-        updated[existingIndex] = newFrame;
-      } else {
-        updated = [...prev, newFrame];
-      }
-      updated.sort((a, b) => a.timestamp - b.timestamp);
-
-      const updatedActual = updated.map((f) => f.detectedPhase);
-      setLocalSequenceComparison((prevComp) => {
-        const ideal = prevComp?.ideal || sportRule.phases || [];
-        const isCorrect = ideal.length > 0 && ideal.every((p, i) => updatedActual[i] === p);
-        return {
-          ideal,
-          actual: updatedActual,
-          isCorrect,
-          feedback: isCorrect
-            ? 'Kinetic chain firing order matches gold standard model!'
-            : `Sequence alignment: ${updatedActual.join(' → ')}`
-        };
-      });
-
-      return updated;
-    });
-  };
-
-  const handleRemoveKeyframe = (idx: number) => {
-    setCustomKeyframeList((prev) => {
-      return prev.filter((_, i) => i !== idx);
-    });
-  };
+    return ensureMinimumKeyframes(keyframeList || [], [], sportRule, 'grassroots', calibratedFps, 6);
+  }, [keyframeList, sportRule, calibratedFps]);
 
   useEffect(() => {
     if (initialDrillProgress) {
@@ -489,61 +265,6 @@ export const AnalysisReportPage: React.FC<AnalysisReportPageProps> = ({
 
 
 
-
-  const [swipeStartX, setSwipeStartX] = useState<number | null>(null);
-  const [swipeStartY, setSwipeStartY] = useState<number | null>(null);
-
-  const handleTouchStart = (e: React.TouchEvent) => {
-    const target = e.target as HTMLElement;
-    if (
-      target.tagName === 'INPUT' || 
-      target.tagName === 'BUTTON' || 
-      target.tagName === 'SELECT' || 
-      target.closest('input') || 
-      target.closest('button') || 
-      target.closest('.no-swipe')
-    ) {
-      return;
-    }
-    setSwipeStartX(e.touches[0].clientX);
-    setSwipeStartY(e.touches[0].clientY);
-  };
-
-  const handleTouchEnd = (e: React.TouchEvent) => {
-    if (swipeStartX === null || swipeStartY === null) return;
-    const diffX = e.changedTouches[0].clientX - swipeStartX;
-    const diffY = e.changedTouches[0].clientY - swipeStartY;
-    
-    if (Math.abs(diffX) > Math.abs(diffY) && Math.abs(diffX) > 65 && Math.abs(diffY) < 55) {
-      const tabs: ('overview' | 'game' | 'drills' | 'notes' | 'trading_card' | 'trophy_shelf')[] = [
-        'overview', 'game', 'drills', 'trading_card', 'notes'
-      ];
-      const currentIndex = tabs.indexOf(activeTab as any);
-      if (currentIndex !== -1) {
-        if (diffX > 0) {
-          if (currentIndex > 0) {
-            setActiveTab(tabs[currentIndex - 1]);
-          }
-        } else {
-          if (currentIndex < tabs.length - 1) {
-            setActiveTab(tabs[currentIndex + 1]);
-          }
-        }
-      }
-    }
-    setSwipeStartX(null);
-    setSwipeStartY(null);
-  };
-
-  const tabContainerRef = useRef<HTMLDivElement>(null);
-  useEffect(() => {
-    if (tabContainerRef.current) {
-      const activeBtn = tabContainerRef.current.querySelector('[data-active="true"]');
-      if (activeBtn) {
-        activeBtn.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'center' });
-      }
-    }
-  }, [activeTab]);
 
   const onTouchStart = (e: React.TouchEvent) => {
     setTouchEnd(null);
@@ -747,171 +468,28 @@ export const AnalysisReportPage: React.FC<AnalysisReportPageProps> = ({
     }
   });
 
-  const baseAvgSymmetry = keyframeList.length > 0
+  const avgSymmetry = keyframeList.length > 0
     ? Math.round(keyframeList.reduce((acc, k) => acc + k.symmetryScore, 0) / keyframeList.length)
     : 89;
 
-  const baseAvgKneeSafety = keyframeList.length > 0
+  const avgKneeSafety = keyframeList.length > 0
     ? Math.round(keyframeList.reduce((acc, k) => acc + k.kneeSafetyScore, 0) / keyframeList.length)
     : 92;
 
-  const avgSymmetry = customSymmetry !== null ? customSymmetry : baseAvgSymmetry;
-  const avgKneeSafety = customKneeSafety !== null ? customKneeSafety : baseAvgKneeSafety;
-
-  // Memoize sorted frames list for sub-millisecond pose interpolation during scrubbing and playback
-  const sortedFrames = useMemo(() => {
-    const list = allFrames && allFrames.length > 0 ? allFrames : keyframeList;
-    if (!list || list.length === 0) return [];
-    return [...list].sort((a, b) => a.timestamp - b.timestamp);
-  }, [allFrames, keyframeList]);
-
-  const activeFrameMetrics = useMemo(() => {
-    if (sortedFrames.length === 0) return null;
-    
-    // Find closest frame to currentTime
-    let closestFrame = sortedFrames[0];
-    let minDiff = Math.abs(closestFrame.timestamp - currentTime);
-    
-    for (let i = 1; i < sortedFrames.length; i++) {
-      const diff = Math.abs(sortedFrames[i].timestamp - currentTime);
-      if (diff < minDiff) {
-        minDiff = diff;
-        closestFrame = sortedFrames[i];
-      }
-    }
-    
-    let maxVel = 0;
-    let maxTorque = 0;
-    
-    if (closestFrame.velocity) {
-      const values = Object.values(closestFrame.velocity).filter((v): v is number => typeof v === 'number' && !isNaN(v));
-      if (values.length > 0) {
-        maxVel = Math.max(...values);
-      }
-    }
-    
-    if (closestFrame.torque) {
-      const values = Object.values(closestFrame.torque).filter((v): v is number => typeof v === 'number' && !isNaN(v));
-      if (values.length > 0) {
-        maxTorque = Math.max(...values);
-      }
-    }
-    
-    let torqueVal = maxTorque > 0 ? Math.round(maxTorque * 0.15 * 10) / 10 : 0;
-    if (torqueVal === 0 || isNaN(torqueVal)) {
-      const velocityRatio = (maxVel > 0 ? maxVel : 180) / 400;
-      torqueVal = Math.round((2.5 + velocityRatio * 8.5) * 10) / 10;
-    }
-    
-    const velocityVal = maxVel > 0 ? Math.round(maxVel) : Math.round(180 + Math.sin(currentTime) * 40);
-    
-    const finalTorque = customTorque !== null ? customTorque : torqueVal;
-    const finalVelocity = customVelocity !== null ? customVelocity : velocityVal;
-    
-    return {
-      frame: closestFrame,
-      torque: finalTorque,
-      velocity: finalVelocity,
-      symmetry: closestFrame.symmetryScore ?? avgSymmetry,
-      kneeSafety: closestFrame.kneeSafetyScore ?? avgKneeSafety,
-      phase: closestFrame.detectedPhase || sportRule.phases[0] || 'Movement'
-    };
-  }, [currentTime, sortedFrames, sportRule, avgSymmetry, avgKneeSafety, customTorque, customVelocity]);
-
-  const [videoDimensions, setVideoDimensions] = useState<{ width: number; height: number } | null>(null);
-  const [isSeeking, setIsSeeking] = useState(false);
-
-  // Auto-detect video dimensions to adjust stage aspect ratio dynamically
-  useEffect(() => {
-    if (videoRef.current) {
-      const handleMetadata = () => {
-        if (videoRef.current) {
-          setVideoDimensions({
-            width: videoRef.current.videoWidth,
-            height: videoRef.current.videoHeight
-          });
-        }
-      };
-      const handleSeeking = () => setIsSeeking(true);
-      const handleSeeked = () => setIsSeeking(false);
-
-      videoRef.current.addEventListener('loadedmetadata', handleMetadata);
-      videoRef.current.addEventListener('seeking', handleSeeking);
-      videoRef.current.addEventListener('seeked', handleSeeked);
-      
-      return () => {
-        videoRef.current?.removeEventListener('loadedmetadata', handleMetadata);
-        videoRef.current?.removeEventListener('seeking', handleSeeking);
-        videoRef.current?.removeEventListener('seeked', handleSeeked);
-      };
-    }
-  }, [videoUrl]);
-
   // Hardware-accelerated, per-frame exact synced video drawing loop
-  const filmStripFramesRef = useRef(filmStripFrames);
   useEffect(() => {
-    filmStripFramesRef.current = filmStripFrames;
-  }, [filmStripFrames]);
+    const video = videoRef.current;
+    if (!video) return;
 
-  const isPlayingRef = useRef(isPlaying);
-  useEffect(() => {
-    isPlayingRef.current = isPlaying;
-  }, [isPlaying]);
-
-  const playbackSpeedRef = useRef(playbackSpeed);
-  useEffect(() => {
-    playbackSpeedRef.current = playbackSpeed;
-  }, [playbackSpeed]);
-
-  const startTimeRef = useRef(startTime);
-  useEffect(() => {
-    startTimeRef.current = startTime;
-  }, [startTime]);
-
-  const endTimeRef = useRef(endTime);
-  useEffect(() => {
-    endTimeRef.current = endTime || 0;
-  }, [endTime]);
-
-  const videoErrorRef = useRef(videoError);
-  useEffect(() => {
-    videoErrorRef.current = videoError;
-  }, [videoError]);
-
-  const currentTimeRef = useRef(currentTime);
-  useEffect(() => {
-    currentTimeRef.current = currentTime;
-  }, [currentTime]);
-
-  const durationRef = useRef(duration);
-  useEffect(() => {
-    durationRef.current = duration;
-  }, [duration]);
-
-  useEffect(() => {
     let isProcessing = false;
     let animationFrameId: number;
     let videoFrameCallbackId: number;
-    let lastTime = performance.now();
 
     const processFrame = async (now: DOMHighResTimeStamp, metadata?: any) => {
       const canvas = canvasRef.current;
-      const video = videoRef.current;
-
-      let width = 640;
-      let height = 360;
-      if (video && video.videoWidth) {
-        width = video.videoWidth;
-        height = video.videoHeight;
-      } else if (filmStripFramesRef.current.length > 0) {
-        const firstFrame = filmStripFramesRef.current[0];
-        if (firstFrame.bitmap) {
-          width = firstFrame.bitmap.width;
-          height = firstFrame.bitmap.height;
-        }
-      }
-
-      if (canvas) {
+      if (canvas && video) {
+        const width = video.videoWidth || 640;
+        const height = video.videoHeight || 360;
         if (canvas.width !== width || canvas.height !== height) {
           canvas.width = width;
           canvas.height = height;
@@ -921,36 +499,11 @@ export const AnalysisReportPage: React.FC<AnalysisReportPageProps> = ({
         if (ctx && !isProcessing) {
           isProcessing = true;
           try {
-            const nowMs = performance.now();
-            const deltaSec = (nowMs - lastTime) / 1000;
-            lastTime = nowMs;
-
-            let activeTime = currentTimeRef.current;
-
-            // Decoupled Standalone Playback Driver
-            if (videoErrorRef.current || !video || video.readyState < 2) {
-              if (isPlayingRef.current) {
-                const step = deltaSec * playbackSpeedRef.current;
-                const nextTime = currentTimeRef.current + step;
-                const maxEnd = endTimeRef.current || durationRef.current || 10;
-
-                if (nextTime >= maxEnd) {
-                  activeTime = startTimeRef.current;
-                  setCurrentTime(startTimeRef.current);
-                } else {
-                  activeTime = nextTime;
-                  setCurrentTime(nextTime);
-                }
-              } else {
-                activeTime = currentTimeRef.current;
-              }
-            } else {
-              activeTime = metadata && typeof metadata.mediaTime === 'number'
-                ? metadata.mediaTime
-                : video.currentTime;
-              setCurrentTime(activeTime);
-            }
-
+            // CRITICAL: use mediaTime if available (the exact timestamp of the painted frame)
+            const currentTime = metadata && typeof metadata.mediaTime === 'number' 
+              ? metadata.mediaTime 
+              : video.currentTime;
+            
             let landmarksToDraw: MediaPipeLandmark[] | null = null;
             let ruleResultsToDraw: any = {};
             let anglesToDraw: any = {};
@@ -960,18 +513,19 @@ export const AnalysisReportPage: React.FC<AnalysisReportPageProps> = ({
               let prevFrame = sortedFrames[0];
               let nextFrame = sortedFrames[sortedFrames.length - 1];
 
-              if (activeTime <= sortedFrames[0].timestamp) {
+              if (currentTime <= sortedFrames[0].timestamp) {
                 prevFrame = sortedFrames[0];
                 nextFrame = sortedFrames[0];
-              } else if (activeTime >= sortedFrames[sortedFrames.length - 1].timestamp) {
+              } else if (currentTime >= sortedFrames[sortedFrames.length - 1].timestamp) {
                 prevFrame = sortedFrames[sortedFrames.length - 1];
                 nextFrame = sortedFrames[sortedFrames.length - 1];
               } else {
+                // High-performance binary search to find bounding keyframes
                 let low = 0;
                 let high = sortedFrames.length - 1;
                 while (low <= high) {
                   const mid = (low + high) >> 1;
-                  if (sortedFrames[mid].timestamp <= activeTime) {
+                  if (sortedFrames[mid].timestamp <= currentTime) {
                     prevFrame = sortedFrames[mid];
                     low = mid + 1;
                   } else {
@@ -982,20 +536,19 @@ export const AnalysisReportPage: React.FC<AnalysisReportPageProps> = ({
               }
 
               const timeSpan = nextFrame.timestamp - prevFrame.timestamp;
-              const alpha = timeSpan > 0.001 ? Math.max(0, Math.min(1, (activeTime - prevFrame.timestamp) / timeSpan)) : 0;
-
+              const alpha = timeSpan > 0.001 ? Math.max(0, Math.min(1, (currentTime - prevFrame.timestamp) / timeSpan)) : 0;
+              
               const closestFrame = alpha < 0.5 ? prevFrame : nextFrame;
               ruleResultsToDraw = closestFrame.ruleResults || {};
               anglesToDraw = closestFrame.angles || {};
               activeFramePhase = closestFrame.detectedPhase || sportRule.phases[0];
 
-              const distanceToClosest = Math.abs(closestFrame.timestamp - activeTime);
-
-              if (distanceToClosest < 1.5) {
-                const opacity = distanceToClosest < 0.4 ? 1 : Math.max(0, 1 - (distanceToClosest - 0.4) / 1.1);
-                ctx.globalAlpha = opacity;
-
-                if (timeSpan < 0.35 && prevFrame.landmarks && nextFrame.landmarks && prevFrame.landmarks.length === nextFrame.landmarks.length) {
+              const distanceToClosest = Math.abs(closestFrame.timestamp - currentTime);
+              
+              // Only draw if we are reasonably close to the current time
+              if (distanceToClosest < 0.25) { 
+                if (timeSpan < 0.2 && prevFrame.landmarks && nextFrame.landmarks && prevFrame.landmarks.length === nextFrame.landmarks.length) {
+                  // Sub-frame linear interpolation of 3D MediaPipe landmarks for buttery smooth micro-sync
                   landmarksToDraw = prevFrame.landmarks.map((pt1, idx) => {
                     const pt2 = nextFrame.landmarks[idx] || pt1;
                     const vis1 = pt1.visibility ?? 1;
@@ -1010,26 +563,11 @@ export const AnalysisReportPage: React.FC<AnalysisReportPageProps> = ({
                 } else {
                   landmarksToDraw = closestFrame.landmarks;
                 }
-
-                ctx.globalAlpha = 1.0;
-              }
-            }
-
-            ctx.clearRect(0, 0, width, height);
-
-            // Draw Decoupled Background
-            if (videoErrorRef.current || !video || video.readyState < 2) {
-              const frames = filmStripFramesRef.current;
-              if (frames.length > 0) {
-                const closestBitmapFrame = frames.reduce((prev, curr) =>
-                  Math.abs(curr.timestamp - activeTime) < Math.abs(prev.timestamp - activeTime) ? curr : prev, frames[0]);
-                if (closestBitmapFrame && closestBitmapFrame.bitmap) {
-                  ctx.drawImage(closestBitmapFrame.bitmap, 0, 0, width, height);
-                }
               }
             }
 
             if (landmarksToDraw && landmarksToDraw.length > 0) {
+              ctx.clearRect(0, 0, width, height);
               drawPoseSkeleton(
                 ctx,
                 width,
@@ -1038,10 +576,10 @@ export const AnalysisReportPage: React.FC<AnalysisReportPageProps> = ({
                 ruleResultsToDraw,
                 anglesToDraw,
                 sportRule,
-                activeFramePhase,
-                true,
-                overlayModeRef.current
+                activeFramePhase
               );
+            } else {
+              ctx.clearRect(0, 0, width, height);
             }
           } catch (err) {
             console.warn("Frame loop processing note:", err);
@@ -1051,37 +589,30 @@ export const AnalysisReportPage: React.FC<AnalysisReportPageProps> = ({
         }
       }
 
-      if (!videoErrorRef.current && video && video.readyState >= 2 && 'requestVideoFrameCallback' in HTMLVideoElement.prototype) {
+      if ('requestVideoFrameCallback' in HTMLVideoElement.prototype && video.readyState >= 2) {
         videoFrameCallbackId = (video as any).requestVideoFrameCallback(processFrame);
       } else {
-        animationFrameId = requestAnimationFrame((t) => processFrame(t));
+        animationFrameId = requestAnimationFrame((now) => processFrame(now));
       }
     };
 
-    lastTime = performance.now();
-    const video = videoRef.current;
-    if (!videoErrorRef.current && video && video.readyState >= 2 && 'requestVideoFrameCallback' in HTMLVideoElement.prototype) {
+    if ('requestVideoFrameCallback' in HTMLVideoElement.prototype && video.readyState >= 2) {
       videoFrameCallbackId = (video as any).requestVideoFrameCallback(processFrame);
     } else {
-      animationFrameId = requestAnimationFrame((t) => processFrame(t));
+      animationFrameId = requestAnimationFrame((now) => processFrame(now));
     }
 
     return () => {
       if (animationFrameId) cancelAnimationFrame(animationFrameId);
-      if (videoFrameCallbackId && 'cancelVideoFrameCallback' in HTMLVideoElement.prototype && video) {
-        try {
-          (video as any).cancelVideoFrameCallback(videoFrameCallbackId);
-        } catch (e) {}
+      if (videoFrameCallbackId && 'cancelVideoFrameCallback' in HTMLVideoElement.prototype) {
+        (video as any).cancelVideoFrameCallback(videoFrameCallbackId);
       }
     };
   }, [sportRule, sortedFrames]);
 
   // Video scrubber play/pause handler
   const togglePlay = () => {
-    if (videoError || !videoRef.current) {
-      setIsPlaying(!isPlaying);
-      return;
-    }
+    if (!videoRef.current) return;
     if (isPlaying) {
       videoRef.current.pause();
       setIsPlaying(false);
@@ -1099,87 +630,45 @@ export const AnalysisReportPage: React.FC<AnalysisReportPageProps> = ({
   };
 
   const stepFrame = (deltaSeconds: number) => {
-    const currentT = currentTimeRef.current;
-    const newTime = Math.max(startTime, Math.min(endTime || duration || 30, currentT + deltaSeconds));
-    currentTimeRef.current = newTime;
-    setCurrentTime(newTime);
-
-    if (videoRef.current) {
-      videoRef.current.pause();
-      setIsPlaying(false);
-      if (typeof (videoRef.current as any).fastSeek === 'function') {
-        (videoRef.current as any).fastSeek(newTime);
-      } else {
-        videoRef.current.currentTime = newTime;
-      }
-    }
+    if (!videoRef.current) return;
+    videoRef.current.pause();
+    setIsPlaying(false);
+    videoRef.current.currentTime = Math.max(0, Math.min(videoRef.current.duration, videoRef.current.currentTime + deltaSeconds));
   };
 
   const handleSeek = (time: number) => {
-    const clampedTime = Math.max(startTime, Math.min(endTime || duration || 30, time));
-    currentTimeRef.current = clampedTime;
-    setCurrentTime(clampedTime);
-
-    if (videoRef.current) {
-      if (typeof (videoRef.current as any).fastSeek === 'function') {
-        (videoRef.current as any).fastSeek(clampedTime);
-      } else {
-        videoRef.current.currentTime = clampedTime;
-      }
-    }
+    if (!videoRef.current) return;
+    videoRef.current.currentTime = time;
+    setCurrentTime(time);
   };
 
   useEffect(() => {
-    if (videoRef.current && startTime > 0) {
-      videoRef.current.currentTime = startTime;
-      setCurrentTime(startTime);
+    if (videoRef.current) {
+      videoRef.current.currentTime = 0;
+      setCurrentTime(0);
     }
-  }, [startTime, videoUrl]);
+  }, [videoUrl]);
 
-  const handleExportReport = async (athleteName?: string) => {
+  const handleExportReport = async () => {
     setIsExporting(true);
     try {
       let videoDataBase64 = null;
       if (videoFile) {
-        // Warning for very large files (> 50MB) that might cause OOM in Base64
-        if (videoFile.size > 50 * 1024 * 1024) {
-          const proceed = confirm("The video file is quite large and might cause the export to fail on some devices. Proceed with video encoding?");
-          if (!proceed) {
-            setIsExporting(false);
-            return;
-          }
-        }
-
-        try {
-          videoDataBase64 = await new Promise<string>((resolve, reject) => {
-            const reader = new FileReader();
-            reader.readAsDataURL(videoFile);
-            reader.onload = () => resolve(reader.result as string);
-            reader.onerror = (e) => {
-              console.error("FileReader error event:", e);
-              reject(new Error("Failed to read video file for export. It might be too large for your browser's memory."));
-            };
-            reader.onabort = () => reject(new Error("File reading aborted."));
-          });
-        } catch (readErr) {
-          console.warn("Video encoding failed, attempting export without video:", readErr);
-          const fallback = confirm("Failed to encode video (likely due to memory limits). Would you like to export the analysis data ONLY (no video)?");
-          if (!fallback) {
-            setIsExporting(false);
-            return;
-          }
-          videoDataBase64 = null;
-        }
+        videoDataBase64 = await new Promise<string>((resolve, reject) => {
+          const reader = new FileReader();
+          reader.readAsDataURL(videoFile);
+          reader.onload = () => resolve(reader.result as string);
+          reader.onerror = (e) => reject(e);
+        });
       }
 
       const reportData = {
-        version: "1.2",
+        version: "1.1",
         type: "klutchh_biometric_report",
         exportedAt: new Date().toISOString(),
         id: activeReportId || `report-${Date.now()}`,
         sportId: sportRule.id,
         sportName: sportRule.name,
-        athleteName: athleteName || assignedAthleteName || 'Athlete',
         videoUrl: videoUrl || null,
         videoName: videoFile?.name || null,
         videoData: videoDataBase64,
@@ -1190,26 +679,22 @@ export const AnalysisReportPage: React.FC<AnalysisReportPageProps> = ({
         allFrames: allFrames || [],
         calibratedFps: calibratedFps || 30
       };
-      const jsonString = safeJsonStringify(reportData, 2);
+      const jsonString = JSON.stringify(reportData, null, 2);
       const blob = new Blob([jsonString], { type: 'application/json' });
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      const safeAth = (athleteName || assignedAthleteName || 'Athlete').toLowerCase().replace(/\s+/g, '_');
-      const safeSport = sportRule.name.toLowerCase().replace(/\s+/g, '_');
-      a.download = `Klutchh_${safeAth}_${safeSport}.klutchh`;
+      a.download = `${sportRule.name.toLowerCase().replace(/\s+/g, '_')}_klutchh_report.klutchh`;
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);
       URL.revokeObjectURL(url);
       setShowStorageNoticeModal(false);
       setShowExportSuccess(true);
-      setIsReportExported(true);
       setTimeout(() => setShowExportSuccess(false), 5000);
-    } catch (err: any) {
+    } catch (err) {
       console.error("Export failed:", err);
-      const msg = err instanceof Error ? err.message : JSON.stringify(err);
-      alert(`Export failed: ${msg}. Try a smaller video or export without video.`);
+      alert("Failed to export report with video data. Try again.");
     } finally {
       setIsExporting(false);
     }
@@ -1279,20 +764,25 @@ export const AnalysisReportPage: React.FC<AnalysisReportPageProps> = ({
               </div>
             </div>
 
-            <div className="flex items-center justify-end pt-1">
+            <div className="flex flex-col sm:flex-row items-center gap-3 pt-1">
               <button
-                onClick={() => {
-                  setShowStorageNoticeModal(false);
-                  try {
-                    sessionStorage.setItem('klutchh_storage_notice_seen', 'true');
-                  } catch (e) {}
-                  setTimeout(() => {
-                    stageContainerRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
-                  }, 60);
-                }}
-                className="w-full bg-gradient-to-r from-red-600 to-amber-500 hover:from-red-500 hover:to-amber-400 text-white font-black text-xs py-3 px-6 rounded-xl shadow-lg shadow-red-600/20 flex items-center justify-center gap-2 transition-all cursor-pointer"
+                disabled={isExporting}
+                onClick={handleExportReport}
+                className={`w-full sm:w-auto flex-1 bg-gradient-to-r from-red-600 to-amber-500 hover:from-red-500 hover:to-amber-400 text-white font-black text-xs py-3 px-4 rounded-xl shadow-lg shadow-red-600/20 flex items-center justify-center gap-2 transition-all cursor-pointer ${isExporting ? 'opacity-70 cursor-wait' : ''}`}
               >
-                <span>I Understand</span>
+                {isExporting ? (
+                  <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                ) : (
+                  <Download className="w-4 h-4 text-white" />
+                )}
+                <span>{isExporting ? 'Packaging Video...' : 'Export .klutchh Report File'}</span>
+              </button>
+
+              <button
+                onClick={() => setShowStorageNoticeModal(false)}
+                className="w-full sm:w-auto bg-zinc-800 hover:bg-zinc-700 text-zinc-300 hover:text-white font-extrabold text-xs py-3 px-5 rounded-xl border border-zinc-700 transition-all cursor-pointer"
+              >
+                I Understand, View Report
               </button>
             </div>
           </div>
@@ -1384,31 +874,38 @@ export const AnalysisReportPage: React.FC<AnalysisReportPageProps> = ({
             </div>
           )}
 
+          {onSaveReport && (
+            <button
+              onClick={() => setShowSaveAthleteModal(true)}
+              className="flex-1 lg:flex-none bg-amber-500 hover:bg-amber-400 text-zinc-950 font-black text-[10px] sm:text-xs px-3 sm:px-4 py-2.5 rounded-xl border border-amber-400 shadow-md shadow-amber-500/20 flex items-center justify-center gap-2 transition-all cursor-pointer"
+              title="Assign this analysis to an athlete folder on your device"
+            >
+              <FolderOpen className="w-4 h-4 text-zinc-950" />
+              <span className="truncate">{assignedAthleteName ? `Saved in ${formatAthleteFolderName(assignedAthleteName)}` : 'Save to Folder'}</span>
+            </button>
+          )}
+
           <button
-            disabled={isExporting || isReportExported}
-            onClick={() => {
-              if (assignedAthleteName) {
-                handleExportReport();
-              } else {
-                setShowSaveAthleteModal(true);
-              }
-            }}
-            className={`flex-1 lg:flex-none bg-gradient-to-r from-red-600 to-amber-500 hover:from-red-500 hover:to-amber-400 text-white font-black text-[10px] sm:text-xs px-3 sm:px-4 py-2.5 rounded-xl border border-red-400 shadow-md shadow-red-600/20 flex items-center justify-center gap-2 transition-all cursor-pointer ${isExporting || isReportExported ? 'opacity-70 cursor-not-allowed' : ''}`}
-            title="Export full interactive report (.klutchh file) to an athlete folder on your device."
+            disabled={isExporting}
+            onClick={handleExportReport}
+            className={`flex-1 lg:flex-none bg-gradient-to-r from-red-600 to-amber-500 hover:from-red-500 hover:to-amber-400 text-white font-black text-[10px] sm:text-xs px-3 sm:px-4 py-2.5 rounded-xl border border-red-400 shadow-md shadow-red-600/20 flex items-center justify-center gap-2 transition-all cursor-pointer ${isExporting ? 'opacity-70 cursor-wait' : ''}`}
+            title="Export full interactive report (.klutchh file). Store it on your own storage/cloud and re-open in Klutchh anytime!"
           >
             {isExporting ? (
               <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-            ) : isReportExported ? (
-              <CheckCircle2 className="w-4 h-4 text-white" />
             ) : (
               <Download className="w-4 h-4 text-white" />
             )}
-            <span className="truncate">
-              {isExporting ? 'Exporting...' : isReportExported ? 'Export Saved' : 'Save & Export .klutchh'}
-            </span>
+            <span className="truncate">{isExporting ? 'Exporting...' : 'Export .klutchh'}</span>
           </button>
 
-
+          <button
+            onClick={() => window.print()}
+            className="hidden sm:flex bg-zinc-800 hover:bg-zinc-700 text-zinc-300 hover:text-white font-extrabold text-xs px-3.5 py-2.5 rounded-xl border border-zinc-700 items-center gap-2 transition-all"
+          >
+            <Printer className="w-4 h-4" />
+            <span>PDF</span>
+          </button>
         </div>
       </div>
 
@@ -1452,13 +949,10 @@ export const AnalysisReportPage: React.FC<AnalysisReportPageProps> = ({
                 kineticSequence: kineticSequence || undefined,
                 dynamicMetrics: dynamicMetrics || undefined,
                 authorName: currentUser?.name || 'Coach',
-                coachNotes: coachNotes,
-
+                coachNotes: coachNotes
               };
               onSaveReport(fullReport);
             }
-            // Trigger download after saving to internal roster
-            handleExportReport(athlete.name);
           }}
         />
       )}
@@ -1466,7 +960,7 @@ export const AnalysisReportPage: React.FC<AnalysisReportPageProps> = ({
       {/* Zero Server Storage Policy Banner */}
       <div className="bg-zinc-900/90 border border-amber-500/30 text-amber-200 text-xs py-2.5 px-4 rounded-xl flex items-center justify-between gap-3 shadow-md">
         <div className="flex items-center gap-2">
-          <ShieldCheck className="w-4 h-4 text-amber-400 shrink-0" />
+          <Cloud className="w-4 h-4 text-amber-400 shrink-0" />
           <span>
             <strong>Zero Server Cost Storage:</strong> Export your full report file (<strong>.klutchh</strong>) to store on your own device or Drive. Re-import it into Klutchh anytime—<strong>as soon as you exit, the report is completely removed from session memory!</strong>
           </span>
@@ -1479,14 +973,7 @@ export const AnalysisReportPage: React.FC<AnalysisReportPageProps> = ({
       {/* Hero Full-Size Video Scrubber Stage */}
       <div
         ref={stageContainerRef}
-        id="hero-video-player-stage"
-        onClick={() => togglePlay()}
-        className="relative w-full bg-black border border-zinc-800 rounded-2xl sm:rounded-3xl overflow-hidden shadow-2xl group flex items-center justify-center select-none min-h-[340px] sm:min-h-[480px] lg:min-h-[620px] cursor-pointer"
-        style={{
-          aspectRatio: videoDimensions ? `${videoDimensions.width} / ${videoDimensions.height}` : '16 / 9',
-          maxHeight: isFullscreen ? '100vh' : '88vh',
-          minHeight: isFullscreen ? '100vh' : '340px'
-        }}
+        className="relative w-full aspect-video max-h-[72vh] min-h-[220px] sm:min-h-[380px] bg-black border border-zinc-800 rounded-2xl sm:rounded-3xl overflow-hidden shadow-2xl group flex items-center justify-center select-none"
       >
         {videoUrl && !videoError ? (
           <>
@@ -1495,35 +982,23 @@ export const AnalysisReportPage: React.FC<AnalysisReportPageProps> = ({
               src={videoUrl}
               playsInline
               muted={true}
-              className="absolute inset-0 w-full h-full object-contain pointer-events-none"
-              onLoadedData={() => setVideoError(false)}
-              onError={(e: any) => {
-                console.warn("Video element load notice (handled via filmstrip):", e?.type || 'error event');
+              className="absolute inset-0 w-full h-full object-contain opacity-100"
+              onError={(e) => {
+                console.error("AnalysisReportPage Video load error details:", e.currentTarget.error);
                 setVideoError(true);
               }}
               onLoadedMetadata={() => {
                 if (videoRef.current) {
-                  setDuration(endTime && endTime <= videoRef.current.duration ? endTime : videoRef.current.duration);
-                  if (videoRef.current.currentTime === 0) {
-                    videoRef.current.currentTime = Math.max(startTime || 0, 0.001);
-                  }
+                  setDuration(videoRef.current.duration);
                 }
               }}
               onTimeUpdate={() => {
                 if (videoRef.current) {
-                  if (endTime && videoRef.current.currentTime >= endTime) {
-                    videoRef.current.currentTime = startTime;
-                    videoRef.current.pause();
-                    setIsPlaying(false);
-                  }
                   setCurrentTime(videoRef.current.currentTime);
                 }
               }}
               onSeeked={() => {
                 if (videoRef.current) {
-                  if (endTime && videoRef.current.currentTime >= endTime) {
-                    videoRef.current.currentTime = startTime;
-                  }
                   setCurrentTime(videoRef.current.currentTime);
                 }
               }}
@@ -1532,19 +1007,9 @@ export const AnalysisReportPage: React.FC<AnalysisReportPageProps> = ({
             {/* Skeleton Canvas Overlay */}
             <canvas
               ref={canvasRef}
-              className="absolute inset-0 w-full h-full object-contain pointer-events-none z-10"
+              onClick={togglePlay}
+              className="absolute inset-0 w-full h-full object-contain cursor-pointer z-10"
             />
-
-            {/* Subtle Desktop Hover Play/Pause Indicator (Never blocks athlete when paused) */}
-            <div className="absolute inset-0 z-25 flex items-center justify-center pointer-events-none opacity-0 group-hover:opacity-40 transition-opacity duration-200">
-              <div className="w-14 h-14 rounded-full bg-zinc-950/80 border border-amber-400/80 text-amber-400 flex items-center justify-center shadow-xl backdrop-blur-sm">
-                {isPlaying ? (
-                  <Pause className="w-6 h-6 fill-current" />
-                ) : (
-                  <Play className="w-6 h-6 fill-current ml-0.5" />
-                )}
-              </div>
-            </div>
             {/* Student Mode Arcade Overlays */}
             {viewMode === 'student' && (
               <div className="absolute inset-0 pointer-events-none z-20 flex flex-col justify-between p-4 mix-blend-screen">
@@ -1605,211 +1070,93 @@ export const AnalysisReportPage: React.FC<AnalysisReportPageProps> = ({
           </div>
         )}
 
-        {/* Top Floating Header Badges - Ultra Sleek & Unobtrusive */}
-        <div className="absolute top-2.5 left-2.5 right-2.5 z-20 pointer-events-none flex items-center justify-between gap-2 flex-wrap">
-          <div className="bg-zinc-950/80 backdrop-blur-md border border-zinc-800/80 px-2.5 py-1 rounded-lg flex items-center gap-2 shadow-lg">
-            <Flame className="w-3.5 h-3.5 text-red-500 fill-current" />
-            <span className="text-[11px] font-black text-white uppercase tracking-wider">{sportRule.name}</span>
-            <span className="bg-yellow-400 text-zinc-950 font-black text-[9px] px-1.5 py-0.5 rounded uppercase">
+        {/* Top Floating Header Badges */}
+        <div className="absolute top-3 left-3 right-3 z-20 pointer-events-none flex items-center justify-between gap-2 flex-wrap">
+          <div className="bg-zinc-950/90 backdrop-blur-md border border-zinc-800/90 px-3 py-1.5 rounded-xl flex items-center gap-2 shadow-xl">
+            <Flame className="w-4 h-4 text-red-500 fill-current" />
+            <span className="text-xs font-black text-white uppercase tracking-wider">{sportRule.name} Studio</span>
+            <span className="bg-yellow-400 text-zinc-950 font-black text-[10px] px-2 py-0.5 rounded uppercase">
               Grade {aiReport?.overallGrade || 'A'}
             </span>
-            <span className="text-[9px] font-mono text-amber-400 bg-amber-400/10 border border-amber-400/30 px-1.5 py-0.5 rounded hidden md:inline">
+            <span className="text-[10px] font-mono text-amber-400 bg-amber-400/10 border border-amber-400/30 px-2 py-0.5 rounded hidden md:inline">
               Frame #{Math.round(currentTime * calibratedFps)} • {currentTime.toFixed(2)}s @ {calibratedFps} FPS
             </span>
           </div>
 
-          {viewMode !== 'student' && (
-            <div className="bg-zinc-950/80 backdrop-blur-md border border-zinc-800/80 px-2 py-1 rounded-lg flex items-center gap-2 text-[9px] font-bold text-zinc-300 shadow-lg">
-              <div className="flex items-center gap-1">
-                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
-                <span className="text-emerald-400 hidden sm:inline">Optimal</span>
-              </div>
-              <div className="flex items-center gap-1">
-                <span className="w-1.5 h-1.5 rounded-full bg-blue-500" />
-                <span className="text-blue-400 hidden sm:inline">Good</span>
-              </div>
-              <div className="flex items-center gap-1">
-                <span className="w-1.5 h-1.5 rounded-full bg-purple-500" />
-                <span className="text-purple-400 hidden sm:inline">Warn</span>
-              </div>
-              <div className="flex items-center gap-1">
-                <span className="w-1.5 h-1.5 rounded-full bg-red-500" />
-                <span className="text-red-400 font-extrabold hidden sm:inline">Error</span>
-              </div>
+          <div className="bg-zinc-950/90 backdrop-blur-md border border-zinc-800/80 px-2.5 py-1.5 rounded-xl flex items-center gap-2.5 text-[10px] font-bold text-zinc-300 shadow-xl">
+            <div className="flex items-center gap-1">
+              <span className="w-2 h-2 rounded-full bg-emerald-500 shadow-sm shadow-emerald-500/50" />
+              <span className="text-emerald-400 hidden sm:inline">Optimal</span>
             </div>
-          )}
+            <div className="flex items-center gap-1">
+              <span className="w-2 h-2 rounded-full bg-blue-500 shadow-sm shadow-blue-500/50" />
+              <span className="text-blue-400 hidden sm:inline">Good</span>
+            </div>
+            <div className="flex items-center gap-1">
+              <span className="w-2 h-2 rounded-full bg-purple-500 shadow-sm shadow-purple-500/50" />
+              <span className="text-purple-400 hidden sm:inline">Warn</span>
+            </div>
+            <div className="flex items-center gap-1">
+              <span className="w-2 h-2 rounded-full bg-red-500 shadow-sm shadow-red-500/50" />
+              <span className="text-red-400 font-extrabold hidden sm:inline">Error</span>
+            </div>
+          </div>
         </div>
 
         {/* Bottom Overlay Non-Blocking Glassmorphism Scrubber Bar */}
-        <div
-          onClick={(e) => e.stopPropagation()}
-          onTouchStart={(e) => e.stopPropagation()}
-          className="absolute inset-x-0 bottom-0 z-30 bg-gradient-to-t from-black via-black/95 to-transparent pt-8 pb-3 px-3 sm:px-5 flex flex-col gap-2"
-        >
+        <div className="absolute inset-x-0 bottom-0 z-30 bg-gradient-to-t from-black via-black/90 to-transparent pt-8 pb-3 px-4 sm:px-6 flex flex-col gap-2">
           
-          {/* Sleek, Non-Intrusive Telemetry HUD Overlay */}
-          {activeFrameMetrics && (
-            <div className="flex items-center justify-between gap-2 bg-zinc-950/80 backdrop-blur-md border border-zinc-800/80 px-2.5 py-1.5 rounded-lg text-[9px] font-mono text-zinc-300 shadow-lg select-none">
-              <div className="flex items-center gap-1.5">
-                <span className="text-zinc-500 font-bold uppercase tracking-wider text-[8px]">PHASE:</span>
-                <span className="bg-amber-500/10 border border-amber-500/30 text-amber-400 font-extrabold px-1.5 py-0.5 rounded text-[9px] uppercase">
-                  {activeFrameMetrics.phase}
-                </span>
-              </div>
-              
-              <div className="flex items-center gap-3 text-[9px]">
-                <div className="flex items-center gap-1">
-                  <span className="text-zinc-500 uppercase text-[8px]">TORQUE:</span>
-                  <span className="text-amber-400 font-bold">{activeFrameMetrics.torque} N·m</span>
-                </div>
-
-                <div className="flex items-center gap-1">
-                  <span className="text-zinc-500 uppercase text-[8px]">VELOCITY:</span>
-                  <span className="text-emerald-400 font-bold">{activeFrameMetrics.velocity}°/s</span>
-                </div>
-
-                <div className="flex items-center gap-1">
-                  <span className="text-zinc-500 uppercase text-[8px]">SYM:</span>
-                  <span className="text-blue-400 font-bold">{activeFrameMetrics.symmetry}%</span>
-                </div>
-
-                <div className="flex items-center gap-1">
-                  <span className="text-zinc-500 uppercase text-[8px]">ALIGN:</span>
-                  <span className="text-purple-400 font-bold">{activeFrameMetrics.kneeSafety}%</span>
-                </div>
-              </div>
-            </div>
-          )}
-
           {/* Timeline Range Slider */}
-          <div className="relative w-full flex flex-col py-1">
+          <div className="relative w-full flex flex-col">
             <input
               type="range"
               min={0}
               max={duration || 30}
-              step={1 / (calibratedFps || 24)}
+              step={1 / calibratedFps}
               value={currentTime}
-              onPointerDown={(e) => {
-                e.stopPropagation();
-                if (isPlaying && videoRef.current) {
-                  videoRef.current.pause();
-                  setIsPlaying(false);
-                }
-              }}
-              onTouchStart={(e) => {
-                e.stopPropagation();
-                if (isPlaying && videoRef.current) {
-                  videoRef.current.pause();
-                  setIsPlaying(false);
-                }
-              }}
-              onClick={(e) => e.stopPropagation()}
-              onChange={(e) => {
-                e.stopPropagation();
-                handleSeek(parseFloat(e.target.value));
-              }}
-              onInput={(e) => {
-                e.stopPropagation();
-                handleSeek(parseFloat(e.currentTarget.value));
-              }}
-              className="w-full accent-red-600 bg-zinc-800/90 h-3.5 rounded-full cursor-pointer shadow-inner touch-none [&::-webkit-slider-thumb]:w-5 [&::-webkit-slider-thumb]:h-5 [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-red-600 [&::-webkit-slider-thumb]:border-2 [&::-webkit-slider-thumb]:border-white"
+              onChange={(e) => handleSeek(parseFloat(e.target.value))}
+              className="w-full accent-red-600 bg-zinc-800/90 h-2 rounded-lg cursor-pointer shadow-inner"
             />
           </div>
 
-          {/* Controls Bar: Frame Scrubbers (-5f, -1f, +1f, +5f) & Timecode */}
-          <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2 pt-0.5">
-            {/* Left: Frame Scrubbers & Timecode */}
-            <div className="flex items-center justify-between sm:justify-start gap-1.5 overflow-x-auto no-scrollbar py-0.5">
-              <div className="flex items-center gap-1">
-                {/* Dedicated Play / Pause Toggle Button */}
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    togglePlay();
-                  }}
-                  className="px-2.5 py-1 bg-amber-500 hover:bg-amber-400 text-zinc-950 font-black rounded-lg transition-all text-xs flex items-center gap-1 cursor-pointer shadow-md font-mono"
-                  title={isPlaying ? 'Pause Video' : 'Play Video'}
-                >
-                  {isPlaying ? <Pause className="w-3.5 h-3.5 fill-current" /> : <Play className="w-3.5 h-3.5 fill-current ml-0.5" />}
-                  <span>{isPlaying ? 'Pause' : 'Play'}</span>
-                </button>
+          {/* Controls Bar: Playback, Frame Stepping, Timecode & Controls */}
+          <div className="flex items-center justify-between gap-3 pt-0.5 flex-wrap">
+            {/* Left: Play/Pause, Frame Back/Next, Timecode */}
+            <div className="flex items-center gap-2">
+              <button
+                onClick={togglePlay}
+                className="px-3 py-1.5 bg-red-600 hover:bg-red-500 text-white rounded-xl shadow-lg shadow-red-600/30 transition-all active:scale-95 flex items-center gap-1.5 font-bold text-xs"
+                title={isPlaying ? 'Pause' : 'Play'}
+              >
+                {isPlaying ? <Pause className="w-4 h-4 fill-current" /> : <Play className="w-4 h-4 fill-current ml-0.5" />}
+                <span>{isPlaying ? 'Pause' : 'Play'}</span>
+              </button>
 
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    stepFrame(-5 / (calibratedFps || 24));
-                  }}
-                  className="px-2 py-1 bg-zinc-900/90 hover:bg-zinc-800 border border-zinc-800 text-zinc-300 hover:text-white rounded-lg transition-all text-xs flex items-center gap-1 font-mono font-bold cursor-pointer"
-                  title="Step Back 5 Frames"
-                >
-                  <SkipBack className="w-3 h-3" />
-                  <span>-5f</span>
-                </button>
+              <button
+                onClick={() => stepFrame(-1 / calibratedFps)}
+                className="p-1.5 bg-zinc-900/90 hover:bg-zinc-800 border border-zinc-800 text-zinc-300 hover:text-white rounded-lg transition-all text-xs flex items-center gap-1"
+                title={`Step Back 1 Frame (-1/${calibratedFps}s)`}
+              >
+                <SkipBack className="w-4 h-4" />
+                <span className="hidden sm:inline text-[10px] font-mono">-1f</span>
+              </button>
 
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    stepFrame(-1 / (calibratedFps || 24));
-                  }}
-                  className="px-2 py-1 bg-zinc-900/90 hover:bg-zinc-800 border border-zinc-800 text-zinc-300 hover:text-white rounded-lg transition-all text-xs flex items-center gap-1 font-mono font-bold cursor-pointer"
-                  title="Step Back 1 Frame"
-                >
-                  <SkipBack className="w-3 h-3" />
-                  <span>-1f</span>
-                </button>
+              <button
+                onClick={() => stepFrame(1 / calibratedFps)}
+                className="p-1.5 bg-zinc-900/90 hover:bg-zinc-800 border border-zinc-800 text-zinc-300 hover:text-white rounded-lg transition-all text-xs flex items-center gap-1"
+                title={`Step Forward 1 Frame (+1/${calibratedFps}s)`}
+              >
+                <SkipForward className="w-4 h-4" />
+                <span className="hidden sm:inline text-[10px] font-mono">+1f</span>
+              </button>
 
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    stepFrame(1 / (calibratedFps || 24));
-                  }}
-                  className="px-2 py-1 bg-zinc-900/90 hover:bg-zinc-800 border border-zinc-800 text-zinc-300 hover:text-white rounded-lg transition-all text-xs flex items-center gap-1 font-mono font-bold cursor-pointer"
-                  title="Step Forward 1 Frame"
-                >
-                  <span>+1f</span>
-                  <SkipForward className="w-3 h-3" />
-                </button>
-
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    stepFrame(5 / (calibratedFps || 24));
-                  }}
-                  className="px-2 py-1 bg-zinc-900/90 hover:bg-zinc-800 border border-zinc-800 text-zinc-300 hover:text-white rounded-lg transition-all text-xs flex items-center gap-1 font-mono font-bold cursor-pointer"
-                  title="Step Forward 5 Frames"
-                >
-                  <span>+5f</span>
-                  <SkipForward className="w-3 h-3" />
-                </button>
-              </div>
-
-              <div className="bg-zinc-950/90 px-2 py-0.5 rounded-md border border-zinc-800 text-[10px] font-mono text-zinc-300 font-bold shrink-0">
+              <div className="bg-zinc-950/90 px-2 py-1 rounded-md border border-zinc-800 text-[11px] font-mono text-zinc-300 font-bold">
                 {currentTime.toFixed(2)}s / {duration.toFixed(2)}s
               </div>
             </div>
 
-            {/* Right: Angle Overlay Toggle, Speed & Fullscreen */}
-            <div className="flex items-center justify-between sm:justify-end gap-1.5 shrink-0">
-              {/* Angles / Overlay toggle */}
-              <button
-                onClick={() => {
-                  setOverlayMode(prev => prev === 'sleek' ? 'minimal' : prev === 'minimal' ? 'off' : 'sleek');
-                }}
-                className={`px-2 py-1 border rounded-lg text-xs font-mono font-bold transition-all flex items-center gap-1 cursor-pointer min-h-[30px] ${
-                  overlayMode === 'sleek'
-                    ? 'bg-zinc-900 border-amber-500/40 text-amber-400 hover:bg-zinc-800'
-                    : overlayMode === 'minimal'
-                    ? 'bg-zinc-900 border-blue-500/40 text-blue-400 hover:bg-zinc-800'
-                    : 'bg-zinc-950 border-zinc-800 text-zinc-500 hover:text-zinc-300'
-                }`}
-                title="Toggle Overlay Density (Sleek -> Minimal -> Angles Off)"
-              >
-                {overlayMode === 'off' ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
-                <span className="text-[10px]">
-                  {overlayMode === 'sleek' ? 'Angles: Sleek' : overlayMode === 'minimal' ? 'Angles: Min' : 'Angles: Off'}
-                </span>
-              </button>
-
+            {/* Right: Speed, Mute & Fullscreen */}
+            <div className="flex items-center gap-2">
               <div className="flex items-center bg-zinc-950/90 p-0.5 rounded-lg border border-zinc-800 text-[10px]">
                 {[0.25, 0.5, 1.0].map((speed) => (
                   <button
@@ -1818,7 +1165,7 @@ export const AnalysisReportPage: React.FC<AnalysisReportPageProps> = ({
                       setPlaybackSpeed(speed);
                       if (videoRef.current) videoRef.current.playbackRate = speed;
                     }}
-                    className={`px-1.5 py-0.5 rounded font-mono font-bold transition-all cursor-pointer ${
+                    className={`px-2 py-0.5 rounded-md font-mono font-bold transition-all ${
                       playbackSpeed === speed
                         ? 'bg-red-600 text-white shadow'
                         : 'text-zinc-400 hover:text-white'
@@ -1831,10 +1178,10 @@ export const AnalysisReportPage: React.FC<AnalysisReportPageProps> = ({
 
               <button
                 onClick={toggleFullscreen}
-                className="p-1.5 bg-zinc-900/90 hover:bg-zinc-800 border border-zinc-800 text-zinc-300 hover:text-white rounded-lg text-xs transition-all flex items-center gap-1 font-bold cursor-pointer min-h-[30px]"
+                className="p-1.5 bg-zinc-900/90 hover:bg-zinc-800 border border-zinc-800 text-zinc-300 hover:text-white rounded-lg text-xs transition-all flex items-center gap-1 font-bold"
                 title={isFullscreen ? 'Exit Fullscreen' : 'Fullscreen'}
               >
-                {isFullscreen ? <Minimize className="w-3.5 h-3.5" /> : <Maximize className="w-3.5 h-3.5" />}
+                {isFullscreen ? <Minimize className="w-4 h-4" /> : <Maximize className="w-4 h-4" />}
               </button>
             </div>
           </div>
@@ -1843,38 +1190,133 @@ export const AnalysisReportPage: React.FC<AnalysisReportPageProps> = ({
 
       {/* Main Full-Width Analysis Report */}
       <div className="flex flex-col gap-6 mt-2 max-w-5xl mx-auto w-full">
-          
-          {/* 🌟 PROMINENT GAMIFIED HERO DASHBOARD & INTERACTIVE BOSS BATTLE ARENA */}
-          <KineticTitanBattleCard
+
+          {/* MOVEMENT JOURNEY PATH - THE BIOMECHANICAL ROADMAP */}
+          <MovementJourneyPath 
+            keyframeList={safeKeyframeList}
             sportRule={sportRule}
-            aiReport={aiReport}
-            athleteName={assignedAthleteName || 'Athlete'}
-            dynamicMetrics={dynamicMetrics}
-            sequenceComparison={sequenceComparison}
-            overallSymmetry={avgSymmetry}
-            overallKneeSafety={avgKneeSafety}
-            onExplainerClick={(metric) => setActiveExplainerMetric(metric)}
-            isPlayingAudio={isPlayingAudio}
-            onPlayVoiceCoach={() => {
-              if ('speechSynthesis' in window) {
-                if (isPlayingAudio) {
-                  window.speechSynthesis.cancel();
-                  setIsPlayingAudio(false);
-                } else {
-                  const athName = assignedAthleteName || 'Athlete';
-                  const script = aiReport?.gamifiedKidDossier?.voiceCoachingScript || 
-                    `Hey ${athName}! Coach Klutchh here! Fantastic ${sportRule.name} form! Your explosive power scored a massive ${Math.round((dynamicMetrics?.explosivenessScore || 8.2) * 10)} percent! You are moving like a true champion. Check out your interactive games and power drills below!`;
-                  const utterance = new SpeechSynthesisUtterance(script);
-                  utterance.rate = 1.05;
-                  utterance.pitch = 1.15;
-                  utterance.onend = () => setIsPlayingAudio(false);
-                  utterance.onerror = () => setIsPlayingAudio(false);
-                  setIsPlayingAudio(true);
-                  window.speechSynthesis.speak(utterance);
-                }
-              }
-            }}
+            currentTime={currentTime}
+            onSeek={handleSeek}
+            activePhase={activePhase}
           />
+          
+          {/* 🌟 PROMINENT GAMIFIED HERO DASHBOARD & WOW FEATURES */}
+          <div className="relative overflow-hidden bg-gradient-to-r from-amber-950/80 via-purple-950/80 to-blue-950/80 border-2 border-amber-500/50 rounded-3xl p-5 sm:p-6 shadow-[0_0_40px_rgba(245,158,11,0.25)] flex flex-col gap-4">
+            <div className="absolute top-0 right-0 w-64 h-64 bg-amber-500/15 rounded-full blur-3xl pointer-events-none" />
+            
+            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 z-10 relative">
+              <div className="flex items-center gap-3.5">
+                <div className="w-14 h-14 rounded-2xl bg-gradient-to-tr from-amber-400 via-yellow-400 to-amber-500 text-black font-black text-2xl flex items-center justify-center shadow-lg shadow-amber-500/40 border-2 border-amber-200 shrink-0">
+                  {aiReport?.gamifiedKidDossier?.earnedBadge?.icon || '🏆'}
+                </div>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <span className="text-[10px] font-black uppercase text-amber-400 tracking-widest bg-amber-950/80 px-2.5 py-0.5 rounded-full border border-amber-500/40">
+                      {aiReport?.gamifiedKidDossier?.earnedBadge?.rarity || 'GOLD LEGEND ATHLETE'}
+                    </span>
+                    <span className="text-[10px] font-mono text-emerald-400 font-bold bg-emerald-950/80 px-2 py-0.5 rounded border border-emerald-500/30">
+                      ⚡ TITAN RATING: {((dynamicMetrics?.explosivenessScore || 8.2)).toFixed(1)} / 10
+                    </span>
+                  </div>
+                  <h2 className="text-xl sm:text-2xl font-black text-white italic tracking-wide uppercase mt-1">
+                    {aiReport?.gamifiedKidDossier?.heroMatchName || 'Kinetic Power Titan'}
+                  </h2>
+                </div>
+              </div>
+
+              {/* ACTION BUTTONS: 3D TRADING CARD & AI VOICE COACH */}
+              <div className="flex items-center gap-2.5 flex-wrap z-10">
+                <button
+                  type="button"
+                  onClick={() => {
+                    if ('speechSynthesis' in window) {
+                      if (isPlayingAudio) {
+                        window.speechSynthesis.cancel();
+                        setIsPlayingAudio(false);
+                      } else {
+                        const script = aiReport?.gamifiedKidDossier?.voiceCoachingScript || 
+                          `Woah! Fantastic ${sportRule.name} movement! Your power explosion scored a ${Math.round((dynamicMetrics?.explosivenessScore || 8.2) * 10)} percent precision rating!`;
+                        const utterance = new SpeechSynthesisUtterance(script);
+                        utterance.rate = 1.05;
+                        utterance.pitch = 1.2;
+                        utterance.onend = () => setIsPlayingAudio(false);
+                        utterance.onerror = () => setIsPlayingAudio(false);
+                        setIsPlayingAudio(true);
+                        window.speechSynthesis.speak(utterance);
+                      }
+                    } else {
+                      alert("Voice synthesis audio player is ready!");
+                    }
+                  }}
+                  className={`px-3.5 py-2 rounded-xl font-black text-xs uppercase tracking-wider flex items-center gap-2 shadow-lg transition-all transform hover:scale-105 border ${
+                    isPlayingAudio 
+                      ? 'bg-red-500 text-white border-red-400 animate-pulse' 
+                      : 'bg-gradient-to-r from-purple-600 to-indigo-600 text-white border-purple-400 hover:from-purple-500 hover:to-indigo-500'
+                  }`}
+                >
+                  <span>{isPlayingAudio ? '🔴' : '🎙️'}</span>
+                  <span>{isPlayingAudio ? 'Stop Voice Coach' : 'Play AI Voice Coach'}</span>
+                </button>
+              </div>
+            </div>
+
+            {/* SUPERHERO ATHLETIC SKILL ATTRIBUTES (CLICKABLE FOR DEEP TELEMETRY EXPLAINERS) */}
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 pt-2 border-t border-amber-500/20 z-10">
+              {[
+                { 
+                  id: 'explosive_power',
+                  label: '⚡ Explosive Power', 
+                  score: Math.min(98, Math.max(72, dynamicMetrics?.explosivenessScore || Math.round((dynamicMetrics?.peakAngularVelocity || 340) * 0.25))), 
+                  color: 'from-amber-500 to-yellow-400',
+                  formula: 'Peak Angular Velocity (°/s) × Ground Force Vector (N)',
+                  meaning: 'Measures how rapidly you transfer ground momentum into terminal speed through the kinetic chain.'
+                },
+                { 
+                  id: 'joint_armor',
+                  label: '🛡️ Joint Armor', 
+                  score: Math.min(98, Math.max(75, (sequenceComparison as any)?.kneeSafetyScore || 88)), 
+                  color: 'from-emerald-500 to-teal-400',
+                  formula: '100 - (Dynamic Valgus Shear Stress % + Lumbar Hyperextension Index)',
+                  meaning: 'Quantifies ligament protection and shock absorption capacity during high-impact plant and change of direction.'
+                },
+                { 
+                  id: 'precision',
+                  label: '🎯 Precision', 
+                  score: Math.min(98, Math.max(72, Math.round((dynamicMetrics?.explosivenessScore || 8.2) * 10))), 
+                  color: 'from-blue-500 to-cyan-400',
+                  formula: 'Keyframe Angle Deviation vs. Gold Standard Pro Matrix (°)⁻¹',
+                  meaning: 'Evaluates how closely your body positions match elite biomechanical checkpoints at critical movement phases.'
+                },
+                { 
+                  id: 'kinetic_flow',
+                  label: '🔄 Kinetic Flow', 
+                  score: Math.min(98, Math.max(72, (sequenceComparison as any)?.overallSymmetry || 85)), 
+                  color: 'from-purple-500 to-pink-400',
+                  formula: 'Proximal-to-Distal Firing Sequence Index × Bilateral Symmetry Ratio',
+                  meaning: 'Measures seamless energy transmission from ground → hips → torso → arms with zero force leakage.'
+                }
+              ].map((attr) => (
+                <div 
+                  key={attr.id} 
+                  onClick={() => setActiveExplainerMetric(attr)}
+                  className="bg-zinc-950/80 hover:bg-zinc-900 border border-zinc-800 hover:border-amber-500/50 p-2.5 rounded-xl flex flex-col gap-1 cursor-pointer transition-all group"
+                  title="Click for deep biomechanical telemetry analysis"
+                >
+                  <div className="flex justify-between items-center text-[10px] font-bold">
+                    <span className="text-zinc-300 group-hover:text-amber-300 transition-colors">{attr.label}</span>
+                    <span className="font-mono text-amber-400 font-black">{attr.score}%</span>
+                  </div>
+                  <div className="w-full bg-zinc-900 h-2 rounded-full overflow-hidden border border-zinc-800">
+                    <div
+                      className={`bg-gradient-to-r ${attr.color} h-full rounded-full transition-all duration-1000`}
+                      style={{ width: `${Math.min(100, Math.max(10, attr.score))}%` }}
+                    />
+                  </div>
+                  <span className="text-[8px] font-mono text-zinc-500 group-hover:text-zinc-400 text-right">Tap for Telemetry ↗</span>
+                </div>
+              ))}
+            </div>
+          </div>
 
           {/* AI GENERATED PRO TIPS & COOL FACTS STYLIZED CARDS */}
           {aiReport?.proTipsAndCoolFacts && aiReport.proTipsAndCoolFacts.length > 0 && (
@@ -1916,19 +1358,17 @@ export const AnalysisReportPage: React.FC<AnalysisReportPageProps> = ({
 
           {/* Section Navigation Tabs & Mode Toggle */}
           <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 border-b border-zinc-800 pb-3">
-            <div ref={tabContainerRef} className="flex items-center flex-nowrap gap-2 overflow-x-auto no-scrollbar w-full">
+            <div className="flex items-center gap-2 overflow-x-auto no-scrollbar">
                     {[
-                      { id: 'overview', label: `📋 ${assignedAthleteName || 'Athlete'}'s Action Report` },
-                      { id: 'game', label: '🛡️ Hero Mastery Trials' },
-                      { id: 'drills', label: '⚡ Training Quests' },
-                      { id: 'trading_card', label: '✨ 3D Trophy Card' },
-                      { id: 'notes', label: '📝 Coach Tips' }
+                      { id: 'game', label: viewMode === 'student' ? '🎮 Arcade Arena' : '🎮 Kinetic Game Arena' },
+                      { id: 'drills', label: viewMode === 'student' ? '⚡ Hero Quests' : '⚡ Action Points' },
+                      { id: 'notes', label: viewMode === 'student' ? '📝 Tips' : 'Coach Notes' },
+                      { id: 'trading_card', label: '✨ Card Maker' }
                     ].map((tab) => (
                       <button
                         key={tab.id}
-                        data-active={activeTab === tab.id}
                         onClick={() => setActiveTab(tab.id as any)}
-                        className={`px-4 py-2 rounded-xl text-xs font-black uppercase tracking-wider transition-all whitespace-nowrap shrink-0 ${
+                        className={`px-4 py-2 rounded-xl text-xs font-black uppercase tracking-wider transition-all whitespace-nowrap ${
                           activeTab === tab.id
                             ? 'bg-red-600 text-white shadow-md shadow-red-600/20'
                             : 'bg-zinc-900 border border-zinc-800 text-zinc-400 hover:text-white'
@@ -1940,601 +1380,481 @@ export const AnalysisReportPage: React.FC<AnalysisReportPageProps> = ({
             </div>
           </div>
 
-          {/* TAB PANEL VIEWER WITH NATIVE SLIDING GESTURES */}
-          <div 
-            onTouchStart={handleTouchStart}
-            onTouchEnd={handleTouchEnd}
-            className="flex-1 flex flex-col min-h-0"
-          >
-            {/* ACTION REPORT / DOSSIER OVERVIEW */}
-            {(activeTab as string) === 'overview' && (
+          {/* CARD DECK MODE VIEWER */}
+          {(activeTab as string) === 'overview' && (
             <div className="flex flex-col gap-4">
-              
-              {/* TOP ACTION & VIEW SWITCHER BAR */}
-              <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 bg-zinc-900/90 border border-zinc-800 p-3 rounded-2xl">
+              {/* Deck Progress & Navigation Bar */}
+              <div className="flex items-center justify-between bg-zinc-900/90 border border-zinc-800 p-3 rounded-2xl">
                 <div className="flex items-center gap-2">
-                  <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse" />
+                  <span className="w-2.5 h-2.5 rounded-full bg-red-500 animate-pulse" />
                   <span className="text-xs font-black uppercase tracking-wider text-white">
-                    Athlete Action Report
-                  </span>
-                  <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-red-500/10 text-red-400 border border-red-500/20">
-                    {sportRule.name}
+                    Tactical Dossier Card {deckCardIndex + 1} of 5
                   </span>
                 </div>
-
-                <div className="flex items-center flex-wrap gap-2 w-full sm:w-auto justify-between sm:justify-end">
-                  {/* View Mode Toggle: All-In-One vs Step-by-Step Cards */}
-                  <div className="flex items-center bg-zinc-950 border border-zinc-800 p-1 rounded-xl">
-                    <button
-                      onClick={() => setDossierViewMode('all')}
-                      className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-bold transition-all ${
-                        dossierViewMode === 'all'
-                          ? 'bg-red-600 text-white shadow-sm'
-                          : 'text-zinc-400 hover:text-white'
-                      }`}
-                    >
-                      <List className="w-3.5 h-3.5" />
-                      <span>All-In-One</span>
-                    </button>
-                    <button
-                      onClick={() => setDossierViewMode('cards')}
-                      className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-bold transition-all ${
-                        dossierViewMode === 'cards'
-                          ? 'bg-red-600 text-white shadow-sm'
-                          : 'text-zinc-400 hover:text-white'
-                      }`}
-                    >
-                      <LayoutGrid className="w-3.5 h-3.5" />
-                      <span>Step Cards</span>
-                    </button>
-                  </div>
-
-                  {/* Copy Summary Button */}
+                <div className="flex items-center gap-1.5">
                   <button
-                    onClick={() => {
-                      const ath = assignedAthleteName || 'Athlete';
-                      const score = ((avgSymmetry + avgKneeSafety) / 20).toFixed(1);
-                      const text = `📋 ${ath}'s ${sportRule.name} Form Report\n⭐ Score: ${score}/10 | Balance: ${avgSymmetry}% | Knee Safety: ${avgKneeSafety}%\n✅ What went well: ${typeof aiReport?.keyStrengths?.[0] === 'string' ? aiReport.keyStrengths[0] : (aiReport?.keyStrengths?.[0] as any)?.title || 'Good balance and timing'}\n🎯 Focus for next practice: ${aiReport?.executiveDossier?.detectedFault?.description || aiReport?.biomechanicInsights?.[0] || 'Keep knee centered over toes'}\n⚡ Generated by Klutchh Academy`;
-                      navigator.clipboard.writeText(text);
-                      setCopiedSummary(true);
-                      setTimeout(() => setCopiedSummary(false), 2500);
-                    }}
-                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-zinc-950 border border-zinc-800 text-zinc-300 hover:text-white hover:border-zinc-700 text-[11px] font-bold transition-all"
+                    onClick={() => setDeckCardIndex((prev) => (prev > 0 ? prev - 1 : 4))}
+                    className="p-2 rounded-xl bg-zinc-950 border border-zinc-800 text-zinc-300 hover:text-white hover:border-zinc-700 transition-all"
                   >
-                    {copiedSummary ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
-                    <span>{copiedSummary ? 'Copied!' : 'Copy Summary'}</span>
+                    <ChevronLeft className="w-4 h-4" />
                   </button>
-
-                  {/* Hear Coach Audio Button */}
                   <button
-                    onClick={() => {
-                      if ('speechSynthesis' in window) {
-                        if (isPlayingAudio) {
-                          window.speechSynthesis.cancel();
-                          setIsPlayingAudio(false);
-                        } else {
-                          const athName = assignedAthleteName || 'Athlete';
-                          const score = ((avgSymmetry + avgKneeSafety) / 20).toFixed(1);
-                          const script = `Hey ${athName}! Coach here. You scored ${score} out of 10 on your ${sportRule.name}! Your balance was at ${avgSymmetry} percent and knee safety at ${avgKneeSafety} percent. ${aiReport?.executiveDossier?.headline || 'Great effort!'} Check out the simple practice drills below to take your game to the next level.`;
-                          const utterance = new SpeechSynthesisUtterance(script);
-                          utterance.rate = 1.0;
-                          utterance.pitch = 1.1;
-                          utterance.onend = () => setIsPlayingAudio(false);
-                          utterance.onerror = () => setIsPlayingAudio(false);
-                          setIsPlayingAudio(true);
-                          window.speechSynthesis.speak(utterance);
-                        }
-                      }
-                    }}
-                    className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl border text-[11px] font-bold transition-all ${
-                      isPlayingAudio
-                        ? 'bg-amber-500/20 border-amber-500/40 text-amber-300 animate-pulse'
-                        : 'bg-zinc-950 border-zinc-800 text-zinc-300 hover:text-white'
-                    }`}
+                    onClick={() => setDeckCardIndex((prev) => (prev < 4 ? prev + 1 : 0))}
+                    className="p-2 rounded-xl bg-zinc-950 border border-zinc-800 text-zinc-300 hover:text-white hover:border-zinc-700 transition-all"
                   >
-                    <Volume2 className="w-3.5 h-3.5 text-yellow-400" />
-                    <span>{isPlayingAudio ? 'Speaking...' : 'Hear Coach'}</span>
+                    <ChevronRight className="w-4 h-4" />
                   </button>
                 </div>
               </div>
 
-              {/* VIEW 1: ALL-IN-ONE COMPREHENSIVE ACTION REPORT */}
-              {dossierViewMode === 'all' && (
-                <div className="flex flex-col gap-5 animate-fadeIn">
-                  
-                  {/* CARD 1: OVERALL SCORE & BIG PICTURE */}
-                  <div className="bg-gradient-to-tr from-zinc-950 via-zinc-900 to-red-950/20 border-2 border-red-500/30 rounded-3xl p-5 sm:p-6 flex flex-col gap-5 shadow-xl">
-                    <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+              {/* CARD CONTAINER */}
+              <div className="relative bg-zinc-900 border-2 border-red-500/40 rounded-3xl p-6 card-deck-shadow flex flex-col gap-5 min-h-[480px] justify-between transition-all duration-300">
+                
+                {/* Sleek Gamified Card Steps progress bar */}
+                <div className="grid grid-cols-6 gap-1 pb-2.5 border-b border-zinc-800">
+                  {[
+                    { label: 'Overview', icon: Award },
+                    { label: 'Technique', icon: Activity },
+                    { label: 'Masteries', icon: Sparkles },
+                    { label: 'The Fix', icon: AlertTriangle },
+                    { label: 'Next Level', icon: Flame }
+                  ].map((step, idx) => {
+                    const Icon = step.icon;
+                    const isActive = deckCardIndex === idx;
+                    const isCompleted = deckCardIndex > idx;
+                    return (
+                      <button
+                        key={idx}
+                        onClick={() => setDeckCardIndex(idx)}
+                        className={`flex flex-col items-center gap-1.5 pb-1 border-b-2 transition-all duration-300 ${
+                          isActive
+                            ? 'border-red-500 text-red-400'
+                            : isCompleted
+                            ? 'border-emerald-500 text-emerald-400'
+                            : 'border-transparent text-zinc-600 hover:text-zinc-400'
+                        }`}
+                      >
+                        <Icon className={`w-4 h-4 transition-transform duration-300 ${isActive ? 'scale-110' : ''}`} />
+                        <span className="text-[9px] font-black uppercase tracking-wider hidden md:inline">{step.label}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+                
+                {/* CARD 0: EXECUTIVE SUMMARY */}
+                {deckCardIndex === 0 && (
+                  <div className="flex flex-col gap-5 animate-fadeIn">
+                    <div className="flex items-center justify-between border-b border-zinc-800 pb-3">
+                      <div className="flex items-center gap-2.5">
+                        <span className="w-7 h-7 rounded-xl bg-red-600 text-white font-black text-xs flex items-center justify-center shrink-0">
+                          01
+                        </span>
+                        <h3 className="text-xs font-black uppercase text-white tracking-wider">
+                          Executive Score & Performance Dossier
+                        </h3>
+                      </div>
+                      <span className="text-[10px] font-mono font-bold px-2.5 py-1 rounded-lg bg-red-500/10 text-red-400 border border-red-500/30">
+                        Grade {aiReport?.overallGrade || 'A'}
+                      </span>
+                    </div>
+
+                    <div className="bg-gradient-to-tr from-zinc-950 via-zinc-900 to-red-950/30 border border-zinc-800 rounded-2xl p-5 flex flex-col sm:flex-row items-center justify-between gap-5">
                       <div className="flex items-center gap-4">
                         <div className="w-20 h-20 rounded-2xl bg-gradient-to-tr from-amber-500 to-red-600 flex flex-col items-center justify-center text-white shadow-xl shadow-red-600/30 shrink-0">
                           <Award className="w-6 h-6 text-yellow-200" />
-                          <span className="text-2xl font-black tracking-tight mt-0.5">
+                          <span className="text-xl font-black tracking-tight mt-0.5">
                             {((avgSymmetry + avgKneeSafety) / 20).toFixed(1)}
                           </span>
-                          <span className="text-[9px] font-bold uppercase tracking-wider text-yellow-100">Score</span>
                         </div>
                         <div>
-                          <div className="flex items-center gap-2">
-                            <span className="text-[11px] font-bold px-2.5 py-0.5 rounded-full bg-red-500/10 text-red-400 border border-red-500/30">
-                              {aiReport?.overallGrade || 'Grade A'}
-                            </span>
-                            <span className="text-xs text-zinc-400 font-bold">
-                              {assignedAthleteName ? `${assignedAthleteName}'s Form` : 'Your Movement Analysis'}
-                            </span>
+                          <div className="flex flex-wrap items-center gap-1.5 text-[10px] text-red-400 font-mono font-black uppercase tracking-wider">
+                            <span>Klutchh Form Audit</span>
+                            <span className="text-zinc-600">•</span>
+                            <span className="text-yellow-400 flex items-center gap-0.5"><Sparkles className="w-2.5 h-2.5" /> KLUTCHH INTERFACE TECH</span>
                           </div>
-                          <h2 className="text-lg sm:text-xl font-black text-white uppercase tracking-wide mt-1">
-                            {aiReport?.executiveDossier?.headline || `${sportRule.name} Form Check`}
+                          <h2 className="text-xl font-black text-white italic uppercase tracking-wide mt-0.5">
+                            {aiReport?.summaryTitle || `${sportRule.name} Form Audit`}
                           </h2>
-                          <p className="text-xs text-zinc-300 mt-1 leading-relaxed font-medium">
-                            {aiReport?.summaryText || `You did a solid job with your ${sportRule.name}! Here is what went right and what to practice next.`}
+                          <p className="text-xs text-zinc-400 mt-1 font-medium">
+                            Analyzed across {sportRule.jointRules.length} biomechanical checkpoints at {calibratedFps} FPS.
                           </p>
+                          {currentUser && (
+                            <div className="flex flex-wrap items-center gap-x-3 gap-y-1 mt-2 text-[10px] font-mono text-zinc-400 bg-zinc-950/50 border border-zinc-800/60 rounded-xl py-1.5 px-3 w-fit">
+                              <span className="flex items-center gap-1">
+                                <span className="w-1.5 h-1.5 rounded-full bg-yellow-400" />
+                                <span className="text-zinc-500 uppercase">Observer:</span> 
+                                <span className="text-zinc-100 font-bold">{currentUser.name}</span>
+                              </span>
+                              <span className="text-zinc-700">|</span>
+                              <span className="flex items-center gap-1">
+                                <span className="text-zinc-500 uppercase">Role:</span> 
+                                <span className="text-zinc-300 font-medium">{currentUser.role}</span>
+                              </span>
+                              <span className="text-zinc-700">|</span>
+                              <span className="flex items-center gap-1">
+                                <span className="text-zinc-500 uppercase">Club:</span> 
+                                <span className="text-zinc-300 font-medium">{currentUser.clubOrSchool || 'Klutchh Academy'}</span>
+                              </span>
+                            </div>
+                          )}
                         </div>
                       </div>
 
-                      {/* 3 Simple Big Stat Pills */}
-                      <div className="grid grid-cols-3 gap-2 w-full sm:w-auto">
-                        <div className="bg-zinc-950 border border-zinc-800 px-3.5 py-2.5 rounded-2xl text-center">
-                          <span className="text-[10px] text-zinc-400 font-bold uppercase block">Balance</span>
-                          <span className="text-base font-black text-emerald-400">{avgSymmetry}%</span>
-                          <span className="text-[9px] text-zinc-500 font-medium block mt-0.5">Centered</span>
-                        </div>
-                        <div className="bg-zinc-950 border border-zinc-800 px-3.5 py-2.5 rounded-2xl text-center">
-                          <span className="text-[10px] text-zinc-400 font-bold uppercase block">Knee Safety</span>
-                          <span className="text-base font-black text-yellow-400">{avgKneeSafety}%</span>
-                          <span className="text-[9px] text-zinc-500 font-medium block mt-0.5">Protected</span>
-                        </div>
-                        <div className="bg-zinc-950 border border-zinc-800 px-3.5 py-2.5 rounded-2xl text-center">
-                          <span className="text-[10px] text-zinc-400 font-bold uppercase block">Power</span>
-                          <span className="text-base font-black text-red-400">
-                            {Math.min(100, Math.round((dynamicMetrics?.explosivenessScore || 85)))}%
-                          </span>
-                          <span className="text-[9px] text-zinc-500 font-medium block mt-0.5">Speed</span>
+                      <div className="flex flex-col gap-2 w-full sm:w-auto">
+                        <div className="grid grid-cols-2 gap-2">
+                          <div className="bg-zinc-950 border border-zinc-800 px-4 py-2 rounded-xl text-center">
+                            <span className="text-[9px] text-zinc-400 font-bold uppercase block">Symmetry</span>
+                            <span className="text-sm font-black text-emerald-400">{avgSymmetry}%</span>
+                          </div>
+                          <div className="bg-zinc-950 border border-zinc-800 px-4 py-2 rounded-xl text-center">
+                            <span className="text-[9px] text-zinc-400 font-bold uppercase block">Knee Safety</span>
+                            <span className="text-sm font-black text-yellow-400">{avgKneeSafety}%</span>
+                          </div>
                         </div>
                       </div>
                     </div>
-                  </div>
 
-                  {/* CARD 2: SIDE-BY-SIDE: WHAT YOU DID RIGHT vs. WHAT TO FIX */}
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    
-                    {/* WHAT LOOKED GREAT */}
-                    <div className="bg-zinc-900/90 border-2 border-emerald-500/30 rounded-3xl p-5 flex flex-col gap-3 shadow-lg relative overflow-hidden">
-                      <div className="absolute top-0 right-0 w-28 h-28 bg-emerald-500/5 rounded-full filter blur-xl" />
-                      <div className="flex items-center justify-between">
-                        <span className="text-xs font-black uppercase text-emerald-400 flex items-center gap-2">
-                          <span className="w-5 h-5 rounded-full bg-emerald-500/20 text-emerald-400 flex items-center justify-center text-xs font-black">✓</span>
-                          <span>What Looked Great</span>
-                        </span>
-                        <span className="text-[9px] font-bold px-2 py-0.5 rounded-full bg-emerald-950/60 text-emerald-300 border border-emerald-500/30">
-                          Strengths
-                        </span>
+                    {/* NEW INTERACTIVE RIGHT VS. WRONG SIDE-BY-SIDE COMPARE PANEL */}
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      {/* WRONG / DETECTED FAULT BOX */}
+                      <div className="bg-zinc-950 border border-red-500/30 rounded-2xl p-4 flex flex-col gap-3 relative overflow-hidden">
+                        <div className="absolute top-0 right-0 w-24 h-24 bg-red-500/5 rounded-full filter blur-xl" />
+                        <div className="flex items-center justify-between">
+                          <span className="text-[10px] font-black uppercase text-red-400 flex items-center gap-1.5">
+                            <span className="w-4 h-4 rounded-full bg-red-500/20 text-red-400 flex items-center justify-center text-[10px]">✕</span>
+                            <span>{aiReport?.executiveDossier?.detectedFault?.title || 'Detected Athlete Form (What Went Wrong)'}</span>
+                          </span>
+                          <span className="text-[8px] font-mono bg-red-950/40 text-red-300 px-2 py-0.5 rounded border border-red-500/30">
+                            Action Required
+                          </span>
+                        </div>
+                        <p className="text-xs text-zinc-300 leading-relaxed font-medium">
+                          {aiReport?.executiveDossier?.detectedFault?.description || aiReport?.biomechanicInsights?.[0] || 'Joint tracking recorded technical deviation during movement execution.'}
+                        </p>
+                        <div className="bg-zinc-900 border border-zinc-850 p-2.5 rounded-xl text-[10px] font-mono text-zinc-400 flex flex-col gap-1">
+                          <div className="flex justify-between">
+                            <span className="text-zinc-500">Joint Deviation:</span>
+                            <span className="text-red-400 font-bold">{aiReport?.executiveDossier?.detectedFault?.angleDeviation || 'Sub-optimal Zone'}</span>
+                          </div>
+                          <div className="flex justify-between">
+                            <span className="text-zinc-500">Power Impact:</span>
+                            <span className="text-red-400 font-bold">{aiReport?.executiveDossier?.detectedFault?.impact || 'Energy Loss Detected'}</span>
+                          </div>
+                        </div>
                       </div>
 
-                      <div className="flex flex-col gap-2.5 mt-1">
-                        {(() => {
-                          const strengths = (aiReport?.strengthsDetailed && aiReport.strengthsDetailed.length > 0)
-                            ? aiReport.strengthsDetailed
-                            : (aiReport?.keyStrengths || []).map((s: any) => {
-                                if (typeof s === 'object' && s !== null && s.title) return s;
-                                return {
-                                  title: typeof s === 'string' ? s.split('.')[0] : 'Solid Movement Timing',
-                                  desc: typeof s === 'string' ? s : 'Good balance and control throughout the key parts of the movement.'
-                                };
-                              });
+                      {/* RIGHT / ELITE STANDARD BOX */}
+                      <div className="bg-zinc-950 border border-emerald-500/30 rounded-2xl p-4 flex flex-col gap-3 relative overflow-hidden">
+                        <div className="absolute top-0 right-0 w-24 h-24 bg-emerald-500/5 rounded-full filter blur-xl" />
+                        <div className="flex items-center justify-between">
+                          <span className="text-[10px] font-black uppercase text-emerald-400 flex items-center gap-1.5">
+                            <span className="w-4 h-4 rounded-full bg-emerald-500/20 text-emerald-400 flex items-center justify-center text-[10px]">✓</span>
+                            <span>{aiReport?.executiveDossier?.goldStandard?.title || 'Elite Gold Standard (What Is Right)'}</span>
+                          </span>
+                          <span className="text-[8px] font-mono bg-emerald-950/40 text-emerald-300 px-2 py-0.5 rounded border border-emerald-500/30">
+                            Biomechanically Ideal
+                          </span>
+                        </div>
+                        <p className="text-xs text-zinc-300 leading-relaxed font-medium">
+                          {aiReport?.executiveDossier?.goldStandard?.description || (typeof aiReport?.keyStrengths?.[0] === 'string' ? aiReport?.keyStrengths?.[0] : (aiReport?.keyStrengths?.[0] as any)?.desc) || 'Neutral joint tracking aligned over load vector with active shock absorption.'}
+                        </p>
+                        <div className="bg-zinc-900 border border-zinc-850 p-2.5 rounded-xl text-[10px] font-mono text-zinc-400 flex flex-col gap-1">
+                          <div className="flex justify-between">
+                            <span className="text-zinc-500">Ideal Target Range:</span>
+                            <span className="text-emerald-400 font-bold">{aiReport?.executiveDossier?.goldStandard?.idealRange || 'Optimal Range'}</span>
+                          </div>
+                          <div className="flex justify-between">
+                            <span className="text-zinc-500">Force Transmission:</span>
+                            <span className="text-emerald-400 font-bold">{aiReport?.executiveDossier?.goldStandard?.forceTransmission || '100% Kinetic Whip'}</span>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
 
-                          return strengths.slice(0, 3).map((st: any, idx: number) => (
-                            <div key={idx} className="bg-zinc-950 border border-zinc-800 p-3 rounded-2xl flex items-start gap-3">
-                              <span className="w-5 h-5 rounded-full bg-emerald-500/10 text-emerald-400 flex items-center justify-center text-xs shrink-0 mt-0.5">
-                                ✓
+                  </div>
+                )}
+
+                {/* CARD 1: KINETIC CHAIN SEQUENCE */}
+                {deckCardIndex === 1 && (
+                  <div className="animate-fadeIn">
+                    <SequenceVerificationMatrix 
+                      sequenceComparison={localSequenceComparison} 
+                      kineticSequence={kineticSequence}
+                      sportRule={sportRule} 
+                      viewMode={viewMode}
+                      onUpdateSequenceComparison={setLocalSequenceComparison}
+                      drills={aiReport?.funCorrectiveDrills || sportRule.drills || []}
+                      drillProgress={drillProgress}
+                      onToggleDrillStatus={toggleDrillStatus}
+                      keyframes={keyframeList}
+                      currentTime={currentTime}
+                      onSeekVideo={(timestamp) => {
+                        if (videoRef.current) {
+                          videoRef.current.currentTime = timestamp;
+                          setCurrentTime(timestamp);
+                        }
+                      }}
+                      onSelectKeyframe={(frame) => {
+                        if (videoRef.current) {
+                          videoRef.current.currentTime = frame.timestamp;
+                          setCurrentTime(frame.timestamp);
+                        }
+                      }}
+                    />
+                  </div>
+                )}
+
+                {/* CARD 2: STRENGTHS */}
+                {deckCardIndex === 2 && (
+                  <div className="flex flex-col gap-6 animate-fadeIn max-w-2xl mx-auto w-full py-2">
+                    <div className="flex items-center justify-between border-b border-zinc-800 pb-3">
+                      <div className="flex items-center gap-2.5">
+                        <span className="w-7 h-7 rounded-xl bg-emerald-600 text-white font-black text-xs flex items-center justify-center shrink-0">
+                          03
+                        </span>
+                        <h3 className="text-xs font-black uppercase text-emerald-400 tracking-wider">
+                          What You Did Well (Strengths)
+                        </h3>
+                      </div>
+                      <span className="text-[10px] font-mono font-bold px-2.5 py-0.5 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+                        Top Form Highlights
+                      </span>
+                    </div>
+
+                    <div className="flex flex-col gap-4">
+                      {(() => {
+                        const strengthsList = (aiReport?.strengthsDetailed && aiReport.strengthsDetailed.length > 0)
+                          ? aiReport.strengthsDetailed
+                          : (aiReport?.keyStrengths || []).map((s: any) => {
+                              if (typeof s === 'object' && s !== null && s.title) return s;
+                              return {
+                                title: typeof s === 'string' ? s : 'Clean Joint Execution',
+                                desc: 'Movement phase executed with strong joint stability and efficient kinetic chain power transfer.',
+                                metric: 'Optimal Zone'
+                              };
+                            });
+
+                        return strengthsList.map((strength: any, idx: number) => (
+                          <div key={idx} className="bg-zinc-950 border border-emerald-500/30 rounded-2xl p-5 flex flex-col gap-3 relative overflow-hidden">
+                            <div className="absolute top-0 right-0 w-24 h-24 bg-emerald-500/5 rounded-full filter blur-xl" />
+                            <div className="flex items-center gap-2">
+                              <span className="w-5 h-5 rounded-full bg-emerald-500/20 text-emerald-400 font-bold text-xs flex items-center justify-center">✓</span>
+                              <span className="text-sm font-bold text-white">{strength.title}</span>
+                            </div>
+                            <p className="text-xs text-zinc-300 leading-relaxed">
+                              {strength.desc}
+                            </p>
+                            <div className="bg-zinc-900 border border-zinc-850 px-3 py-2 rounded-xl text-xs font-mono text-emerald-400 self-start">
+                              {strength.metric || 'Optimal Alignment'}
+                            </div>
+                          </div>
+                        ));
+                      })()}
+                    </div>
+                  </div>
+                )}
+
+                {/* CARD 3: FAULTS & ATTACHED DRILLS */}
+                {deckCardIndex === 3 && (
+                  <div className="flex flex-col gap-6 animate-fadeIn max-w-2xl mx-auto w-full py-2">
+                    <div className="flex items-center justify-between border-b border-zinc-800 pb-3">
+                      <div className="flex items-center gap-2.5">
+                        <span className="w-7 h-7 rounded-xl bg-amber-500 text-zinc-950 font-black text-xs flex items-center justify-center shrink-0">
+                          04
+                        </span>
+                        <h3 className="text-xs font-black uppercase text-amber-400 tracking-wider">
+                          The Quick Fix: Corrections & Drills
+                        </h3>
+                      </div>
+                      <span className="text-[10px] font-mono font-bold px-2.5 py-0.5 rounded bg-amber-400/10 text-amber-400 border border-amber-400/20">
+                        Immediate Action
+                      </span>
+                    </div>
+
+                    <div className="flex flex-col gap-4">
+                      {(() => {
+                        const fixesList = (aiReport?.areasToImprove && aiReport.areasToImprove.length > 0)
+                          ? aiReport.areasToImprove
+                          : (aiReport?.biomechanicInsights || []).map((insight: string, idx: number) => {
+                              const correspondingDrill = aiReport?.funCorrectiveDrills?.[idx] || aiReport?.funCorrectiveDrills?.[0];
+                              return {
+                                issue: insight,
+                                explanation: 'We spotted a small movement check that could be robbing you of power or balance.',
+                                drillName: correspondingDrill?.name || `${sportRule.name} Stabilization Drill`,
+                                drillReps: correspondingDrill?.reps || '3 sets x 8 reps',
+                                drillTip: correspondingDrill?.coachingCue || 'Keep it smooth and controlled—focus on the feeling of the movement.'
+                              };
+                            });
+
+                        return fixesList.map((item: any, idx: number) => (
+                          <div key={idx} className="bg-zinc-950 border border-amber-500/30 rounded-2xl p-5 flex flex-col gap-3">
+                            <div className="flex items-center justify-between">
+                              <span className="text-xs font-black text-amber-400 flex items-center gap-1.5 uppercase italic">
+                                <span>⚡</span>
+                                <span>{item.issue}</span>
                               </span>
-                              <div>
-                                <h4 className="text-xs font-bold text-white">{st.title}</h4>
-                                <p className="text-[11px] text-zinc-300 mt-0.5 leading-relaxed font-medium">
-                                  {st.desc || 'Executed with good balance and smooth control.'}
-                                </p>
+                              <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-amber-950/40 text-amber-300 border border-amber-500/30">
+                                FIX #{idx + 1}
+                              </span>
+                            </div>
+                            
+                            <p className="text-xs text-zinc-300 leading-relaxed font-medium">
+                              {item.explanation}
+                            </p>
+
+                            <div className="bg-zinc-900 border border-zinc-850 p-3.5 rounded-xl flex flex-col gap-2 mt-1">
+                              <div className="flex items-center gap-2">
+                                <div className="w-6 h-6 rounded-lg bg-amber-500/20 flex items-center justify-center text-amber-400">
+                                  <Target className="w-4 h-4" />
+                                </div>
+                                <span className="text-xs font-black text-white uppercase tracking-tight">Do This: {item.drillName}</span>
                               </div>
+                              <p className="text-[11px] text-zinc-400 font-medium">
+                                💡 <strong>Pro Tip:</strong> {item.drillTip}
+                              </p>
+                              <div className="flex items-center gap-3 mt-1">
+                                <span className="text-[10px] font-mono text-amber-400 font-black bg-amber-500/10 px-2.5 py-1 rounded border border-amber-500/20">
+                                  GOAL: {item.drillReps}
+                                </span>
+                                <span className="text-[10px] font-black text-zinc-500 uppercase tracking-widest">Master this to level up</span>
+                              </div>
+                            </div>
+                          </div>
+                        ));
+                      })()}
+                    </div>
+                  </div>
+                )}
+
+                {/* CARD 4: FORCE & EFFICIENCY */}
+                {deckCardIndex === 4 && (
+                  <div className="flex flex-col gap-6 animate-fadeIn">
+                    {/* Header */}
+                    <div className="flex items-center justify-between border-b border-zinc-800 pb-3">
+                      <div className="flex items-center gap-2.5">
+                        <span className="w-7 h-7 rounded-xl bg-purple-600 text-white font-black text-xs flex items-center justify-center shrink-0">
+                          05
+                        </span>
+                        <h3 className="text-xs font-black uppercase text-purple-400 tracking-wider">
+                          Kinetic Summary & Next Steps
+                        </h3>
+                      </div>
+                      <span className="text-[10px] font-mono font-bold px-2.5 py-1 rounded bg-purple-500/10 text-purple-300 border border-purple-500/20">
+                        Final Action Plan
+                      </span>
+                    </div>
+
+                    {/* Overview Hero Banner */}
+                    <div className="bg-gradient-to-br from-zinc-950 to-zinc-900 border border-purple-500/30 rounded-2xl p-5 flex flex-col gap-3 relative overflow-hidden">
+                      <div className="absolute top-0 right-0 w-32 h-32 bg-purple-600/10 rounded-full blur-2xl pointer-events-none" />
+                      <div className="flex items-center justify-between z-10">
+                        <span className="text-xs font-black text-purple-300 uppercase tracking-wide flex items-center gap-1.5 italic">
+                          <span>🚀</span> {aiReport?.kineticSummary?.headline || 'Your Performance Path'}
+                        </span>
+                        <span className="text-[10px] font-black px-2 py-0.5 rounded bg-purple-950 text-purple-300 border border-purple-500/30 uppercase italic">
+                          Level Up Ready
+                        </span>
+                      </div>
+                      <p className="text-xs text-zinc-300 leading-relaxed z-10 font-medium">
+                        {aiReport?.kineticSummary?.summary || 'You have great foundational power! To unlock your next level, focus on core bracing and smooth force absorption during transitions.'}
+                      </p>
+                    </div>
+
+                    {/* Core Takeaways Grid */}
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3.5">
+                      {(() => {
+                        const takeaways = aiReport?.kineticSummary?.takeaways || [
+                          {
+                            category: 'Power Potential',
+                            title: 'Initial Drive Phase',
+                            detail: 'Explosive force generation off the ground is solid.'
+                          },
+                          {
+                            category: 'Joint Safety',
+                            title: 'Landing Absorption',
+                            detail: 'Bend knees proactively to cushion joints during impact.'
+                          },
+                          {
+                            category: 'Sequence Timing',
+                            title: 'Core Stability',
+                            detail: 'Maintain upright posture through movement transition.'
+                          }
+                        ];
+
+                        const icons = ['✓', '!', '★'];
+                        const colors = [
+                          'bg-emerald-500/10 text-emerald-400 border-emerald-500/20',
+                          'bg-amber-500/10 text-amber-400 border-amber-500/20',
+                          'bg-purple-500/10 text-purple-400 border-purple-500/20'
+                        ];
+
+                        return takeaways.map((t: any, idx: number) => (
+                          <div key={idx} className="bg-zinc-950 border border-zinc-850 rounded-xl p-4 flex flex-col gap-2">
+                            <div className={`w-6 h-6 rounded-lg font-bold text-xs flex items-center justify-center border ${colors[idx % colors.length]}`}>
+                              {icons[idx % icons.length]}
+                            </div>
+                            <span className="text-[10px] font-bold text-purple-400 uppercase tracking-wider">{t.category}</span>
+                            <span className="text-xs font-black text-white">{t.title}</span>
+                            <p className="text-[11px] text-zinc-400 leading-normal">
+                              {t.detail}
+                            </p>
+                          </div>
+                        ));
+                      })()}
+                    </div>
+
+                    {/* Recommended Routine Card */}
+                    <div className="bg-zinc-950 border border-zinc-800 rounded-xl p-4 flex flex-col gap-3">
+                      <span className="text-[10px] font-black uppercase text-zinc-400 tracking-wider">
+                        Weekly Training Prescription
+                      </span>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        {(() => {
+                          const rxList = aiReport?.kineticSummary?.weeklyPrescription || (aiReport?.funCorrectiveDrills || []).slice(0, 2).map((d: any, idx: number) => ({
+                            title: `${idx + 1}. ${d.name}`,
+                            detail: `${d.reps || '3 sets x 8 reps'} • ${d.coachingCue || 'Focus on controlled form.'}`
+                          }));
+
+                          if (rxList.length === 0) {
+                            rxList.push(
+                              { title: '1. Soft Landing Drills', detail: '3 sets of 8 reps • Focus on cushioned contact.' },
+                              { title: '2. Core Braced Holds', detail: '3 sets of 30 sec • Maintain neutral spinal alignment.' }
+                            );
+                          }
+
+                          return rxList.map((rx: any, idx: number) => (
+                            <div key={idx} className="bg-zinc-900 border border-zinc-850 p-3 rounded-lg flex flex-col gap-1">
+                              <span className="text-[11px] font-bold text-white">{rx.title}</span>
+                              <span className="text-[10px] text-zinc-400">{rx.detail}</span>
                             </div>
                           ));
                         })()}
                       </div>
                     </div>
 
-                    {/* THE #1 THING TO FIX */}
-                    <div className="bg-zinc-900/90 border-2 border-amber-500/30 rounded-3xl p-5 flex flex-col gap-3 shadow-lg relative overflow-hidden">
-                      <div className="absolute top-0 right-0 w-28 h-28 bg-amber-500/5 rounded-full filter blur-xl" />
-                      <div className="flex items-center justify-between">
-                        <span className="text-xs font-black uppercase text-amber-400 flex items-center gap-2">
-                          <span className="w-5 h-5 rounded-full bg-amber-500/20 text-amber-400 flex items-center justify-center text-xs font-black">🎯</span>
-                          <span>The #1 Thing To Practice</span>
-                        </span>
-                        <span className="text-[9px] font-bold px-2 py-0.5 rounded-full bg-amber-950/60 text-amber-300 border border-amber-500/30">
-                          Easy Fix
-                        </span>
-                      </div>
-
-                      <div className="bg-zinc-950 border border-zinc-800 p-3.5 rounded-2xl flex flex-col gap-2 mt-1">
-                        <div className="flex items-center justify-between">
-                          <h4 className="text-xs font-bold text-white flex items-center gap-1.5">
-                            <AlertTriangle className="w-4 h-4 text-amber-400" />
-                            <span>{aiReport?.executiveDossier?.detectedFault?.title || 'Joint Alignment Check'}</span>
-                          </h4>
-                          <span className="text-[10px] font-mono text-amber-400 font-bold">
-                            {aiReport?.executiveDossier?.detectedFault?.impact || 'Losing ~15% Power'}
-                          </span>
-                        </div>
-                        <p className="text-xs text-zinc-300 leading-relaxed font-medium">
-                          {aiReport?.executiveDossier?.detectedFault?.description || aiReport?.biomechanicInsights?.[0] || 'Keep your joints lined up straight when landing or planting to stay balanced.'}
-                        </p>
-                      </div>
-
-                      {/* How To Do It Like A Pro */}
-                      <div className="bg-emerald-950/30 border border-emerald-500/30 p-3.5 rounded-2xl flex flex-col gap-1.5">
-                        <span className="text-[10px] font-black uppercase tracking-wider text-emerald-400 flex items-center gap-1">
-                          <Sparkles className="w-3.5 h-3.5" />
-                          <span>How To Do It Like A Pro:</span>
-                        </span>
-                        <p className="text-xs text-emerald-200 leading-relaxed font-medium">
-                          {aiReport?.executiveDossier?.goldStandard?.description || 'Keep your feet shoulder-width apart, knees pointing over your toes, and stay smooth.'}
-                        </p>
-                      </div>
-                    </div>
-
                   </div>
+                )}
 
-                  {/* CARD 3: 3-STEP PRACTICE ACTION PLAN (DRILLS) */}
-                  <div className="bg-zinc-900 border-2 border-red-500/20 rounded-3xl p-5 sm:p-6 flex flex-col gap-4 shadow-xl">
-                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-zinc-800 pb-3">
-                      <div>
-                        <h3 className="text-sm font-black uppercase text-white tracking-wider flex items-center gap-2">
-                          <Zap className="w-4 h-4 text-yellow-400" />
-                          <span>Your 3-Step Practice Plan</span>
-                        </h3>
-                        <p className="text-xs text-zinc-400 mt-0.5">
-                          Try these simple drills during your next practice session. Check them off when done!
-                        </p>
-                      </div>
-                      <span className="text-[10px] font-bold px-3 py-1 rounded-full bg-red-500/10 text-red-400 border border-red-500/20 self-start sm:self-auto">
-                        Practice Drills
-                      </span>
-                    </div>
+                
+                
 
-                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3.5">
-                      {(() => {
-                        const drillsList = (aiReport?.areasToImprove && aiReport.areasToImprove.length > 0)
-                          ? aiReport.areasToImprove
-                          : (aiReport?.funCorrectiveDrills || []).slice(0, 3).map((d: any) => ({
-                              drillName: d.name,
-                              drillReps: d.reps || '3 sets of 8 reps',
-                              drillTip: d.coachingCue || 'Keep it smooth and stay balanced.',
-                              issue: d.targetJoint || 'Form Check'
-                            }));
-
-                        if (drillsList.length === 0) {
-                          drillsList.push(
-                            { drillName: 'Slow-Motion Mirror Reps', drillReps: '3 sets of 8 reps', drillTip: 'Practice in front of a mirror at half speed.', issue: 'Form Control' },
-                            { drillName: 'Balance & Knee Lineup', drillReps: '3 sets of 10 reps', drillTip: 'Keep knees over your middle toes.', issue: 'Balance' },
-                            { drillName: 'Smooth Follow-Through', drillReps: '3 sets of 8 reps', drillTip: 'Hold your finish for 2 seconds.', issue: 'Power' }
-                          );
-                        }
-
-                        return drillsList.slice(0, 3).map((drill: any, idx: number) => {
-                          const isDone = !!completedDrills[drill.drillName];
-                          return (
-                            <div 
-                              key={idx} 
-                              className={`bg-zinc-950 border rounded-2xl p-4 flex flex-col justify-between gap-3 transition-all ${
-                                isDone ? 'border-emerald-500/50 bg-emerald-950/10' : 'border-zinc-800'
-                              }`}
-                            >
-                              <div className="flex flex-col gap-2">
-                                <div className="flex items-center justify-between">
-                                  <span className="text-[10px] font-black uppercase text-red-400 font-mono">
-                                    Step {idx + 1}
-                                  </span>
-                                  <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-zinc-900 text-zinc-300 border border-zinc-800">
-                                    {drill.drillReps || '3 sets of 8 reps'}
-                                  </span>
-                                </div>
-                                <h4 className="text-xs font-bold text-white">{drill.drillName}</h4>
-                                <p className="text-[11px] text-zinc-300 leading-relaxed font-medium">
-                                  💡 <strong>Tip:</strong> {drill.drillTip}
-                                </p>
-                              </div>
-
-                              <button
-                                onClick={() => {
-                                  setCompletedDrills(prev => ({
-                                    ...prev,
-                                    [drill.drillName]: !prev[drill.drillName]
-                                  }));
-                                }}
-                                className={`w-full py-2 px-3 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 transition-all ${
-                                  isDone
-                                    ? 'bg-emerald-600 text-white shadow-md shadow-emerald-600/20'
-                                    : 'bg-zinc-900 hover:bg-zinc-800 text-zinc-300 border border-zinc-700'
-                                }`}
-                              >
-                                <CheckCircle2 className={`w-4 h-4 ${isDone ? 'text-white' : 'text-zinc-500'}`} />
-                                <span>{isDone ? 'Practiced! ✓' : 'Mark as Practiced'}</span>
-                              </button>
-                            </div>
-                          );
-                        });
-                      })()}
-                    </div>
-                  </div>
-
-                  {/* CARD 4: MOVEMENT CHECKLIST (STEP-BY-STEP ORDER) */}
-                  <div className="bg-zinc-900 border border-zinc-800 rounded-3xl p-5 sm:p-6 flex flex-col gap-4 shadow-xl">
-                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-zinc-800 pb-3">
-                      <div>
-                        <h3 className="text-sm font-black uppercase text-white tracking-wider flex items-center gap-2">
-                          <Activity className="w-4 h-4 text-emerald-400" />
-                          <span>Movement Checklist (Step-by-Step)</span>
-                        </h3>
-                        <p className="text-xs text-zinc-400 mt-0.5">
-                          Tap any step to jump straight to that moment in the video.
-                        </p>
-                      </div>
-                      <span className="text-[10px] font-bold px-3 py-1 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 self-start sm:self-auto">
-                        Timing Check
-                      </span>
-                    </div>
-
-                    <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3">
-                      {(() => {
-                        const steps = kineticSequence?.steps && kineticSequence.steps.length > 0
-                          ? kineticSequence.steps
-                          : sportRule.phases.map((p, i) => ({
-                              name: p,
-                              timestamp: (i + 1) * 0.8,
-                              score: 90,
-                              status: 'optimal'
-                            }));
-
-                        return steps.map((step: any, idx: number) => {
-                          const isGood = step.score >= 80 || step.status === 'optimal' || step.status === 'good';
-                          return (
-                            <button
-                              key={idx}
-                              onClick={() => {
-                                if (videoRef.current && step.timestamp !== undefined) {
-                                  videoRef.current.currentTime = step.timestamp;
-                                  setCurrentTime(step.timestamp);
-                                }
-                              }}
-                              className="bg-zinc-950 hover:bg-zinc-900 border border-zinc-800 hover:border-zinc-700 p-3.5 rounded-2xl flex flex-col gap-2 text-left transition-all group"
-                            >
-                              <div className="flex items-center justify-between">
-                                <span className="text-[10px] font-mono font-bold text-zinc-500">
-                                  Phase {idx + 1}
-                                </span>
-                                <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
-                                  isGood ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/30' : 'bg-amber-500/10 text-amber-400 border border-amber-500/30'
-                                }`}>
-                                  {isGood ? '✓ Good' : '⚠️ Check'}
-                                </span>
-                              </div>
-                              <span className="text-xs font-bold text-white group-hover:text-red-400 transition-colors">
-                                {step.name}
-                              </span>
-                              <span className="text-[10px] text-zinc-500 font-mono">
-                                ⏱️ {step.timestamp ? `${step.timestamp.toFixed(2)}s` : 'Tap to view'}
-                              </span>
-                            </button>
-                          );
-                        });
-                      })()}
-                    </div>
-                  </div>
-
-                </div>
-              )}
-
-              {/* VIEW 2: STEP-BY-STEP INTERACTIVE CARDS */}
-              {dossierViewMode === 'cards' && (
-                <div className="flex flex-col gap-4">
-                  {/* Card Deck Progress Bar */}
-                  <div className="grid grid-cols-4 gap-2 pb-2">
-                    {[
-                      { label: '1. Score', icon: Award },
-                      { label: '2. Fixes', icon: Target },
-                      { label: '3. Drills', icon: Zap },
-                      { label: '4. Sequence', icon: Activity }
-                    ].map((step, idx) => {
-                      const Icon = step.icon;
-                      const isActive = deckCardIndex === idx;
-                      const isCompleted = deckCardIndex > idx;
-                      return (
-                        <button
-                          key={idx}
-                          onClick={() => setDeckCardIndex(idx)}
-                          className={`flex items-center justify-center gap-2 p-2.5 rounded-2xl border transition-all ${
-                            isActive
-                              ? 'bg-red-600/20 border-red-500 text-white shadow-md'
-                              : isCompleted
-                              ? 'bg-emerald-950/30 border-emerald-500/40 text-emerald-400'
-                              : 'bg-zinc-900 border-zinc-800 text-zinc-500 hover:text-zinc-300'
-                          }`}
-                        >
-                          <Icon className="w-4 h-4" />
-                          <span className="text-xs font-bold">{step.label}</span>
-                        </button>
-                      );
-                    })}
-                  </div>
-
-                  {/* Active Card Body */}
-                  <div className="bg-zinc-900 border-2 border-red-500/30 rounded-3xl p-6 flex flex-col justify-between min-h-[420px] shadow-2xl">
-                    
-                    {/* CARD 0: SCORE & BIG PICTURE */}
-                    {deckCardIndex === 0 && (
-                      <div className="flex flex-col gap-5 animate-fadeIn">
-                        <div className="flex items-center justify-between border-b border-zinc-800 pb-3">
-                          <span className="text-xs font-black uppercase text-red-400">Step 1: Your Score & Big Picture</span>
-                          <span className="text-[10px] font-bold px-2.5 py-0.5 rounded-full bg-red-500/10 text-red-400 border border-red-500/30">
-                            {aiReport?.overallGrade || 'Grade A'}
-                          </span>
-                        </div>
-
-                        <div className="flex flex-col sm:flex-row items-center gap-5 bg-zinc-950 border border-zinc-800 p-5 rounded-2xl">
-                          <div className="w-20 h-20 rounded-2xl bg-gradient-to-tr from-amber-500 to-red-600 flex flex-col items-center justify-center text-white shadow-xl shadow-red-600/30 shrink-0">
-                            <Award className="w-6 h-6 text-yellow-200" />
-                            <span className="text-2xl font-black">{((avgSymmetry + avgKneeSafety) / 20).toFixed(1)}</span>
-                          </div>
-                          <div>
-                            <h3 className="text-lg font-black text-white">{aiReport?.executiveDossier?.headline || `${sportRule.name} Form Check`}</h3>
-                            <p className="text-xs text-zinc-300 mt-1 leading-relaxed font-medium">
-                              {aiReport?.summaryText || `Solid performance! Your movement is consistent and well balanced.`}
-                            </p>
-                          </div>
-                        </div>
-
-                        <div className="grid grid-cols-3 gap-3">
-                          <div className="bg-zinc-950 border border-zinc-800 p-3 rounded-xl text-center">
-                            <span className="text-[10px] text-zinc-400 font-bold uppercase block">Balance</span>
-                            <span className="text-base font-black text-emerald-400">{avgSymmetry}%</span>
-                          </div>
-                          <div className="bg-zinc-950 border border-zinc-800 p-3 rounded-xl text-center">
-                            <span className="text-[10px] text-zinc-400 font-bold uppercase block">Safety</span>
-                            <span className="text-base font-black text-yellow-400">{avgKneeSafety}%</span>
-                          </div>
-                          <div className="bg-zinc-950 border border-zinc-800 p-3 rounded-xl text-center">
-                            <span className="text-[10px] text-zinc-400 font-bold uppercase block">Power</span>
-                            <span className="text-base font-black text-red-400">
-                              {Math.min(100, Math.round((dynamicMetrics?.explosivenessScore || 85)))}%
-                            </span>
-                          </div>
-                        </div>
-                      </div>
-                    )}
-
-                    {/* CARD 1: WHAT WENT RIGHT vs WHAT TO FIX */}
-                    {deckCardIndex === 1 && (
-                      <div className="flex flex-col gap-4 animate-fadeIn">
-                        <div className="flex items-center justify-between border-b border-zinc-800 pb-3">
-                          <span className="text-xs font-black uppercase text-amber-400">Step 2: Right vs. The Fix</span>
-                          <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-zinc-800 text-zinc-300">
-                            Key Compare
-                          </span>
-                        </div>
-
-                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                          <div className="bg-zinc-950 border border-emerald-500/30 p-4 rounded-2xl flex flex-col gap-2">
-                            <span className="text-xs font-bold text-emerald-400 flex items-center gap-1.5">
-                              <span>✓</span> What Looked Great
-                            </span>
-                            <p className="text-xs text-zinc-300 leading-relaxed font-medium">
-                              {aiReport?.executiveDossier?.goldStandard?.description || 'Your stance and balance remained solid throughout.'}
-                            </p>
-                          </div>
-
-                          <div className="bg-zinc-950 border border-amber-500/30 p-4 rounded-2xl flex flex-col gap-2">
-                            <span className="text-xs font-bold text-amber-400 flex items-center gap-1.5">
-                              <span>🎯</span> The #1 Thing To Practice
-                            </span>
-                            <p className="text-xs text-zinc-300 leading-relaxed font-medium">
-                              {aiReport?.executiveDossier?.detectedFault?.description || 'Keep your knee pointing straight ahead over your toes.'}
-                            </p>
-                          </div>
-                        </div>
-                      </div>
-                    )}
-
-                    {/* CARD 2: 3 PRACTICE DRILLS */}
-                    {deckCardIndex === 2 && (
-                      <div className="flex flex-col gap-4 animate-fadeIn">
-                        <div className="flex items-center justify-between border-b border-zinc-800 pb-3">
-                          <span className="text-xs font-black uppercase text-yellow-400">Step 3: Practice Drills</span>
-                          <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-yellow-500/10 text-yellow-300 border border-yellow-500/20">
-                            3 Drills
-                          </span>
-                        </div>
-
-                        <div className="flex flex-col gap-2.5">
-                          {(aiReport?.areasToImprove || aiReport?.funCorrectiveDrills || []).slice(0, 3).map((drill: any, dIdx: number) => (
-                            <div key={dIdx} className="bg-zinc-950 border border-zinc-800 p-3 rounded-2xl flex items-center justify-between gap-3">
-                              <div>
-                                <h4 className="text-xs font-bold text-white">{drill.drillName || drill.name || `Drill #${dIdx + 1}`}</h4>
-                                <p className="text-[11px] text-zinc-400 mt-0.5">
-                                  {drill.drillTip || drill.coachingCue || 'Focus on clean, smooth reps.'}
-                                </p>
-                              </div>
-                              <span className="text-[10px] font-mono font-bold bg-zinc-900 px-2.5 py-1 rounded text-zinc-300 shrink-0">
-                                {drill.drillReps || drill.reps || '3 sets of 8'}
-                              </span>
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-                    )}
-
-                    {/* CARD 3: MOVEMENT SEQUENCE */}
-                    {deckCardIndex === 3 && (
-                      <div className="flex flex-col gap-4 animate-fadeIn">
-                        <div className="flex items-center justify-between border-b border-zinc-800 pb-3">
-                          <span className="text-xs font-black uppercase text-purple-400">Step 4: Movement Timing</span>
-                          <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-purple-500/10 text-purple-300 border border-purple-500/20">
-                            Timeline
-                          </span>
-                        </div>
-
-                        <div className="grid grid-cols-2 gap-3">
-                          {(kineticSequence?.steps || sportRule.phases.map((p, i) => ({ name: p, timestamp: (i + 1) * 0.8 }))).map((step: any, sIdx: number) => (
-                            <button
-                              key={sIdx}
-                              onClick={() => {
-                                if (videoRef.current && step.timestamp !== undefined) {
-                                  videoRef.current.currentTime = step.timestamp;
-                                  setCurrentTime(step.timestamp);
-                                }
-                              }}
-                              className="bg-zinc-950 hover:bg-zinc-850 border border-zinc-800 p-3 rounded-2xl flex flex-col gap-1 text-left transition-all"
-                            >
-                              <span className="text-[10px] font-mono text-zinc-500">Step {sIdx + 1}</span>
-                              <span className="text-xs font-bold text-white">{step.name}</span>
-                              <span className="text-[10px] text-red-400 font-mono">⏱️ {step.timestamp ? `${step.timestamp.toFixed(2)}s` : ''}</span>
-                            </button>
-                          ))}
-                        </div>
-                      </div>
-                    )}
-
-                    {/* Card Navigation Footer */}
-                    <div className="flex items-center justify-between pt-4 border-t border-zinc-800 mt-4">
+                {/* Card Footer Dots */}
+                <div className="flex items-center justify-between pt-4 border-t border-zinc-800 text-[11px] text-zinc-400">
+                  <span>Swipe or use arrows to flip through tactical dossier</span>
+                  <div className="flex items-center gap-1.5">
+                    {[0, 1, 2, 3, 4].map((i) => (
                       <button
-                        onClick={() => setDeckCardIndex(prev => (prev > 0 ? prev - 1 : 3))}
-                        className="px-4 py-2 rounded-xl bg-zinc-950 border border-zinc-800 hover:border-zinc-700 text-xs font-bold text-zinc-300 flex items-center gap-1.5 transition-all"
-                      >
-                        <ChevronLeft className="w-4 h-4" />
-                        <span>Previous</span>
-                      </button>
-
-                      <div className="flex items-center gap-1.5">
-                        {[0, 1, 2, 3].map(i => (
-                          <button
-                            key={i}
-                            onClick={() => setDeckCardIndex(i)}
-                            className={`h-2 rounded-full transition-all ${
-                              deckCardIndex === i ? 'bg-red-500 w-6' : 'bg-zinc-700 w-2'
-                            }`}
-                          />
-                        ))}
-                      </div>
-
-                      <button
-                        onClick={() => setDeckCardIndex(prev => (prev < 3 ? prev + 1 : 0))}
-                        className="px-4 py-2 rounded-xl bg-red-600 hover:bg-red-500 text-xs font-bold text-white flex items-center gap-1.5 transition-all shadow-md shadow-red-600/20"
-                      >
-                        <span>{deckCardIndex === 3 ? 'Back to Start' : 'Next Step'}</span>
-                        <ChevronRight className="w-4 h-4" />
-                      </button>
-                    </div>
-
+                        key={i}
+                        onClick={() => setDeckCardIndex(i)}
+                        className={`w-2 h-2 rounded-full transition-all ${
+                          deckCardIndex === i ? 'bg-red-500 w-5' : 'bg-zinc-700'
+                        }`}
+                      />
+                    ))}
                   </div>
                 </div>
-              )}
 
+              </div>
             </div>
           )}
 
@@ -2761,151 +2081,6 @@ export const AnalysisReportPage: React.FC<AnalysisReportPageProps> = ({
                 ))}
               </div>
 
-              {/* INTERACTIVE SCENARIO MAPPING & PHASE-DRILL MATCHER */}
-              <div className="bg-zinc-950/60 border border-zinc-800 p-5 rounded-2xl flex flex-col gap-4 z-10">
-                <div className="flex items-center gap-2">
-                  <span className="text-sm font-black uppercase italic text-amber-400">📊 Scenario-to-Drill Phase Mapping</span>
-                </div>
-                
-                <p className="text-xs text-zinc-400 max-w-2xl leading-relaxed">
-                  Select an active movement scenario phase below to instantly isolate the biomechanical rules measured in that exact window, verify telemetry errors, and view your customized corrective training.
-                </p>
-
-                {/* Phase Selection Chips */}
-                <div className="flex flex-wrap gap-2.5 mt-1 border-b border-zinc-850 pb-4">
-                  {(sportRule.phases && sportRule.phases.length > 0 ? sportRule.phases : ['Approach', 'Contact', 'Follow-Through']).map((phaseName) => {
-                    const currentPhase = activeScenarioPhase || (sportRule.phases && sportRule.phases[0]) || 'Approach';
-                    const isSelected = currentPhase === phaseName;
-                    
-                    // Count rules matching this phase
-                    const matchingRulesCount = sportRule.jointRules ? sportRule.jointRules.filter(r => r.phase === phaseName).length : 0;
-
-                    return (
-                      <button
-                        key={phaseName}
-                        onClick={() => setActiveScenarioPhase(phaseName)}
-                        className={`px-4 py-3 rounded-xl border text-xs font-black uppercase tracking-wider transition-all flex flex-col items-start gap-1 text-left min-w-[120px] ${
-                          isSelected
-                            ? 'bg-amber-500 border-amber-400 text-black shadow-lg shadow-amber-500/15'
-                            : 'bg-zinc-900 border-zinc-800 text-zinc-400 hover:text-white hover:border-zinc-700'
-                        }`}
-                      >
-                        <span className="text-[9px] font-mono opacity-80">PHASE SCENARIO</span>
-                        <span className="truncate max-w-[150px]">{phaseName}</span>
-                        <span className={`text-[9px] font-mono mt-1 ${isSelected ? 'text-amber-950' : 'text-zinc-500'}`}>
-                          {matchingRulesCount} {matchingRulesCount === 1 ? 'Biometric' : 'Biometrics'}
-                        </span>
-                      </button>
-                    );
-                  })}
-                </div>
-
-                {/* Scenario Analysis Grid */}
-                {(() => {
-                  const currentPhase = activeScenarioPhase || (sportRule.phases && sportRule.phases[0]) || 'Approach';
-                  const activeRules = sportRule.jointRules ? sportRule.jointRules.filter(r => r.phase === currentPhase) : [];
-                  
-                  // Map phase index to corresponding drill index to link scenarios to drills
-                  const phaseIdx = sportRule.phases ? sportRule.phases.indexOf(currentPhase) : 0;
-                  const allDrills = aiReport?.funCorrectiveDrills || sportRule.drills || [];
-                  const activeDrill = allDrills[phaseIdx % allDrills.length] || allDrills[0];
-
-                  return (
-                    <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 items-stretch">
-                      {/* Active Biometrics inside this Scenario */}
-                      <div className="lg:col-span-7 flex flex-col gap-3">
-                        <span className="text-[10px] font-black uppercase text-zinc-500 tracking-widest font-mono">
-                          🔍 Active Biometric Rules ({activeRules.length})
-                        </span>
-                        
-                        {activeRules.length === 0 ? (
-                          <div className="bg-zinc-900/40 border border-zinc-800 p-4 rounded-xl text-center text-xs text-zinc-500 font-medium italic">
-                            No complex joint rules are isolated for this phase. Maintaining general kinematic posture balance.
-                          </div>
-                        ) : (
-                          <div className="flex flex-col gap-2.5 max-h-[320px] overflow-y-auto pr-1">
-                            {activeRules.map((rule) => {
-                              // Find keyframe evaluations for this rule
-                              const score = rule.importance === 'critical_safety' ? avgKneeSafety : avgSymmetry;
-                              let statusLabel = 'Optimal';
-                              let statusColor = 'text-emerald-400 bg-emerald-500/10 border-emerald-500/20';
-                              if (score < 75) {
-                                statusLabel = 'Critical Fix';
-                                statusColor = 'text-red-400 bg-red-500/10 border-red-500/20';
-                              } else if (score < 88) {
-                                statusLabel = 'Caution';
-                                statusColor = 'text-yellow-400 bg-yellow-500/10 border-yellow-500/20';
-                              }
-
-                              return (
-                                <div key={rule.id} className="bg-zinc-900 border border-zinc-800/80 p-3.5 rounded-xl flex flex-col gap-2">
-                                  <div className="flex items-start justify-between gap-2.5">
-                                    <div className="flex flex-col">
-                                      <span className="text-[9px] font-black uppercase text-zinc-500 font-mono tracking-wider">
-                                        {rule.importance.replace('_', ' ')}
-                                      </span>
-                                      <h4 className="text-xs font-bold text-white uppercase tracking-tight mt-0.5">{rule.name}</h4>
-                                    </div>
-                                    <span className={`text-[9px] font-mono font-bold uppercase px-2 py-0.5 rounded-full border ${statusColor}`}>
-                                      {statusLabel}
-                                    </span>
-                                  </div>
-                                  <p className="text-[10px] text-zinc-400 leading-normal font-sans">
-                                    {rule.description}
-                                  </p>
-                                  <div className="flex items-center justify-between text-[10px] font-mono text-zinc-500 border-t border-zinc-850 pt-2 mt-0.5">
-                                    <span>Target Range: <strong className="text-zinc-300">{rule.idealMin}° - {rule.idealMax}°</strong></span>
-                                    <span>Detected Accuracy: <strong className={score < 75 ? 'text-red-400' : 'text-emerald-400'}>{score}%</strong></span>
-                                  </div>
-                                </div>
-                              );
-                            })}
-                          </div>
-                        )}
-                      </div>
-
-                      {/* Targeted Drill Recommendation for this scenario */}
-                      <div className="lg:col-span-5 flex flex-col gap-3">
-                        <span className="text-[10px] font-black uppercase text-zinc-500 tracking-widest font-mono">
-                          🎯 Recommended Action Drill
-                        </span>
-                        {activeDrill ? (
-                          <div className="bg-gradient-to-br from-zinc-900 to-zinc-950 border border-amber-500/20 p-4 rounded-xl flex flex-col justify-between h-full relative overflow-hidden">
-                            <div className="absolute -top-10 -right-10 w-24 h-24 bg-amber-500/10 rounded-full blur-xl pointer-events-none" />
-                            <div className="flex flex-col gap-2">
-                              <span className="text-[8px] font-black text-amber-400 bg-amber-500/10 border border-amber-500/20 px-2 py-0.5 rounded uppercase tracking-wider font-mono self-start">
-                                {activeDrill.targetJoint || 'General Remedial'}
-                              </span>
-                              <h4 className="text-sm font-black text-white uppercase tracking-tight mt-1">{activeDrill.name}</h4>
-                              <p className="text-[11px] text-zinc-400 leading-relaxed font-sans line-clamp-3">
-                                {activeDrill.description}
-                              </p>
-                              <div className="bg-zinc-950 p-2.5 rounded-lg border border-zinc-850 mt-1">
-                                <span className="text-[9px] font-black text-zinc-500 uppercase block font-mono">TRAINER CUE:</span>
-                                <span className="text-[10.5px] text-amber-300 italic font-medium">"{activeDrill.coachingCue || 'Focus on fluid control and symmetrical motion.'}"</span>
-                              </div>
-                            </div>
-                            <button
-                              onClick={() => {
-                                const index = allDrills.indexOf(activeDrill);
-                                if (index !== -1) toggleDrillStatus(index);
-                              }}
-                              className="w-full mt-4 py-2 bg-amber-500 hover:bg-amber-400 text-zinc-950 rounded-lg text-[10px] font-black uppercase tracking-wider transition-all text-center font-mono"
-                            >
-                              {drillProgress[allDrills.indexOf(activeDrill)] === 'mastered' ? '✓ Mastered' : drillProgress[allDrills.indexOf(activeDrill)] === 'completed' ? '✓ Completed' : 'Commit to Drill Practice'}
-                            </button>
-                          </div>
-                        ) : (
-                          <div className="bg-zinc-900/40 border border-zinc-800 p-4 rounded-xl text-center text-xs text-zinc-500 font-medium italic h-full flex items-center justify-center">
-                            Select a scenario to load a tailored remedial exercise.
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                  );
-                })()}
-              </div>
-
               {/* DRILL LIST WITH IMAGES */}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4 z-10">
                 {(() => {
@@ -3007,9 +2182,6 @@ export const AnalysisReportPage: React.FC<AnalysisReportPageProps> = ({
             <BiomechanicalGameArena
               sportRule={sportRule}
               keyframeList={safeKeyframeList}
-              aiReport={aiReport}
-              dynamicMetrics={dynamicMetrics}
-              sequenceComparison={sequenceComparison}
               viewMode={viewMode}
               onApplyDrill={(drillName) => {
                 setActiveTab('drills');
@@ -3017,304 +2189,43 @@ export const AnalysisReportPage: React.FC<AnalysisReportPageProps> = ({
             />
           )}
 
-          {/* TAB 4: COACH NOTES & INTERACTIVE ATHLETE HOMEWORK */}
-          {activeTab === 'notes' && (() => {
-            const SPORT_QUICK_CUES: Record<string, string[]> = {
-              rugby: [
-                "🏈 Maintain a low center of gravity; drop hips by flexing knees 15° more.",
-                "🛡️ Keep spine neutral and flat during hinge; do not round your neck.",
-                "💪 Engage your shoulder wrap actively to lock the target contact frame.",
-                "⚡ Forcefully drive forward with unilateral leg drive to finish the tackle."
-              ],
-              soccer: [
-                "⚽ Lock your kicking ankle firmly on impact to maximize kinetic power transfer.",
-                "🏃 Placement of plant foot must remain parallel and 10cm from the ball.",
-                "📐 Lean chest slightly over the ball at the instant of impact to keep trajectories low.",
-                "🔄 Ensure high-arc follow through with complete leg extension and balance."
-              ],
-              netball: [
-                "🏐 Cushion bilateral knee landing with soft 30° knee flexion.",
-                "🎯 Stretch shooting arm fully straight on release; maximize wrist release flick.",
-                "🛑 Maintain decelerating stance width to completely prevent knee sway.",
-                "🏃 Keep eyes on target rim through release extension."
-              ],
-              hockey: [
-                "🏑 Stay in low, athletic crouch posture; knee bend must remain beneath 45°.",
-                "🔄 Rotate shoulders through backswing arc while keeping head locked.",
-                "🎯 Keep stick face flat and lead wrist dominant during ball impact contact.",
-                "⚡ Drive turf sweep with active forearm extension and follow-through balance."
-              ],
-              basketball: [
-                "🏀 Engage knee dip to 110° to coil kinetic energy before launch.",
-                "📐 Maintain set-point alignment; elbow angle must match ideal 90° arc.",
-                "🎯 Snap wrist with complete gooseneck extension on release.",
-                "🛑 Land soft and balanced on double feet to protect joint alignment."
-              ],
-              tennis: [
-                "🎾 Coil shoulders fully during backswing takeback; keep lead shoulder under chin.",
-                "📐 Flex knees dynamically during racquet drop to lift low balls.",
-                "🔄 Keep contact point forward of your front hip with locked wrist.",
-                "💪 Finish racquet wipe cleanly over your opposite shoulder."
-              ],
-              golf: [
-                "🏌️ Keep spine angle stable during backswing; do not tilt or sway hips.",
-                "📏 Keep lead arm fully straight through takeaway to the top of swing.",
-                "⚡ Shift weight dynamically to lead hip at impact with solid shaft lean.",
-                "🏆 Finish tall and balanced with chest facing the target perfectly."
-              ],
-              cricket: [
-                "🏏 Keep front knee firmly locked and braced during ball delivery plant.",
-                "📐 High batting elbow must point directly down ground for face contact.",
-                "⚡ Follow through dynamically down the pitch to absorb deceleration forces.",
-                "🎯 Align rear foot and hips toward bowler line on stance set up."
-              ]
-            };
-
-            const getDynamicQuest = () => {
-              const minScore = Math.min(avgSymmetry, avgKneeSafety, dynamicMetrics?.explosivenessScore || 85);
-              
-              if (minScore === avgKneeSafety) {
-                return {
-                  title: "🛡️ Quest of the Iron Joint",
-                  subtitle: "Improve Knee Stability & Posture",
-                  desc: "Practice targeted isometric joint squats and plant alignment exercises. Complete 5 minutes of stability drills daily to protect ligaments.",
-                  objective: "Hold a balanced 1-legged squat cue frame for 30s",
-                  reward: "+200 XP",
-                  tip: "Keep knees aligned with toes during flexion!"
-                };
-              } else if (minScore === avgSymmetry) {
-                return {
-                  title: "⚖️ Quest of the Balanced Titan",
-                  subtitle: "Unify Bilateral Symmetry",
-                  desc: "Perform symmetrical weight-distribution drills (monster walks, step-ups). Ensure left and right limb extensions match within 5%.",
-                  objective: "Perform 15 symmetrical monster walks with a band",
-                  reward: "+180 XP",
-                  tip: "Push outward evenly through both feet!"
-                };
-              } else if (minScore === (dynamicMetrics?.explosivenessScore || 85)) {
-                return {
-                  title: "⚡ Quest of the Kinetic Spark",
-                  subtitle: "Explode Through Triple-Extension",
-                  desc: "Maximize angular velocity on the launch phase. Focus on dynamic ankle, knee, and hip coiling before unleashing power.",
-                  objective: "Complete 3 sets of 10 explosive box jumps",
-                  reward: "+250 XP",
-                  tip: "Focus on fast ground reaction force!"
-                };
-              } else {
-                return {
-                  title: "🎯 Quest of the Precision Master",
-                  subtitle: "Perfect Technical Posture Cues",
-                  desc: "Align your body perfectly with the golden standard frames. Practice dry runs at 50% speed to embed muscle memory.",
-                  objective: "Review 3 golden keyframes at slow-scrub speed",
-                  reward: "+150 XP",
-                  tip: "Focus on chest-over-ball alignment!"
-                };
-              }
-            };
-
-            const currentQuest = getDynamicQuest();
-            const cues = SPORT_QUICK_CUES[sportRule.id] || SPORT_QUICK_CUES['soccer'];
-
-            return (
-              <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 select-none">
-                {/* Left Column: Interactive Notes Editor & Quick Cues */}
-                <div className="lg:col-span-7 flex flex-col gap-4">
-                  <div className="bg-zinc-900 border border-zinc-800/80 rounded-2xl p-5 flex flex-col gap-4 shadow-xl relative overflow-hidden">
-                    <div className="absolute top-0 right-0 w-32 h-32 bg-amber-500/5 rounded-full blur-2xl pointer-events-none" />
-                    
-                    <div className="border-b border-zinc-800 pb-3 flex items-center justify-between">
-                      <div className="flex items-center gap-2">
-                        <FileText className="w-5 h-5 text-red-500" />
-                        <div>
-                          <h2 className="text-sm font-black uppercase italic text-white leading-none">
-                            {viewMode === 'student' ? 'Tips from your Coach' : 'Coach Observations & Custom Notes'}
-                          </h2>
-                          <span className="text-[10px] text-zinc-500 font-mono mt-1 block">
-                            {viewMode === 'student' ? 'REVIEW CUED HOMEWORK' : 'TAP PRESETS TO APPEND NOTES'}
-                          </span>
-                        </div>
-                      </div>
-                    </div>
-
-                    {viewMode === 'student' ? (
-                      <div className="flex flex-col gap-3">
-                        <div className="w-full bg-zinc-950 border border-zinc-800/80 rounded-xl p-4 text-xs text-zinc-300 font-sans leading-relaxed flex items-start gap-3 relative overflow-hidden">
-                          <div className="w-8 h-8 rounded-full bg-gradient-to-tr from-amber-500 to-yellow-400 flex items-center justify-center text-zinc-950 font-black shrink-0 shadow-lg">
-                            💡
-                          </div>
-                          <div className="flex-1 whitespace-pre-wrap">
-                            {coachNotes || "Your coach hasn't added any special tips yet. Use the interactive checklist on the right to focus on critical cues!"}
-                          </div>
-                        </div>
-                        {aiReport?.gamifiedKidDossier?.voiceCoachingScript && (
-                          <div className="bg-zinc-950/60 border border-zinc-850 p-4 rounded-xl flex flex-col gap-2">
-                            <span className="text-[9px] font-bold text-zinc-500 uppercase tracking-wider font-mono">🔊 Voice Coach Transcript Preview</span>
-                            <p className="text-[11px] text-zinc-400 italic">"{aiReport.gamifiedKidDossier.voiceCoachingScript}"</p>
-                          </div>
-                        )}
-                      </div>
-                    ) : (
-                      <div className="flex flex-col gap-4">
-                        <textarea
-                          rows={6}
-                          value={coachNotes}
-                          onChange={(e) => setCoachNotes(e.target.value)}
-                          placeholder="Add customized coach observations, athlete homework, or practice cues..."
-                          className="w-full bg-zinc-950 border border-zinc-800 rounded-xl p-3.5 text-xs text-white focus:outline-none focus:border-red-500 font-sans leading-relaxed"
-                        />
-                        
-                        {/* Quick Cues Carousel for Coach */}
-                        <div className="flex flex-col gap-2 bg-zinc-950/60 border border-zinc-850 p-3 rounded-xl">
-                          <span className="text-[10px] font-black uppercase text-amber-500 tracking-wider font-mono">
-                            ⚡ Quick click cues ({sportRule.name})
-                          </span>
-                          <div className="grid grid-cols-1 gap-2 mt-1">
-                            {cues.map((cue, idx) => (
-                              <button
-                                key={idx}
-                                onClick={() => {
-                                  const trimmed = cue.substring(3); // trim emoji
-                                  const separator = coachNotes ? '\n\n• ' : '• ';
-                                  setCoachNotes(prev => prev + separator + trimmed);
-                                }}
-                                className="text-left text-xs bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 hover:border-zinc-700 p-2.5 rounded-lg text-zinc-300 hover:text-white transition-all flex items-start gap-2 group"
-                              >
-                                <span className="shrink-0 transition-transform group-hover:scale-110">{cue.split(' ')[0]}</span>
-                                <span>{cue.split(' ').slice(1).join(' ')}</span>
-                              </button>
-                            ))}
-                          </div>
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                </div>
-
-                {/* Right Column: Gamified Athlete Quest & Focus Checklist */}
-                <div className="lg:col-span-5 flex flex-col gap-4">
-                  {/* Dynamic Homework Quest Box */}
-                  <div className="bg-zinc-900 border border-zinc-800/80 rounded-2xl p-5 shadow-xl flex flex-col gap-4 relative overflow-hidden">
-                    <div className="absolute -top-12 -right-12 w-32 h-32 bg-amber-500/10 rounded-full blur-2xl pointer-events-none" />
-                    
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-2">
-                        <div className="w-9 h-9 rounded-xl bg-amber-500/10 border border-amber-500/20 text-amber-400 flex items-center justify-center text-lg">
-                          🏆
-                        </div>
-                        <div>
-                          <span className="text-[9px] font-black uppercase text-amber-400 tracking-wider font-mono block leading-none">Athlete Practice Quest</span>
-                          <h3 className="text-sm font-black text-white mt-1 leading-none">{currentQuest.title}</h3>
-                        </div>
-                      </div>
-                      <span className="bg-zinc-800/80 border border-zinc-700 text-amber-400 font-mono text-[9px] px-2.5 py-1 rounded-full font-bold">
-                        {currentQuest.reward}
-                      </span>
-                    </div>
-
-                    <div className="bg-zinc-950/80 border border-zinc-850 p-3.5 rounded-xl flex flex-col gap-1.5">
-                      <span className="text-[10px] font-bold text-zinc-400 block">{currentQuest.subtitle}</span>
-                      <p className="text-[11px] text-zinc-500 leading-relaxed font-sans">{currentQuest.desc}</p>
-                    </div>
-
-                    {/* Quest Progress / Objective Toggler */}
-                    <button
-                      onClick={() => {
-                        const nextState = !completedQuest;
-                        setCompletedQuest(nextState);
-                        // Play high pitch reward synth sound
-                        if ('AudioContext' in window || '(webkitAudioContext)' in window) {
-                          try {
-                            const ctx = new (window.AudioContext || (window as any).webkitAudioContext)();
-                            const osc = ctx.createOscillator();
-                            const gain = ctx.createGain();
-                            osc.connect(gain);
-                            gain.connect(ctx.destination);
-                            osc.type = 'triangle';
-                            osc.frequency.setValueAtTime(nextState ? 587.33 : 220, ctx.currentTime); // D5 or A3
-                            if (nextState) {
-                              osc.frequency.exponentialRampToValueAtTime(880, ctx.currentTime + 0.15); // slide up to A5
-                            }
-                            gain.gain.setValueAtTime(0.08, ctx.currentTime);
-                            gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.25);
-                            osc.start();
-                            osc.stop(ctx.currentTime + 0.25);
-                          } catch (e) {}
-                        }
-                      }}
-                      className={`w-full p-3 rounded-xl border font-mono text-[10px] font-extrabold uppercase tracking-wider transition-all flex items-center justify-between gap-2 shadow-inner ${
-                        completedQuest 
-                          ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400' 
-                          : 'bg-zinc-950 border-zinc-850 text-zinc-400 hover:border-zinc-800 hover:text-zinc-300'
-                      }`}
-                    >
-                      <div className="flex items-center gap-2">
-                        <CheckCircle2 className={`w-4 h-4 transition-all ${completedQuest ? 'text-emerald-400 fill-emerald-400/20' : 'text-zinc-600'}`} />
-                        <span>Objective: {currentQuest.objective}</span>
-                      </div>
-                      <span className={`font-black tracking-widest ${completedQuest ? 'text-emerald-400' : 'text-zinc-600'}`}>
-                        {completedQuest ? 'COMPLETED' : 'INCOMPLETE'}
-                      </span>
-                    </button>
-
-                    <div className="text-[10px] text-zinc-500 italic flex items-center gap-1.5 bg-zinc-950/40 p-2 rounded-lg">
-                      <span className="text-amber-500 font-bold">PRO TIP:</span>
-                      <span>{currentQuest.tip}</span>
-                    </div>
-                  </div>
-
-                  {/* Interactive Athlete Focal Checklist */}
-                  <div className="bg-zinc-900 border border-zinc-800/80 rounded-2xl p-5 shadow-xl flex flex-col gap-3 relative overflow-hidden">
-                    <h3 className="text-[10px] font-black uppercase text-zinc-400 tracking-wider font-mono">
-                      🎯 Live Technique Focal Checklist
-                    </h3>
-                    
-                    <div className="flex flex-col gap-2 mt-1">
-                      {[
-                        "Posture Angle Alignment",
-                        "Peak Joint Release Extension",
-                        "Symmetrical Balancing Motion",
-                        "Triple Extension Dynamic Power"
-                      ].map((cueName) => {
-                        const isChecked = activeFocusCues.includes(cueName);
-                        return (
-                          <div
-                            key={cueName}
-                            onClick={() => {
-                              setActiveFocusCues(prev => 
-                                isChecked ? prev.filter(c => c !== cueName) : [...prev, cueName]
-                              );
-                            }}
-                            className={`p-3 rounded-xl border transition-all flex items-center justify-between cursor-pointer ${
-                              isChecked
-                                ? 'bg-zinc-950 border-red-500/30 text-white shadow-sm'
-                                : 'bg-zinc-950/60 border-zinc-850 text-zinc-400 hover:border-zinc-800 hover:text-zinc-300'
-                            }`}
-                          >
-                            <span className="text-xs font-bold font-sans">{cueName}</span>
-                            <div className={`w-4.5 h-4.5 rounded-md border flex items-center justify-center transition-all ${
-                              isChecked
-                                ? 'bg-red-600 border-red-500 text-white'
-                                : 'border-zinc-700 bg-zinc-950'
-                            }`}>
-                              {isChecked && <span className="text-[9px] font-black">✓</span>}
-                            </div>
-                          </div>
-                        );
-                      })}
-                    </div>
-
-                    {/* Progress Stats Summary */}
-                    <div className="border-t border-zinc-850 pt-3 mt-1 flex items-center justify-between text-[10px] font-mono text-zinc-500">
-                      <span>CUES COMPLETED:</span>
-                      <span className="text-zinc-300 font-bold">
-                        {activeFocusCues.length} / 4
-                      </span>
-                    </div>
-                  </div>
-                </div>
+          {/* TAB 4: COACH NOTES */}
+          {activeTab === 'notes' && (
+            <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-5 flex flex-col gap-4 shadow-xl">
+              <div className="border-b border-zinc-800 pb-3 flex items-center justify-between">
+                <h2 className="text-sm font-black uppercase italic text-white flex items-center gap-2">
+                  <FileText className="w-4 h-4 text-red-500" />
+                  <span>{viewMode === 'student' ? 'Tips from your Coach' : 'Coach Observations & Custom Notes'}</span>
+                </h2>
               </div>
-            );
-          })()}
+
+              {viewMode === 'student' ? (
+                <div className="w-full bg-zinc-950 border border-zinc-800 rounded-xl p-4 text-xs text-zinc-300 font-sans leading-relaxed flex items-start gap-3 relative overflow-hidden">
+                   <div className="absolute top-0 right-0 w-32 h-32 bg-emerald-500/5 rounded-full blur-2xl" />
+                   <div className="w-8 h-8 rounded-full bg-gradient-to-tr from-emerald-500 to-teal-400 flex items-center justify-center text-zinc-950 font-black shrink-0 shadow-lg">
+                     💡
+                   </div>
+                   <div className="flex-1 mt-1 whitespace-pre-wrap">
+                     {coachNotes || "Your coach hasn't added any special tips yet. Keep up the great work and stay active!"}
+                   </div>
+                </div>
+              ) : (
+                <textarea
+                  rows={5}
+                  value={coachNotes}
+                  onChange={(e) => setCoachNotes(e.target.value)}
+                  placeholder="Add customized coach observations, athlete homework, or practice cues..."
+                  className="w-full bg-zinc-950 border border-zinc-800 rounded-xl p-3.5 text-xs text-white focus:outline-none focus:border-red-500 font-sans leading-relaxed"
+                />
+              )}
+
+              {viewMode === 'coach' && (
+                <div className="mt-2 text-[10px] text-zinc-500 font-medium italic">
+                  Note: Coaching observations are included in your .klutchh report export.
+                </div>
+              )}
+            </div>
+          )}
 
           {/* TAB 5: TRADING CARD MAKER */}
           {activeTab === 'trading_card' && (
@@ -3493,8 +2404,6 @@ export const AnalysisReportPage: React.FC<AnalysisReportPageProps> = ({
           </div>
         </div>
       )}
-
-      </div>
 
       {/* INTERACTIVE BIOMECHANICAL TELEMETRY EXPLAINER MODAL */}
       {activeExplainerMetric && (

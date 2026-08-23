@@ -2,7 +2,6 @@ import React, { useEffect, useRef, useMemo, useState } from 'react';
 import * as d3 from 'd3';
 import { SavedReport, UserAccount, TrophyCard } from '../types';
 import { motion, AnimatePresence } from 'motion/react';
-import { checkAndExecuteLongitudinalEngine, LongitudinalAnalysisResult } from '../utils/longitudinalEngine';
 import { 
   TrendingUp, 
   Calendar, 
@@ -20,9 +19,7 @@ import {
   Trophy,
   Trash2,
   Flame,
-  FlipHorizontal,
-  RefreshCw,
-  Award
+  FlipHorizontal
 } from 'lucide-react';
 
 interface ProgressDashboardProps {
@@ -53,16 +50,6 @@ export const ProgressDashboard: React.FC<ProgressDashboardProps> = ({
   const improvement = latestReport && firstReport 
     ? latestReport.overallScore - firstReport.overallScore 
     : 0;
-
-  // 14-Day Auto-Recalibration Longitudinal Engine
-  const longitudinalResult = useMemo(() => {
-    if (!latestReport) return null;
-    return checkAndExecuteLongitudinalEngine(
-      latestReport.keyframeList || [],
-      { name: latestReport.sportName, phases: ['Setup', 'Load', 'Plant', 'Impact'], techniques: [] } as any,
-      latestReport.overallScore
-    );
-  }, [latestReport]);
 
   // Global Drill Mastery Stats
   const drillStats = useMemo(() => {
@@ -584,64 +571,6 @@ export const ProgressDashboard: React.FC<ProgressDashboardProps> = ({
           </div>
         </div>
       </div>
-
-      {/* 14-Day Longitudinal Auto-Recalibration Engine Card */}
-      {longitudinalResult && (
-        <div className="bg-gradient-to-r from-zinc-900 via-zinc-900 to-zinc-950 border border-yellow-500/30 rounded-3xl p-6 mb-8 shadow-2xl relative overflow-hidden">
-          <div className="absolute top-0 right-0 w-64 h-64 bg-yellow-500/5 rounded-full blur-3xl pointer-events-none" />
-          <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-6 relative z-10">
-            <div className="flex items-center gap-4">
-              <div className="bg-yellow-500/10 border border-yellow-500/30 p-3.5 rounded-2xl text-yellow-400">
-                <RefreshCw className="w-7 h-7 animate-spin-slow" />
-              </div>
-              <div>
-                <div className="flex items-center gap-2">
-                  <h3 className="text-base font-black text-white uppercase tracking-wider">14-Day Longitudinal Auto-Recalibration Engine</h3>
-                  <span className="bg-yellow-500/20 text-yellow-400 text-[10px] font-black uppercase px-2 py-0.5 rounded-full">
-                    Cycle #{longitudinalResult.currentCycle} Active
-                  </span>
-                </div>
-                <p className="text-xs text-zinc-400 mt-1">
-                  Automated background health checks and biometric recalculation. Next full recalibration in <strong className="text-yellow-400">{longitudinalResult.daysUntilNextCalibration} days</strong>.
-                </p>
-              </div>
-            </div>
-
-            <div className="flex items-center gap-6 bg-zinc-950/80 px-5 py-3 rounded-2xl border border-zinc-800">
-              <div className="flex flex-col">
-                <span className="text-[10px] uppercase font-bold text-zinc-500">Cumulative Delta</span>
-                <span className={`text-sm font-mono font-black ${longitudinalResult.progressDeltaScore >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
-                  {longitudinalResult.progressDeltaScore >= 0 ? `+${longitudinalResult.progressDeltaScore}` : longitudinalResult.progressDeltaScore} pts
-                </span>
-              </div>
-              <div className="w-[1px] h-8 bg-zinc-800" />
-              <div className="flex flex-col">
-                <span className="text-[10px] uppercase font-bold text-zinc-500">Velocity Growth</span>
-                <span className="text-sm font-mono font-black text-yellow-400">
-                  +{longitudinalResult.velocityGrowthRate}%
-                </span>
-              </div>
-              <div className="w-[1px] h-8 bg-zinc-800" />
-              <div className="flex flex-col">
-                <span className="text-[10px] uppercase font-bold text-zinc-500">Milestone</span>
-                <span className="text-xs font-bold text-purple-400 flex items-center gap-1">
-                  <Award className="w-3.5 h-3.5" />
-                  {longitudinalResult.historyRecords[longitudinalResult.historyRecords.length - 1]?.milestoneUnlocked || 'Active Cycle'}
-                </span>
-              </div>
-            </div>
-          </div>
-
-          <div className="mt-4 pt-4 border-t border-zinc-800/80 grid grid-cols-1 md:grid-cols-3 gap-3">
-            {longitudinalResult.activeRecommendations.map((rec, idx) => (
-              <div key={idx} className="bg-zinc-950/60 p-3 rounded-xl border border-zinc-800 flex items-start gap-2.5 text-xs text-zinc-300">
-                <Sparkles className="w-4 h-4 text-yellow-400 shrink-0 mt-0.5" />
-                <span>{rec}</span>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
 
       {/* Drill Mastery Matrix & Detailed Session History */}
       <div className="bg-zinc-900 border border-zinc-800 rounded-3xl overflow-hidden shadow-xl flex flex-col mb-8">

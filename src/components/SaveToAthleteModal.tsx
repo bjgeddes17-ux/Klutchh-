@@ -38,7 +38,6 @@ export const SaveToAthleteModal: React.FC<SaveToAthleteModalProps> = ({
   const [newAthleteName, setNewAthleteName] = useState('');
   const [newAthleteCategory, setNewAthleteCategory] = useState<AthleteCategory>(defaultAthleteCategory);
   const [newAthleteJersey, setNewAthleteJersey] = useState('');
-
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
@@ -253,12 +252,10 @@ export const SaveToAthleteModal: React.FC<SaveToAthleteModalProps> = ({
           </div>
         )}
 
-        {/* Local Storage Notice */}
-        <div className="space-y-2 bg-zinc-950 p-3 rounded-2xl border border-zinc-800">
-          <div className="flex items-center gap-2 text-[11px] text-zinc-300">
-            <ShieldCheck className="w-4 h-4 text-emerald-400 shrink-0" />
-            <span>Stored securely on your device under <strong className="text-amber-300">📁 {displayFolderName}</strong></span>
-          </div>
+        {/* Privacy reminder */}
+        <div className="flex items-center gap-2 text-[11px] text-zinc-400 bg-zinc-950 p-2.5 rounded-xl border border-zinc-800/80">
+          <ShieldCheck className="w-4 h-4 text-emerald-400 shrink-0" />
+          <span>Report and video blob will be indexed locally under <strong>{displayFolderName}</strong>.</span>
         </div>
 
         {/* Actions */}
@@ -276,7 +273,7 @@ export const SaveToAthleteModal: React.FC<SaveToAthleteModalProps> = ({
             className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-red-600 to-amber-500 hover:from-red-500 hover:to-amber-400 text-white text-xs font-black flex items-center gap-2 shadow-lg shadow-red-600/20 transition-all cursor-pointer"
           >
             <Save className="w-4 h-4" />
-            <span>Confirm Athlete & Download .klutchh</span>
+            <span>Confirm & Save Report</span>
           </button>
         </div>
 

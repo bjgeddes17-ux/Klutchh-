@@ -695,6 +695,7 @@ function generateDrillsForSport(sportId: SportId, baseDrills: Drill[]): Drill[] 
         whyThisWorks: `Neuromuscular isolation and sport-specific loading activate key motor units in the ${joint}, improving alignment and stability under high movement velocities.`,
         purpose: category.purpose,
         coachingCue: category.cue,
+        difficultyTier: drillIndex < 15 ? 'grassroots' : (drillIndex < 35 ? 'academy' : 'elite_pro'),
         howToExecute: [
           `1. Assume standard ready athletic stance, visualizing the peak ${action} phase.`,
           `2. Initiate the target motion slowly, focusing on clean joint alignment of the ${joint}.`,
@@ -739,58 +740,32 @@ const BASE_SPORTS_RULES: SportRule[] = [
     techniques: [
       {
         id: 'tackle',
-        name: 'Tackling & Contact',
+        name: 'Dominant Tackle Entry',
         description: 'Head-up tackle entry, cervical spine safety & low hip hinge.',
-        phases: ['Contact Prep', 'Tackle Entry', 'Contact Phase', 'Impact Moment'],
-        sequence: ['Contact Prep', 'Tackle Entry', 'Contact Phase', 'Impact Moment'],
+        phases: ['Contact Prep', 'Tackle Entry', 'Contact Phase', 'Wrap Phase', 'Drive Phase'],
+        sequence: ['Contact Prep', 'Tackle Entry', 'Contact Phase', 'Wrap Phase', 'Drive Phase'],
         jointRules: rugbyRules.slice(0, 10),
         triggers: [
-          { phase: 'Contact Prep', condition: 'angle_lt', ruleId: 'rugby_tackle_knee_flex', threshold: 140 },
-          { phase: 'Tackle Entry', condition: 'relative_y_lt', jointId: 11, targetId: 23, threshold: 0.05 },
-          { phase: 'Contact Phase', condition: 'angle_lt', ruleId: 'rugby_tackle_hip_hinge', threshold: 150 },
-          { phase: 'Impact Moment', condition: 'angle_gt', ruleId: 'rugby_head_up_neck', threshold: 160 }
+          { phase: 'Contact Prep', condition: 'angle_lt', ruleId: 'rugby_tackle_knee_flex', threshold: 140, requiredBiomechanics: 'Drop hips below ball carrier to win the leverage battle.' },
+          { phase: 'Tackle Entry', condition: 'relative_y_lt', jointId: 11, targetId: 23, threshold: 0.05, requiredBiomechanics: 'Shoulders must be below hips to maintain a flat, safe spine.' },
+          { phase: 'Contact Phase', condition: 'angle_lt', ruleId: 'rugby_tackle_hip_hinge', threshold: 150, requiredBiomechanics: 'Chin up, eyes on target to prevent dangerous axial loading.' },
+          { phase: 'Wrap Phase', condition: 'angle_lt', ruleId: 'rugby_shoulder_wrap_arm', threshold: 110, requiredBiomechanics: 'Tight wrap around the waist to secure the ball carrier.' },
+          { phase: 'Drive Phase', condition: 'angle_gt', ruleId: 'rugby_drive_leg_extension', threshold: 165, requiredBiomechanics: 'Triple extension drive to accelerate through the collision.' }
         ]
       },
       {
-        id: 'pass',
-        name: 'Spin & Bullet Passing',
+        id: 'spin_pass',
+        name: 'Elite Spin Pass',
         description: 'Wrist snap, follow-through elbow & rotational pass mechanics.',
-        phases: ['Wind-Up', 'Pre-Pass', 'Pass Initiation', 'Pass Release'],
-        sequence: ['Wind-Up', 'Pre-Pass', 'Pass Initiation', 'Pass Release'],
+        phases: ['Wind-Up', 'Torso Coil', 'Pass Initiation', 'Release Snap', 'Target Extension'],
+        sequence: ['Wind-Up', 'Torso Coil', 'Pass Initiation', 'Release Snap', 'Target Extension'],
         jointRules: rugbyRules.slice(10, 20),
         triggers: [
-          { phase: 'Wind-Up', condition: 'angle_lt', ruleId: 'rugby_base_width_pass', threshold: 110 },
-          { phase: 'Pre-Pass', condition: 'angle_lt', ruleId: 'rugby_torso_rotation_pass', threshold: 150 },
-          { phase: 'Pass Initiation', condition: 'angle_gt', ruleId: 'rugby_trail_elbow_lift', threshold: 120 },
-          { phase: 'Pass Release', condition: 'angle_gt', ruleId: 'rugby_pass_follow_through_elbow', threshold: 150 }
-        ]
-      },
-      {
-        id: 'kick',
-        name: 'Kicking Mechanics',
-        description: 'Plant foot flex, power phase extension & follow through.',
-        phases: ['Kick Plant', 'Backswing', 'Power Phase', 'Follow Through'],
-        sequence: ['Kick Plant', 'Backswing', 'Power Phase', 'Follow Through'],
-        jointRules: rugbyRules.slice(20, 30),
-        triggers: [
-          { phase: 'Kick Plant', condition: 'angle_lt', ruleId: 'rugby_kick_plant_knee', threshold: 145 },
-          { phase: 'Backswing', condition: 'angle_lt', ruleId: 'rugby_kicking_leg_backswing', threshold: 110 },
-          { phase: 'Power Phase', condition: 'angle_gt', ruleId: 'rugby_kick_ankle_lock', threshold: 155 },
-          { phase: 'Follow Through', condition: 'angle_gt', ruleId: 'rugby_kick_follow_through_hip', threshold: 150 }
-        ]
-      },
-      {
-        id: 'scrum',
-        name: 'Scrums, Rucks & Lineouts',
-        description: 'Spine flatness, bind engagement & core anti-extension.',
-        phases: ['Scrum Setup', 'Scrum Engagement', 'Cleanout', 'Lift Moment'],
-        sequence: ['Scrum Setup', 'Scrum Engagement', 'Cleanout', 'Lift Moment'],
-        jointRules: rugbyRules.slice(30, 40),
-        triggers: [
-          { phase: 'Scrum Setup', condition: 'angle_lt', ruleId: 'rugby_scrum_hip_knee_90', threshold: 110 },
-          { phase: 'Scrum Engagement', condition: 'angle_lt', ruleId: 'rugby_bind_arm_flex', threshold: 120 },
-          { phase: 'Cleanout', condition: 'angle_gt', ruleId: 'rugby_scrum_spine_flat', threshold: 160 },
-          { phase: 'Lift Moment', condition: 'angle_gt', ruleId: 'rugby_scrum_neck_neutral', threshold: 150 }
+          { phase: 'Wind-Up', condition: 'angle_lt', ruleId: 'rugby_base_width_pass', threshold: 110, requiredBiomechanics: 'Establish a wide, stable base to generate torque.' },
+          { phase: 'Torso Coil', condition: 'angle_lt', ruleId: 'rugby_torso_rotation_pass', threshold: 150, requiredBiomechanics: 'Shoulder-to-hip separation to load the core.' },
+          { phase: 'Pass Initiation', condition: 'angle_gt', ruleId: 'rugby_trail_elbow_lift', threshold: 120, requiredBiomechanics: 'Trailing elbow lift to launch the ball on a flat trajectory.' },
+          { phase: 'Release Snap', condition: 'angle_gt', ruleId: 'rugby_pass_wrist_snap', threshold: 130, requiredBiomechanics: 'Rapid wrist flick to impart spiral rotation.' },
+          { phase: 'Target Extension', condition: 'angle_gt', ruleId: 'rugby_pass_follow_through_elbow', threshold: 165, requiredBiomechanics: 'Elbow extension pointing exactly at the receiver.' }
         ]
       }
     ],
@@ -854,56 +829,45 @@ const BASE_SPORTS_RULES: SportRule[] = [
         id: 'shooting',
         name: 'Shooting & Striking',
         description: 'Plant foot flex, chest over ball and clean strike mechanics.',
-        phases: ['Plant Phase', 'Backswing', 'Impact Moment', 'Follow Through'],
-        sequence: ['Plant Phase', 'Backswing', 'Impact Moment', 'Follow Through'],
+        phases: ['Plant Phase', 'Backswing', 'Power Acceleration', 'Impact Moment', 'Extension', 'Follow Through'],
+        sequence: ['Plant Phase', 'Backswing', 'Power Acceleration', 'Impact Moment', 'Extension', 'Follow Through'],
         jointRules: soccerRules.slice(0, 10),
         triggers: [
-          { phase: 'Plant Phase', condition: 'angle_lt', ruleId: 'soccer_plant_foot_knee_flex', threshold: 150 },
-          { phase: 'Backswing', condition: 'angle_lt', ruleId: 'soccer_kicking_knee_backswing', threshold: 120 },
-          { phase: 'Impact Moment', condition: 'angle_gt', ruleId: 'soccer_kicking_knee_backswing', threshold: 140 },
-          { phase: 'Follow Through', condition: 'angle_gt', ruleId: 'soccer_follow_through_height', threshold: 155 }
+          { phase: 'Plant Phase', condition: 'angle_lt', ruleId: 'soccer_plant_foot_knee_flex', threshold: 150, requiredBiomechanics: 'Plant knee must flex < 150° to drop center of mass for stability.' },
+          { phase: 'Backswing', condition: 'angle_lt', ruleId: 'soccer_kicking_knee_backswing', threshold: 120, requiredBiomechanics: 'Kicking knee must load back to < 120° for maximum potential energy.' },
+          { phase: 'Power Acceleration', condition: 'velocity_gt', ruleId: 'soccer_kicking_knee_backswing', threshold: 180, requiredBiomechanics: 'Quadriceps must fire at > 180°/s angular velocity during snap.' },
+          { phase: 'Impact Moment', condition: 'angle_gt', ruleId: 'soccer_kicking_knee_backswing', threshold: 140, requiredBiomechanics: 'Knee must extend to > 140° exactly at point of ball compression.' },
+          { phase: 'Extension', condition: 'angle_gt', ruleId: 'soccer_kicking_knee_backswing', threshold: 165, requiredBiomechanics: 'Full kinetic release with leg nearly locked at terminal arc.' },
+          { phase: 'Follow Through', condition: 'angle_gt', ruleId: 'soccer_follow_through_height', threshold: 155, requiredBiomechanics: 'Hip extension > 155° to decelerate force safely across the body.' }
         ]
       },
       {
-        id: 'passing',
-        name: 'Passing & First Touch',
-        description: 'Inside foot open angle, weight transfer and clean reception.',
-        phases: ['Pass Release', 'First Touch', 'Long Pass', 'One Touch'],
-        sequence: ['Pass Release', 'First Touch', 'Long Pass', 'One Touch'],
+        id: 'inside_pass',
+        name: 'Inside-Foot Technical Pass',
+        description: 'Precision passing focusing on ankle lockout and weight transfer.',
+        phases: ['Approach', 'Plant', 'Ankle Open', 'Release', 'Follow'],
+        sequence: ['Approach', 'Plant', 'Ankle Open', 'Release', 'Follow'],
         jointRules: soccerRules.slice(10, 20),
         triggers: [
-          { phase: 'Pass Release', condition: 'angle_gt', ruleId: 'soccer_inside_pass_ankle_open', threshold: 140 },
-          { phase: 'First Touch', condition: 'angle_lt', ruleId: 'soccer_cushion_knee_soft', threshold: 135 },
-          { phase: 'Long Pass', condition: 'angle_gt', ruleId: 'soccer_driven_pass_knee_over', threshold: 145 },
-          { phase: 'One Touch', condition: 'angle_gt', ruleId: 'soccer_wall_pass_pivot', threshold: 150 }
+          { phase: 'Approach', condition: 'angle_lt', ruleId: 'soccer_cushion_knee_soft', threshold: 160, requiredBiomechanics: 'Soft knee approach for rapid directional adjustment.' },
+          { phase: 'Plant', condition: 'angle_lt', ruleId: 'soccer_plant_foot_knee_flex', threshold: 145, requiredBiomechanics: 'Stable plant leg perpendicular to target line.' },
+          { phase: 'Ankle Open', condition: 'angle_gt', ruleId: 'soccer_inside_pass_ankle_open', threshold: 135, requiredBiomechanics: 'Ankle must rotate externally > 135° to create flat striking surface.' },
+          { phase: 'Release', condition: 'velocity_gt', ruleId: 'soccer_inside_pass_ankle_open', threshold: 120, requiredBiomechanics: 'Snap release with controlled pendular motion.' },
+          { phase: 'Follow', condition: 'angle_gt', ruleId: 'soccer_driven_pass_knee_over', threshold: 150, requiredBiomechanics: 'Short follow through to maintain pitch position.' }
         ]
       },
       {
-        id: 'dribbling',
-        name: 'Dribbling & Agility',
-        description: 'Low center of gravity, quick changes of direction and feints.',
-        phases: ['Dribbling', 'Change of Direction', 'Sprint Stride', 'Defending'],
-        sequence: ['Dribbling', 'Change of Direction', 'Sprint Stride', 'Defending'],
+        id: 'header',
+        name: 'Power Heading',
+        description: 'Neck safety, thoracic extension and hip snap.',
+        phases: ['Jump Prep', 'Arching', 'Impact', 'Landing'],
+        sequence: ['Jump Prep', 'Arching', 'Impact', 'Landing'],
         jointRules: soccerRules.slice(20, 30),
         triggers: [
-          { phase: 'Dribbling', condition: 'angle_lt', ruleId: 'soccer_dribble_low_cg_knee', threshold: 145 },
-          { phase: 'Change of Direction', condition: 'angle_lt', ruleId: 'soccer_feint_side_step_valgus', threshold: 135 },
-          { phase: 'Sprint Stride', condition: 'angle_gt', ruleId: 'soccer_sprint_stride_knee_drive', threshold: 85 },
-          { phase: 'Defending', condition: 'angle_lt', ruleId: 'soccer_jockey_defensive_stance', threshold: 135 }
-        ]
-      },
-      {
-        id: 'goalkeeping',
-        name: 'Goalkeeping',
-        description: 'Ready stance, diving takeoffs and cross catches.',
-        phases: ['Ready Position', 'Dive Takeoff', 'Cross Catch', '1v1 Block'],
-        sequence: ['Ready Position', 'Dive Takeoff', 'Cross Catch', '1v1 Block'],
-        jointRules: soccerRules.slice(30, 40),
-        triggers: [
-          { phase: 'Ready Position', condition: 'angle_lt', ruleId: 'soccer_gk_ready_knee_flex', threshold: 135 },
-          { phase: 'Dive Takeoff', condition: 'angle_lt', ruleId: 'soccer_gk_diving_push_knee', threshold: 120 },
-          { phase: 'Cross Catch', condition: 'angle_gt', ruleId: 'soccer_gk_high_claim_reach', threshold: 165 },
-          { phase: '1v1 Block', condition: 'angle_gt', ruleId: 'soccer_gk_1v1_block_spread', threshold: 160 }
+          { phase: 'Jump Prep', condition: 'angle_lt', ruleId: 'soccer_dribble_low_cg_knee', threshold: 130, requiredBiomechanics: 'Eccentric loading of glutes and quads.' },
+          { phase: 'Arching', condition: 'angle_gt', ruleId: 'soccer_jockey_defensive_stance', threshold: 165, requiredBiomechanics: 'Spine extension to create lever arm.' },
+          { phase: 'Impact', condition: 'angle_lt', ruleId: 'soccer_jockey_defensive_stance', threshold: 150, requiredBiomechanics: 'Chin tucked, core braced, neck neutral at impact.' },
+          { phase: 'Landing', condition: 'angle_lt', ruleId: 'soccer_cushion_knee_soft', threshold: 140, requiredBiomechanics: 'Double-knee soft landing to mitigate spinal shock.' }
         ]
       }
     ],
@@ -1300,58 +1264,38 @@ const BASE_SPORTS_RULES: SportRule[] = [
     techniques: [
       {
         id: 'full_swing',
-        name: 'Full Driver & Iron Swing',
-        description: 'Address spine angle, backswing coil and full follow-through.',
-        phases: ['Address Stance', 'Backswing Coiling', 'Downswing Impact', 'Follow-Through Finish'],
-        sequence: ['Address Stance', 'Backswing Coiling', 'Downswing Impact', 'Follow-Through Finish'],
-        jointRules: golfRules.slice(0, 10),
+        name: 'Championship Full Swing',
+        description: 'Elite 8-phase kinematic chain for maximum clubhead speed and accuracy.',
+        phases: [
+          'Address Stance', 
+          'Takeaway', 
+          'Lead-Arm Parallel', 
+          'Top of Backswing', 
+          'Transition', 
+          'Impact Moment', 
+          'Extension', 
+          'Finish'
+        ],
+        sequence: [
+          'Address Stance', 
+          'Takeaway', 
+          'Lead-Arm Parallel', 
+          'Top of Backswing', 
+          'Transition', 
+          'Impact Moment', 
+          'Extension', 
+          'Finish'
+        ],
+        jointRules: golfRules.slice(0, 15),
         triggers: [
-          { phase: 'Address Stance', condition: 'angle_gt', ruleId: 'gf_pitch_narrow_stance_width', threshold: 80 },
-          { phase: 'Backswing Coiling', condition: 'angle_gt', ruleId: 'gf_backswing_shoulder_turn', threshold: 85 },
-          { phase: 'Downswing Impact', condition: 'angle_gt', ruleId: 'gf_downswing_hip_transfer', threshold: 120 },
-          { phase: 'Follow-Through Finish', condition: 'angle_gt', ruleId: 'gf_follow_through_chest_target', threshold: 160 }
-        ]
-      },
-      {
-        id: 'pitching',
-        name: 'Wedge & Short Game Pitching',
-        description: 'Narrow stance, controlled wedge tempo and crisp strike.',
-        phases: ['Address Stance', 'Backswing Coiling', 'Downswing Impact', 'Follow-Through Finish'],
-        sequence: ['Address Stance', 'Backswing Coiling', 'Downswing Impact', 'Follow-Through Finish'],
-        jointRules: golfRules.slice(10, 20),
-        triggers: [
-          { phase: 'Address Stance', condition: 'angle_lt', ruleId: 'gf_pitch_narrow_stance_width', threshold: 85 },
-          { phase: 'Backswing Coiling', condition: 'angle_lt', ruleId: 'gf_wrist_hinge_backswing', threshold: 105 },
-          { phase: 'Downswing Impact', condition: 'angle_gt', ruleId: 'gf_downswing_hip_transfer', threshold: 120 },
-          { phase: 'Follow-Through Finish', condition: 'angle_gt', ruleId: 'gf_follow_through_chest_target', threshold: 160 }
-        ]
-      },
-      {
-        id: 'putting',
-        name: 'Putting & Green Reading',
-        description: 'Eye over ball, shoulder rock pendulum and square face.',
-        phases: ['Address Stance', 'Backswing Coiling', 'Downswing Impact', 'Follow-Through Finish'],
-        sequence: ['Address Stance', 'Backswing Coiling', 'Downswing Impact', 'Follow-Through Finish'],
-        jointRules: golfRules.slice(20, 30),
-        triggers: [
-          { phase: 'Address Stance', condition: 'angle_lt', ruleId: 'gf_putting_eye_over_ball', threshold: 95 },
-          { phase: 'Backswing Coiling', condition: 'angle_lt', ruleId: 'gf_putting_pendulum_elbow', threshold: 115 },
-          { phase: 'Downswing Impact', condition: 'angle_gt', ruleId: 'gf_putt_shoulder_rock', threshold: 160 },
-          { phase: 'Follow-Through Finish', condition: 'angle_gt', ruleId: 'gf_putt_still_hip_anchor', threshold: 170 }
-        ]
-      },
-      {
-        id: 'specialty',
-        name: 'Swing Dynamics & Specialty Shots',
-        description: 'Driver tilt away, uphill/downhill lies and swing speed.',
-        phases: ['Address Stance', 'Backswing Coiling', 'Downswing Impact', 'Follow-Through Finish'],
-        sequence: ['Address Stance', 'Backswing Coiling', 'Downswing Impact', 'Follow-Through Finish'],
-        jointRules: golfRules.slice(30, 40),
-        triggers: [
-          { phase: 'Address Stance', condition: 'angle_lt', ruleId: 'gf_driver_spine_tilt_away', threshold: 148 },
-          { phase: 'Backswing Coiling', condition: 'angle_lt', ruleId: 'gf_wrist_hinge_backswing', threshold: 105 },
-          { phase: 'Downswing Impact', condition: 'angle_gt', ruleId: 'gf_downswing_hip_transfer', threshold: 120 },
-          { phase: 'Follow-Through Finish', condition: 'angle_gt', ruleId: 'gf_follow_through_chest_target', threshold: 160 }
+          { phase: 'Address Stance', condition: 'angle_gt', ruleId: 'gf_address_spine_angle', threshold: 135, requiredBiomechanics: 'Athletic 45° forward hinge with active core bracing.' },
+          { phase: 'Takeaway', condition: 'angle_gt', ruleId: 'gf_backswing_shoulder_turn', threshold: 25, requiredBiomechanics: 'One-piece takeaway initiated by the shoulders, not hands.' },
+          { phase: 'Lead-Arm Parallel', condition: 'angle_lt', ruleId: 'gf_wrist_hinge_backswing', threshold: 110, requiredBiomechanics: 'Early wrist set to 90° as lead arm reaches parallel to ground.' },
+          { phase: 'Top of Backswing', condition: 'angle_gt', ruleId: 'gf_backswing_shoulder_turn', threshold: 85, requiredBiomechanics: 'Full 90° shoulder turn while maintaining stable hip resistance.' },
+          { phase: 'Transition', condition: 'velocity_gt', ruleId: 'gf_downswing_hip_transfer', threshold: 120, requiredBiomechanics: 'Weight shift to lead side initiated before backswing completes.' },
+          { phase: 'Impact Moment', condition: 'angle_gt', ruleId: 'gf_downswing_hip_transfer', threshold: 145, requiredBiomechanics: 'Hips open 30-45° to target with hands ahead of ball.' },
+          { phase: 'Extension', condition: 'angle_gt', ruleId: 'gf_follow_through_chest_target', threshold: 130, requiredBiomechanics: 'Lead arm fully extended, releasing energy through the ball.' },
+          { phase: 'Finish', condition: 'angle_gt', ruleId: 'gf_follow_through_chest_target', threshold: 170, requiredBiomechanics: 'Chest facing target, balanced on lead leg with vertical spine.' }
         ]
       }
     ],

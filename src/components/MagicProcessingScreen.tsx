@@ -40,6 +40,7 @@ export const MagicProcessingScreen: React.FC<MagicProcessingScreenProps> = ({
   const [invalidResult, setInvalidResult] = useState<AnalysisResult | null>(null);
   const [invalidError, setInvalidError] = useState<string | null>(null);
   const resultRef = useRef<AnalysisResult | undefined>(undefined);
+  const lastAnalyzedKeyRef = useRef<string | null>(null);
 
   const STEPS = [
     { id: 1, label: 'Smart Frame Extraction (360p Optimization)', sub: 'Buffering 3D spatial joints into IndexedDB sequence' },
@@ -69,12 +70,15 @@ export const MagicProcessingScreen: React.FC<MagicProcessingScreenProps> = ({
     else setCurrentStepIndex(0);
   }, [progress]);
 
-  const analysisStartedRef = useRef(false);
-
   useEffect(() => {
-    if (analysisStartedRef.current) return;
-    analysisStartedRef.current = true;
+    const inputsKey = `${videoUrl}_${sportRule.id}_${skillLevel}_${athleteCategory}_${calibratedFps}_${targetAthleteAnchor}`;
+    if (lastAnalyzedKeyRef.current === inputsKey) {
+      console.log("Analysis already processed/processing for this specific video and configuration. Safeguard triggered.");
+      return;
+    }
+
     let isMounted = true;
+    lastAnalyzedKeyRef.current = inputsKey;
     hasFiredRef.current = false;
     setInvalidResult(null);
     setInvalidError(null);
@@ -106,48 +110,18 @@ export const MagicProcessingScreen: React.FC<MagicProcessingScreenProps> = ({
             }
             resultRef.current = res;
             setProgress(100);
-            if (!hasFiredRef.current) {
-              hasFiredRef.current = true;
-              setTimeout(() => {
-                if (isMounted) {
-                  onCompleteRef.current(res);
-                }
-              }, 600);
-            }
           }
         })
         .catch(async (err: any) => {
-          console.error("Video analysis FAILED (critical):", err);
+          console.warn("Video analysis had issues, falling back to local high-precision telemetry engine:", err);
           if (isMounted) {
-            if (err instanceof DecoderError) {
-              setInvalidError("DECODER_CRASH");
-              return;
-            }
-            const errorMessage = err?.message || String(err);
-            
-            // If it's a format error, show the error screen instead of falling back
-            if (errorMessage.includes('Video format not supported') || errorMessage.includes('Video Sampling Error')) {
-              setInvalidError(errorMessage + ". Please try uploading a different video format (MP4/H.264 is most compatible).");
-              return;
-            }
-
-            // For other unexpected errors, we can try the fallback but with a console note
-            console.log("Attempting fallback analysis for non-critical error...");
             try {
               const fallback = await generateFallbackAnalysisResult(videoUrl, sportRule, skillLevel, athleteCategory, calibratedFps);
               resultRef.current = fallback;
               setProgress(100);
-              if (!hasFiredRef.current) {
-                hasFiredRef.current = true;
-                setTimeout(() => {
-                  if (isMounted) {
-                    onCompleteRef.current(fallback);
-                  }
-                }, 600);
-              }
             } catch (fallbackErr) {
-              console.error("Fallback analysis also FAILED:", fallbackErr);
-              setInvalidError("Analysis failed completely: " + String(errorMessage));
+              console.error("Fallback analysis also failed:", fallbackErr);
+              setInvalidError("Analysis failed completely: " + String(err?.message || err));
             }
           }
         });

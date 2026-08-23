@@ -18,7 +18,6 @@ import {
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { get, set } from 'idb-keyval';
-import { UnifiedTradingCard } from './UnifiedTradingCard';
 
 interface TrophyCardMakerProps {
   report: SavedReport;
@@ -565,12 +564,10 @@ export const TrophyCardMaker: React.FC<TrophyCardMakerProps> = ({ report, curren
           ref={hiddenVideoRef}
           src={report.videoUrl}
           style={{ display: 'none', position: 'absolute', width: '1px', height: '1px', opacity: 0, pointerEvents: 'none' }}
+          crossOrigin="anonymous"
           muted
           playsInline
           preload="auto"
-          onError={(e: any) => {
-            console.warn("TrophyCard video frame preload handled:", e?.type || 'error event');
-          }}
           onSeeked={() => {
             const canvas = canvasRef.current;
             if (canvas) {
@@ -1032,8 +1029,41 @@ export const TrophyCardMaker: React.FC<TrophyCardMakerProps> = ({ report, curren
               </div>
 
               {/* Miniature card style card showcase */}
-              <div className="py-1">
-                <UnifiedTradingCard card={celebrationCard} size="sm" interactive={false} />
+              <div className={`w-52 h-72 bg-gradient-to-b ${CARD_THEMES.find(t => t.id === celebrationCard.cardStyle)?.bg || 'from-zinc-900 to-zinc-950'} border-2 ${CARD_THEMES.find(t => t.id === celebrationCard.cardStyle)?.border || 'border-zinc-800'} rounded-2xl p-4 flex flex-col justify-between shadow-xl relative overflow-hidden`}>
+                <div className="absolute inset-0 bg-gradient-to-tr from-transparent via-white/5 to-transparent pointer-events-none mix-blend-overlay" />
+                
+                <div className="flex justify-between items-start border-b border-white/10 pb-1.5">
+                  <div className="text-left">
+                    <span className="text-[8px] font-mono text-zinc-400 block uppercase">{celebrationCard.sportName}</span>
+                    <strong className="text-xs text-white font-black uppercase truncate max-w-[120px] block leading-none mt-0.5">{celebrationCard.athleteName}</strong>
+                  </div>
+                  <span className={`text-[10px] font-black px-1.5 py-0.5 rounded ${CARD_THEMES.find(t => t.id === celebrationCard.cardStyle)?.badge || 'bg-zinc-800 text-white'}`}>
+                    {celebrationCard.grade}
+                  </span>
+                </div>
+
+                <div className="flex-grow flex items-center justify-center py-3">
+                  <div className="w-full h-24 bg-zinc-950 rounded-lg overflow-hidden border border-white/10 relative">
+                    {celebrationCard.capturedImage ? (
+                      <img 
+                        src={celebrationCard.capturedImage} 
+                        className="w-full h-full object-cover" 
+                        alt="Minted Biomechanics"
+                        referrerPolicy="no-referrer"
+                      />
+                    ) : (
+                      <div className="flex flex-col items-center justify-center text-zinc-600 font-mono text-[8px] h-full gap-1">
+                        <Trophy className="w-4 h-4 text-zinc-700 animate-pulse" />
+                        <span>NO ARTWORK</span>
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                <div className="border-t border-white/10 pt-1.5 flex justify-between text-[8px] font-mono text-zinc-400">
+                  <span>SCORE: {celebrationCard.score}%</span>
+                  <span>#017 COLLECTOR</span>
+                </div>
               </div>
 
               <div className="flex items-center gap-2 bg-zinc-950 px-4 py-2 rounded-xl border border-zinc-800/80 text-xs font-mono">

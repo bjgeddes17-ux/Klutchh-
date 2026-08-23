@@ -1,5 +1,4 @@
 import { SavedReport } from '../types';
-import { safeJsonStringify } from './privacyStorage';
 
 /**
  * Zero-Knowledge Encrypted URL Fragment Share Utility
@@ -118,7 +117,7 @@ export function generateZeroKnowledgeShareUrl(options: SharePayloadOptions): str
     })) : []
   };
 
-  const jsonStr = safeJsonStringify(compactPayload);
+  const jsonStr = JSON.stringify(compactPayload);
   const ciphered = pin && pin.trim() ? applyPinCipher(jsonStr, pin) : jsonStr;
   const encoded = toBase64Url(ciphered);
 

@@ -13,7 +13,6 @@ interface UnifiedSetupCardProps {
   selectedMovementPhase: string;
   onChangeMovementPhase: (phase: string) => void;
   onVideoSelected: (url: string, file?: File) => void;
-  onOpenNativeCamera?: () => void;
   customVideoUrl: string | null;
   analysisCount: number;
   maxAnalyses: number;
@@ -32,15 +31,12 @@ export const UnifiedSetupCard: React.FC<UnifiedSetupCardProps> = ({
   selectedMovementPhase,
   onChangeMovementPhase,
   onVideoSelected,
-  onOpenNativeCamera,
   customVideoUrl,
   analysisCount,
   maxAnalyses,
   currentUser,
   onOpenAuth,
   onImportReport,
-  targetAthleteAnchor = 'auto',
-  onSelectAthleteAnchor,
 }) => {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [fileName, setFileName] = useState<string | null>(null);
@@ -285,7 +281,7 @@ export const UnifiedSetupCard: React.FC<UnifiedSetupCardProps> = ({
                 2
               </span>
               <h3 className="text-xs font-black uppercase text-white tracking-wider">
-                Capture or Upload Athlete Clip
+                Upload Athlete Video Clip
               </h3>
             </div>
             <div className="flex flex-col items-end gap-1">
@@ -300,61 +296,6 @@ export const UnifiedSetupCard: React.FC<UnifiedSetupCardProps> = ({
                   Videos &gt;10s take 3-5 mins • Do not exit
                 </span>
               </div>
-            </div>
-          </div>
-
-          {/* Native Camera Integration Button */}
-          <button
-            onClick={onOpenNativeCamera}
-            className="group relative overflow-hidden bg-gradient-to-br from-red-600 to-yellow-500 p-[1px] rounded-2xl shadow-xl shadow-red-600/20 active:scale-95 transition-all"
-          >
-            <div className="bg-zinc-950/90 group-hover:bg-zinc-950/40 transition-colors rounded-[15px] px-6 py-4 flex items-center justify-between gap-4">
-              <div className="flex items-center gap-4 text-left">
-                <div className="bg-red-600 p-3 rounded-xl text-white shadow-lg shadow-red-600/40 group-hover:scale-110 transition-transform">
-                  <Activity className="w-6 h-6 stroke-[2.5]" />
-                </div>
-                <div>
-                  <h4 className="text-sm font-black text-white uppercase tracking-wider flex items-center gap-2">
-                    Open Native Live Camera
-                    <span className="bg-white/10 text-[8px] px-1.5 py-0.5 rounded border border-white/20">PREMIUM</span>
-                  </h4>
-                  <p className="text-[10px] text-zinc-400 mt-0.5 max-w-[240px]">
-                    Capture real-time biomechanical data with hardware-accelerated pose extraction.
-                  </p>
-                </div>
-              </div>
-              <Sparkles className="w-5 h-5 text-yellow-400 animate-pulse" />
-            </div>
-          </button>
-
-          {/* Athlete Position Selector */}
-          <div className="flex flex-col gap-2">
-            <span className="text-xs font-bold text-zinc-300 uppercase tracking-wider">
-              Where is the Athlete in the Frame?
-            </span>
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-              {[
-                { id: 'auto', label: '🤖 Auto-Detect' },
-                { id: 'left', label: '⬅️ Left Side' },
-                { id: 'center', label: '⏺️ Center Frame' },
-                { id: 'right', label: '➡️ Right Side' },
-              ].map((pos) => {
-                const active = (targetAthleteAnchor || 'auto') === pos.id;
-                return (
-                  <button
-                    key={pos.id}
-                    type="button"
-                    onClick={() => onSelectAthleteAnchor?.(pos.id as any)}
-                    className={`py-2 px-3 rounded-xl border text-xs font-bold transition-all ${
-                      active
-                        ? 'bg-gradient-to-r from-red-600 to-amber-500 text-white border-red-500 shadow-md'
-                        : 'bg-zinc-950 border-zinc-800 text-zinc-400 hover:text-white hover:border-zinc-700'
-                    }`}
-                  >
-                    {pos.label}
-                  </button>
-                );
-              })}
             </div>
           </div>
 
@@ -408,51 +349,20 @@ export const UnifiedSetupCard: React.FC<UnifiedSetupCardProps> = ({
                   Authentication Required
                 </h4>
                 <p className="text-xs text-zinc-400 mt-1 leading-relaxed">
-                  You must be signed in to upload and run AI biomechanical pose extraction on athletic footage.
+                  You must be signed in to upload and run AI biomechanical pose extraction on athletic footage. Save reports directly to your profile.
                 </p>
               </div>
 
-              <div className="flex flex-col sm:flex-row gap-3 w-full max-w-md">
-                <button
-                  type="button"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    onOpenAuth();
-                  }}
-                  className="flex-1 bg-yellow-400 hover:bg-yellow-300 text-zinc-950 font-black text-xs py-3 rounded-xl uppercase tracking-wider shadow-lg shadow-yellow-400/10 transition-all active:scale-95"
-                >
-                  Sign In to Upload
-                </button>
-                
-                <label 
-                  className="flex-1 bg-zinc-800 hover:bg-zinc-700 text-amber-300 font-extrabold text-xs py-3 rounded-xl border border-zinc-700 cursor-pointer flex items-center justify-center gap-2 transition-all"
-                  onClick={(e) => e.stopPropagation()}
-                >
-                  <FolderOpen className="w-4 h-4 text-amber-400" />
-                  <span>View Guest Report</span>
-                  <input
-                    type="file"
-                    accept=".klutchh,.json"
-                    className="hidden"
-                    onChange={(e) => {
-                      const file = e.target.files?.[0];
-                      if (file && onImportReport) {
-                        const reader = new FileReader();
-                        reader.onload = (evt) => {
-                          try {
-                            const parsed = JSON.parse(evt.target?.result as string);
-                            onImportReport(parsed);
-                          } catch (err) {
-                            alert("Invalid .klutchh report file format.");
-                          }
-                        };
-                        reader.readAsText(file);
-                      }
-                      e.target.value = '';
-                    }}
-                  />
-                </label>
-              </div>
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onOpenAuth();
+                }}
+                className="bg-yellow-400 hover:bg-yellow-300 text-zinc-950 font-black text-xs px-5 py-2.5 rounded-xl uppercase tracking-wider shadow-lg shadow-yellow-400/10 transition-all active:scale-95"
+              >
+                Sign In to Upload
+              </button>
             </div>
           )}
 

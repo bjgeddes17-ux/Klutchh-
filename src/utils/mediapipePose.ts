@@ -1,7 +1,5 @@
 import { PoseLandmarker, FilesetResolver } from '@mediapipe/tasks-vision';
 import { MediaPipeLandmark } from '../types';
-import { Capacitor } from '@capacitor/core';
-import { PoseDetection, PoseLandmarkType } from '@capacitor-mlkit/pose-detection';
 
 let poseLandmarker: PoseLandmarker | null = null;
 let isInitializing = false;
@@ -40,7 +38,7 @@ export async function initializePoseLandmarker(): Promise<PoseLandmarker | null>
     try {
       poseLandmarker = await PoseLandmarker.createFromOptions(vision, {
         baseOptions: {
-          modelAssetPath: `https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_full/float16/1/pose_landmarker_full.task`,
+          modelAssetPath: `https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_lite/float16/1/pose_landmarker_lite.task`,
           delegate: 'GPU',
         },
         runningMode: 'IMAGE',
@@ -53,7 +51,7 @@ export async function initializePoseLandmarker(): Promise<PoseLandmarker | null>
       console.warn('GPU delegate failed for MediaPipe Pose, attempting CPU delegate fallback:', gpuErr);
       poseLandmarker = await PoseLandmarker.createFromOptions(vision, {
         baseOptions: {
-          modelAssetPath: `https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_full/float16/1/pose_landmarker_full.task`,
+          modelAssetPath: `https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_lite/float16/1/pose_landmarker_lite.task`,
           delegate: 'CPU',
         },
         runningMode: 'IMAGE',
@@ -86,123 +84,6 @@ export async function detectPoseForVideoFrame(
   timestampMs: number,
   allowCachedFallback: boolean = true
 ): Promise<PoseDetectionResult> {
-  // 🚀 HYBRID CHECK: If running natively on Android or iOS, use the hardware-accelerated Pose Detector plugin!
-  if (Capacitor.isNativePlatform()) {
-    try {
-      const tempCanvas = document.createElement('canvas');
-      let width = 320;
-      let height = 240;
-      
-      if (videoElement instanceof HTMLVideoElement) {
-        width = videoElement.videoWidth || 320;
-        height = videoElement.videoHeight || 240;
-      } else if (videoElement instanceof HTMLCanvasElement) {
-        width = videoElement.width || 320;
-        height = videoElement.height || 240;
-      }
-
-      tempCanvas.width = width;
-      tempCanvas.height = height;
-      const tempCtx = tempCanvas.getContext('2d');
-      if (tempCtx && videoElement) {
-        tempCtx.drawImage(videoElement, 0, 0, width, height);
-        const base64Frame = tempCanvas.toDataURL('image/jpeg', 0.6); // Compress to 60% quality for maximum throughput speed!
-
-        const result = await PoseDetection.processImage({
-          path: base64Frame,
-        });
-
-        if (result && result.poses && result.poses.length > 0) {
-          const pose = result.poses[0];
-          // Map Native ML Kit landmarks back to the standard 33 MediaPipe Landmarks
-          const mappedLandmarks: MediaPipeLandmark[] = new Array(33).fill(null).map(() => ({
-            x: 0.5,
-            y: 0.5,
-            z: 0,
-            visibility: 0
-          }));
-
-          const LANDMARK_ORDER = [
-            PoseLandmarkType.Nose, // 0
-            PoseLandmarkType.LeftEyeInner, // 1
-            PoseLandmarkType.LeftEye, // 2
-            PoseLandmarkType.LeftEyeOuter, // 3
-            PoseLandmarkType.RightEyeInner, // 4
-            PoseLandmarkType.RightEye, // 5
-            PoseLandmarkType.RightEyeOuter, // 6
-            PoseLandmarkType.LeftEar, // 7
-            PoseLandmarkType.RightEar, // 8
-            PoseLandmarkType.LeftMouth, // 9
-            PoseLandmarkType.RightMouth, // 10
-            PoseLandmarkType.LeftShoulder, // 11
-            PoseLandmarkType.RightShoulder, // 12
-            PoseLandmarkType.LeftElbow, // 13
-            PoseLandmarkType.RightElbow, // 14
-            PoseLandmarkType.LeftWrist, // 15
-            PoseLandmarkType.RightWrist, // 16
-            PoseLandmarkType.LeftPinky, // 17
-            PoseLandmarkType.RightPinky, // 18
-            PoseLandmarkType.LeftIndex, // 19
-            PoseLandmarkType.RightIndex, // 20
-            PoseLandmarkType.LeftThumb, // 21
-            PoseLandmarkType.RightThumb, // 22
-            PoseLandmarkType.LeftHip, // 23
-            PoseLandmarkType.RightHip, // 24
-            PoseLandmarkType.LeftKnee, // 25
-            PoseLandmarkType.RightKnee, // 26
-            PoseLandmarkType.LeftAnkle, // 27
-            PoseLandmarkType.RightAnkle, // 28
-            PoseLandmarkType.LeftHeel, // 29
-            PoseLandmarkType.RightHeel, // 30
-            PoseLandmarkType.LeftFootIndex, // 31
-            PoseLandmarkType.RightFootIndex, // 32
-          ];
-
-          // Map each returned pose landmark by matching its enum type
-          for (const mark of pose.landmarks) {
-            const idx = LANDMARK_ORDER.indexOf(mark.type);
-            if (idx !== -1) {
-              mappedLandmarks[idx] = {
-                // Convert absolute pixels back to [0.0, 1.0] normalized space
-                x: mark.x / width,
-                y: mark.y / height,
-                z: mark.z || 0,
-                visibility: mark.inFrameLikelihood !== undefined ? mark.inFrameLikelihood : 0.9,
-              };
-            }
-          }
-
-          // Apply shin clamp
-          const applyShinClamp = (hipIdx: number, kneeIdx: number, ankleIdx: number) => {
-            const hip = mappedLandmarks[hipIdx];
-            const knee = mappedLandmarks[kneeIdx];
-            const ankle = mappedLandmarks[ankleIdx];
-            if (hip && knee && ankle) {
-              const femurLen = Math.sqrt(Math.pow(knee.x - hip.x, 2) + Math.pow(knee.y - hip.y, 2));
-              const shinLen = Math.sqrt(Math.pow(ankle.x - knee.x, 2) + Math.pow(ankle.y - knee.y, 2));
-              const maxAllowedShin = femurLen * 1.5;
-              if (shinLen > maxAllowedShin && femurLen > 0.05) {
-                const ratio = maxAllowedShin / shinLen;
-                ankle.x = knee.x + (ankle.x - knee.x) * ratio;
-                ankle.y = knee.y + (ankle.y - knee.y) * ratio;
-              }
-            }
-          };
-          applyShinClamp(23, 25, 27);
-          applyShinClamp(24, 26, 28);
-
-          cachedLandmarks = mappedLandmarks;
-          return {
-            landmarks: cachedLandmarks,
-            isRealMediaPipe: true,
-          };
-        }
-      }
-    } catch (err) {
-      console.warn("Native pose detection failed, defaulting to WebAssembly:", err);
-    }
-  }
-
   if (!poseLandmarker && !isInitializing) {
     initializePoseLandmarker();
   }
@@ -282,11 +163,11 @@ export async function detectPoseForVideoFrame(
         const bodyHeight = maxY - minY;
         const bodyWidth = maxX - minX;
 
-        // Extremely lenient shadow/horizontal check to support crouches, tackles, and far-away shots
-        const isShadowOrHorizontalArtifact = bodyHeight < bodyWidth * 0.15 || bodyHeight < 0.03;
-        const hasEnoughLandmarks = validPointsCount >= 8;
+        // If body height is smaller than width (e.g. shadow on ground) or not enough points, reject!
+        const isShadowOrHorizontalArtifact = bodyHeight < bodyWidth * 0.8 || bodyHeight < 0.15;
+        const hasEnoughLandmarks = validPointsCount >= 15;
 
-        // Extremely lenient vertical check to support deep crouches, bending, and horizontal sports movements
+        // Check vertical order (shoulders 11/12 vs hips 23/24 vs ankles 27/28)
         const leftShoulder = rawLandmarks[11];
         const rightShoulder = rawLandmarks[12];
         const leftHip = rawLandmarks[23];
@@ -294,7 +175,7 @@ export async function detectPoseForVideoFrame(
         
         const shouldersY = ((leftShoulder?.y || 0) + (rightShoulder?.y || 0)) / 2;
         const hipsY = ((leftHip?.y || 0) + (rightHip?.y || 0)) / 2;
-        const isUpright = shouldersY < hipsY + 0.35; // Support deep crouches and horizontal poses
+        const isUpright = shouldersY < hipsY; // In screen coordinates, smaller Y is higher up
 
         if (hasEnoughLandmarks && !isShadowOrHorizontalArtifact && isUpright) {
           // ANATOMICAL SHIN CLAMP (Prevents ankles/feet from stretching down into floor shadows)
@@ -349,8 +230,7 @@ export async function detectPoseForVideoFrame(
           }
           const bodyH = maxY - minY;
           const bodyW = maxX - minX;
-          // Extremely lenient shadow/horizontal check to support crouches, tackles, and far-away shots
-          if (validPoints >= 8 && bodyH >= bodyW * 0.15 && bodyH >= 0.03) {
+          if (validPoints >= 15 && bodyH >= bodyW * 0.8 && bodyH >= 0.15) {
             const applyShinClamp = (hipIdx: number, kneeIdx: number, ankleIdx: number) => {
               const hip = rawLandmarks[hipIdx];
               const knee = rawLandmarks[kneeIdx];

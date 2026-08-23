@@ -129,29 +129,29 @@ export function validateKinematicSportFit(
   sportRule: SportRule,
   selectedPhase?: string
 ): VideoValidationResult {
-  // 1. Human Presence Check
+  // 1. Human Presence Ratio
   const totalFrames = allSampledLandmarks.length;
   if (totalFrames === 0) {
     return {
-      isValid: true,
-      category: 'ok',
-      title: 'Valid Video Clip',
-      message: `Analyzing athletic movement pattern.`,
-      confidenceScore: 80
+      isValid: false,
+      category: 'no_human',
+      title: 'No Athlete Detected',
+      message: `No human pose landmarks were found in this video. Please upload a video clip clearly showing an athlete performing ${sportRule.name}.`,
+      confidenceScore: 0
     };
   }
 
-  // Filter valid frames with a relaxed threshold of 4 landmarks to capture diverse/occluded poses
-  const validFrames = allSampledLandmarks.filter(f => f.landmarks && f.landmarks.length >= 4);
+  const validFrames = allSampledLandmarks.filter(f => f.landmarks && f.landmarks.length >= 25);
   const humanRatio = validFrames.length / totalFrames;
 
-  if (validFrames.length === 0) {
+  if (humanRatio < 0.35) {
     return {
-      isValid: true,
-      category: 'ok',
-      title: 'Biomechanic Frame Sampling',
-      message: `Video frames sampled for biometric technique analysis.`,
-      confidenceScore: 75
+      isValid: false,
+      category: 'no_human',
+      title: 'No Consistent Athlete In Frame',
+      message: `A human athlete was only visible in ${Math.round(humanRatio * 100)}% of the video clip. Please ensure the athlete is centrally framed throughout the movement.`,
+      confidenceScore: Math.round(humanRatio * 100),
+      details: { humanFrameRatio: humanRatio }
     };
   }
 
@@ -160,9 +160,9 @@ export function validateKinematicSportFit(
   let framesWithUpperBody = 0;
 
   validFrames.forEach(({ landmarks }) => {
-    const hasUpper = (landmarks[11]?.visibility ?? 1) > 0.1 && (landmarks[12]?.visibility ?? 1) > 0.1;
-    const hasHips = (landmarks[23]?.visibility ?? 1) > 0.1 && (landmarks[24]?.visibility ?? 1) > 0.1;
-    const hasKnees = (landmarks[25]?.visibility ?? 1) > 0.1 || (landmarks[26]?.visibility ?? 1) > 0.1;
+    const hasUpper = (landmarks[11]?.visibility ?? 1) > 0.4 && (landmarks[12]?.visibility ?? 1) > 0.4;
+    const hasHips = (landmarks[23]?.visibility ?? 1) > 0.3 && (landmarks[24]?.visibility ?? 1) > 0.3;
+    const hasKnees = (landmarks[25]?.visibility ?? 1) > 0.3 || (landmarks[26]?.visibility ?? 1) > 0.3;
 
     if (hasUpper) framesWithUpperBody++;
     if (hasHips && hasKnees) framesWithLowerBody++;
@@ -171,8 +171,16 @@ export function validateKinematicSportFit(
   const lowerBodyRatio = framesWithLowerBody / validFrames.length;
   const upperBodyRatio = framesWithUpperBody / validFrames.length;
 
-  // We no longer reject on upperBodyRatio because footwork-only or leg-focused athletic videos are highly common in soccer/rugby
-  
+  if (upperBodyRatio < 0.4) {
+    return {
+      isValid: false,
+      category: 'incomplete_body',
+      title: 'Incomplete Athlete Framing',
+      message: 'The athlete\'s shoulders and upper torso are cut off. Please frame the camera so the entire body or upper half is visible.',
+      confidenceScore: Math.round(upperBodyRatio * 100)
+    };
+  }
+
   // 3. Motion & Range of Motion (ROM) Check (prevents sleeping / sitting still / stationary videos)
   let maxDisplacement = 0;
   let maxAngleRangeOfMotion = 0;
@@ -216,8 +224,7 @@ export function validateKinematicSportFit(
   const trunkROM = getRange(trunkAngles);
   maxAngleRangeOfMotion = Math.max(elbowROM, kneeROM, trunkROM);
 
-  // Extremely lenient stationary check: only reject absolute frozen/still images or screenshots
-  if (maxDisplacement < 0.005 && maxAngleRangeOfMotion < 1.5) {
+  if (maxDisplacement < 0.035 && maxAngleRangeOfMotion < 12) {
     return {
       isValid: false,
       category: 'stationary',
@@ -263,16 +270,14 @@ export function validateKinematicSportFit(
     }
   });
 
-  // Soft Warnings (isValid: true) instead of hard blocks for mismatched sports
-  // This allows the user to see their skeleton tracking and full analysis anyway!
-  
+  // Check for distinct sport mismatches
   // MISMATCH A: Golf Selected, but zero rotational coil and excessive high sprinting or kicking
   if (targetSport === 'golf') {
     if (maxDisplacement > 0.35 && trunkROM < 10 && maxShoulderHipSeparation < 10) {
       return {
-        isValid: true,
+        isValid: false,
         category: 'sport_mismatch',
-        title: 'Sport Movement Mismatch (Soft Note)',
+        title: 'Sport Movement Mismatch',
         message: 'You selected Golf Swing, but high-displacement linear running was detected rather than a rotational golf stance.',
         suggestedSport: 'soccer',
         detectedMotionProfile: 'Linear Running / Sprinting',
@@ -285,9 +290,9 @@ export function validateKinematicSportFit(
   if (targetSport === 'cricket' && selectedPhase?.toLowerCase().includes('bowling')) {
     if (overheadFramePct < 0.05 && elbowROM < 20) {
       return {
-        isValid: true,
+        isValid: false,
         category: 'sport_mismatch',
-        title: 'Technique Mismatch (Soft Note)',
+        title: 'Technique Mismatch',
         message: 'You selected Cricket Bowling, but no high overhead arm delivery or circumduction was detected in this clip.',
         confidenceScore: 80,
         detectedMotionProfile: 'Low Arm Plane Motion'
@@ -299,9 +304,9 @@ export function validateKinematicSportFit(
   if (targetSport === 'tennis' && (selectedPhase?.toLowerCase().includes('serve') || selectedPhase?.toLowerCase().includes('smash'))) {
     if (overheadFramePct < 0.05) {
       return {
-        isValid: true,
+        isValid: false,
         category: 'sport_mismatch',
-        title: 'Technique Mismatch (Soft Note)',
+        title: 'Technique Mismatch',
         message: 'You selected Tennis Serve / Overhead, but the athlete\'s hitting arm remained below shoulder height throughout the clip.',
         suggestedSport: 'tennis',
         detectedMotionProfile: 'Groundstroke / Low Plane Hit',

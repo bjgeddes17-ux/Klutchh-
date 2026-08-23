@@ -51,7 +51,6 @@ export const Header: React.FC<HeaderProps> = ({
   const [isArchModalOpen, setIsArchModalOpen] = useState(false);
   const [isProfileModalOpen, setIsProfileModalOpen] = useState(false);
   const [isOnline, setIsOnline] = useState(() => typeof navigator !== 'undefined' ? navigator.onLine : true);
-  const [isVisible, setIsVisible] = useState(true);
 
   useEffect(() => {
     const handleOnline = () => setIsOnline(true);
@@ -60,24 +59,9 @@ export const Header: React.FC<HeaderProps> = ({
     window.addEventListener('online', handleOnline);
     window.addEventListener('offline', handleOffline);
 
-    let lastY = window.scrollY;
-    const handleScroll = () => {
-      const currentScrollY = window.scrollY;
-      // Scroll down past 100px: hide. Scroll up: show.
-      if (currentScrollY > lastY && currentScrollY > 100) {
-        setIsVisible(false);
-      } else {
-        setIsVisible(true);
-      }
-      lastY = currentScrollY;
-    };
-
-    window.addEventListener('scroll', handleScroll, { passive: true });
-
     return () => {
       window.removeEventListener('online', handleOnline);
       window.removeEventListener('offline', handleOffline);
-      window.removeEventListener('scroll', handleScroll);
     };
   }, []);
 
@@ -115,9 +99,7 @@ export const Header: React.FC<HeaderProps> = ({
         </div>
       )}
       
-      <header className={`bg-zinc-950/95 border-b border-zinc-800/80 text-zinc-100 sticky top-0 z-30 backdrop-blur-md shadow-2xl transition-transform duration-300 transform ${
-        isVisible ? 'translate-y-0 opacity-100' : '-translate-y-full opacity-0 pointer-events-none'
-      }`}>
+      <header className="bg-zinc-950/95 border-b border-zinc-800/80 text-zinc-100 sticky top-0 z-30 backdrop-blur-md shadow-2xl">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-3">
           <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
             
@@ -155,13 +137,13 @@ export const Header: React.FC<HeaderProps> = ({
             </div>
 
             {/* Mode Selector & Control Options */}
-            <div className="flex items-center gap-2 overflow-x-auto no-scrollbar py-0.5 max-w-full">
+            <div className="flex flex-wrap items-center gap-2">
               
               {/* User Login/Profile Button */}
               {currentUser ? (
                 <button
                   onClick={() => setIsProfileModalOpen(true)}
-                  className="bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 hover:border-yellow-500/30 text-zinc-200 font-bold text-xs px-3 py-2 rounded-xl flex items-center gap-2 transition-all shadow-md cursor-pointer shrink-0 min-h-[40px]"
+                  className="bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 hover:border-yellow-500/30 text-zinc-200 font-bold text-xs px-3 py-2 sm:px-3.5 sm:py-2 rounded-xl flex items-center gap-2 transition-all shadow-md cursor-pointer"
                   title="Configure athlete profile & view subscription"
                 >
                   <div className="w-5 h-5 rounded-lg bg-zinc-800 text-base flex items-center justify-center">
@@ -173,7 +155,7 @@ export const Header: React.FC<HeaderProps> = ({
               ) : (
                 <button
                   onClick={onOpenAuth}
-                  className="bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 text-zinc-200 font-bold text-xs px-3 py-2 rounded-xl flex items-center gap-1.5 transition-all cursor-pointer shrink-0 min-h-[40px]"
+                  className="bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 text-zinc-200 font-bold text-xs px-3 py-2 rounded-xl flex items-center gap-1.5 transition-all cursor-pointer"
                 >
                   <LogIn className="w-3.5 h-3.5 text-amber-400" />
                   <span>Sign In</span>
@@ -183,7 +165,7 @@ export const Header: React.FC<HeaderProps> = ({
               {/* Saved Reports Library Button */}
               <button
                 onClick={onOpenDashboard}
-                className="bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 text-zinc-300 font-bold text-xs px-3 py-2 rounded-xl flex items-center gap-1.5 transition-all shrink-0 min-h-[40px]"
+                className="bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 text-zinc-300 font-bold text-xs px-2.5 py-1.5 sm:px-3 sm:py-1.5 rounded-xl flex items-center gap-1.5 transition-all"
                 title="Historical Performance Dashboard"
               >
                 <TrendingUp className="w-3.5 h-3.5 text-emerald-400" />
@@ -192,31 +174,31 @@ export const Header: React.FC<HeaderProps> = ({
 
               <button
                 onClick={onOpenSavedReports}
-                className="bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 text-zinc-300 font-bold text-xs px-3 py-2 rounded-xl flex items-center gap-1.5 transition-all shrink-0 min-h-[40px]"
+                className="bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 text-zinc-300 font-bold text-xs px-2.5 py-1.5 sm:px-3 sm:py-1.5 rounded-xl flex items-center gap-1.5 transition-all"
                 title="Library of Imported & Saved Biometric Reports"
               >
                 <BookOpen className="w-3.5 h-3.5 text-amber-400" />
                 <span className="hidden sm:inline">Report Library</span>
-                <span className="sm:hidden text-xs">Reports</span>
+                <span className="sm:hidden text-[10px]">Library</span>
               </button>
 
               <button
                 onClick={onOpenCabinet}
-                className="bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 text-zinc-300 font-bold text-xs px-3 py-2 rounded-xl flex items-center gap-1.5 transition-all shrink-0 min-h-[40px]"
+                className="bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 text-zinc-300 font-bold text-xs px-2.5 py-1.5 sm:px-3 sm:py-1.5 rounded-xl flex items-center gap-1.5 transition-all"
                 title="Trophy Cabinet"
               >
                 <Trophy className="w-3.5 h-3.5 text-red-500" />
                 <span className="hidden sm:inline">Trophy Cabinet</span>
-                <span className="sm:hidden text-xs">Trophies</span>
+                <span className="sm:hidden text-[10px]">Cabinet</span>
               </button>
 
               <label
-                className="bg-zinc-900 hover:bg-zinc-800 border border-amber-500/30 hover:border-amber-400 text-amber-300 font-extrabold text-xs px-3 py-2 rounded-xl flex items-center gap-1.5 transition-all cursor-pointer shrink-0 min-h-[40px]"
+                className="bg-zinc-900 hover:bg-zinc-800 border border-amber-500/30 hover:border-amber-400 text-amber-300 font-extrabold text-xs px-2.5 py-1.5 sm:px-3 sm:py-1.5 rounded-xl flex items-center gap-1.5 transition-all cursor-pointer"
                 title="Open/Import an exported .klutchh report file stored on your device or Google Drive"
               >
                 <FolderOpen className="w-3.5 h-3.5 text-amber-400" />
-                <span className="hidden sm:inline">Open .klutchh</span>
-                <span className="sm:hidden text-xs">Open File</span>
+                <span className="hidden sm:inline">Open .klutchh Report</span>
+                <span className="sm:hidden text-[10px]">Open .klutchh</span>
                 <input
                   type="file"
                   accept=".klutchh,.json"
@@ -242,11 +224,11 @@ export const Header: React.FC<HeaderProps> = ({
 
               {/* Monthly Analyses Used Badge */}
               <div 
-                className="hidden md:flex items-center bg-zinc-900 border border-zinc-800 text-zinc-300 text-xs px-3 py-2 rounded-xl font-bold gap-1.5 shrink-0 min-h-[40px]" 
+                className="hidden sm:flex items-center bg-zinc-900 border border-zinc-800 text-zinc-300 text-xs px-3 py-1.5 rounded-xl font-bold gap-1.5" 
                 title={`Accounts receive 10 free video analyses per month (${analysisCount} used so far)`}
               >
                 <Activity className="w-3.5 h-3.5 text-red-500" />
-                <span>Analyses:</span>
+                <span>Analyses Used:</span>
                 <span className={`font-mono font-black ${analysisCount >= maxAnalyses ? 'text-red-400' : 'text-amber-400'}`}>
                   {analysisCount}/{maxAnalyses} Free
                 </span>
@@ -254,36 +236,34 @@ export const Header: React.FC<HeaderProps> = ({
 
               {/* FPS Calibration Selector */}
               <div
-                className="flex items-center bg-zinc-900 border border-zinc-800 rounded-xl px-2.5 py-1.5 gap-1 text-xs font-bold shrink-0 min-h-[40px]"
+                className="flex items-center bg-zinc-900 border border-zinc-800 rounded-xl px-2.5 py-1 gap-1 text-xs font-bold"
                 title="FPS Calibration: Sets analysis sample rate & frame stepper resolution for high-speed or slo-mo clips"
               >
                 <Gauge className="w-3.5 h-3.5 text-red-500 shrink-0" />
-                <span className="text-[10px] text-zinc-400 uppercase font-mono hidden xl:inline">FPS:</span>
+                <span className="text-[10px] text-zinc-400 uppercase font-mono hidden xl:inline">FPS Calib:</span>
                 <select
                   value={calibratedFps}
                   onChange={(e) => onChangeCalibratedFps(Number(e.target.value))}
-                  aria-label="Calibrated video framerate (FPS)"
                   className="bg-zinc-900 text-red-400 font-extrabold focus:outline-none cursor-pointer text-xs"
                 >
-                  <option value={24}>24 FPS</option>
-                  <option value={30}>30 FPS</option>
-                  <option value={60}>60 FPS</option>
-                  <option value={120}>120 FPS</option>
-                  <option value={240}>240 FPS</option>
+                  <option value={24}>24 FPS (Cinematic)</option>
+                  <option value={30}>30 FPS (Standard Sports)</option>
+                  <option value={60}>60 FPS (High-Speed Sport)</option>
+                  <option value={120}>120 FPS (High Slo-Mo)</option>
+                  <option value={240}>240 FPS (Ultra Slo-Mo)</option>
                 </select>
               </div>
 
-              <div className="flex items-center bg-zinc-900 border border-zinc-800 rounded-xl px-2.5 py-1.5 gap-1 text-xs font-bold shrink-0 min-h-[40px]">
+              <div className="flex items-center bg-zinc-900 border border-zinc-800 rounded-xl px-2.5 py-1 gap-1 text-xs font-bold">
                 <Target className="w-3.5 h-3.5 text-amber-400 shrink-0" />
                 <select
                   value={skillLevel}
                   onChange={(e) => onChangeSkillLevel(e.target.value as SkillLevel)}
-                  aria-label="Target athlete skill level tier"
                   className="bg-zinc-900 text-amber-400 font-extrabold focus:outline-none cursor-pointer text-xs"
                 >
-                  <option value="grassroots">Grassroots</option>
-                  <option value="academy">Academy</option>
-                  <option value="elite_pro">Elite Pro</option>
+                  <option value="grassroots">Grassroots Tier</option>
+                  <option value="academy">Academy Tier</option>
+                  <option value="elite_pro">Elite Pro Tier</option>
                 </select>
               </div>
             </div>
@@ -304,7 +284,7 @@ export const Header: React.FC<HeaderProps> = ({
               <span>• MEDIAPIPE CORE SKINS: 33 THREE-DIMENSIONAL COORDINATES AUTOMATICALLY RESOLVED</span>
               <span>• ACTIVE DIFFICULTY CHECK: {skillLevel === 'elite_pro' ? 'ELITE PROFESSIONAL TIER (STRICTEST ERROR BOUNDS)' : skillLevel === 'academy' ? 'ACADEMY TIER (OPTIMIZED GAP)' : 'GRASSROOTS RECREATIONAL FORMULA'}</span>
               <span>• LIVE CORES: ANGULAR MOMENTUM, DECELERATION TORQUE, JOINT FORCE VECTOR INDEX</span>
-              <span>• PERSONAL STORAGE SYNC: SECURELY MANAGED VIA YOUR PERSONAL CLOUD CONNECTOR</span>
+              <span>• CLOUD STORAGE PERSISTENCE: SYNCHRONIZED SECURELY VIA FIRESTORE Blueprints</span>
               <span>• KLUTCHH INTEGRATED VERIFICATION KINETIC FEED: 320 JOINT ROTATION CHECKS CONSTANTLY PARSED</span>
               <span>• YOUR JOURNEY TO GREATNESS: UNLOCKING ELITE POTENTIAL ONE FRAME AT A TIME</span>
             </div>

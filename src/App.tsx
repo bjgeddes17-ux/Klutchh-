@@ -1,32 +1,27 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { SPORTS_RULES } from './data/sportsRules';
-import { SportId, AthleteCategory, SkillLevel, FrameAnalysis, UserAccount, SavedReport, AICoachingReport, AnalysisResult, TrophyCard } from './types';
+import { SportId, AthleteCategory, SkillLevel, FrameAnalysis, UserAccount, SavedReport, AICoachingReport, AnalysisResult } from './types';
 import { Header } from './components/Header';
 import { VideoPosePlayer } from './components/VideoPosePlayer';
 import { BiometricPanel } from './components/BiometricPanel';
+import { KeyframeTimeline } from './components/KeyframeTimeline';
 import { UnifiedSetupCard } from './components/UnifiedSetupCard';
 import { AuthModal } from './components/AuthModal';
 import { SavedReportsModal } from './components/SavedReportsModal';
 import { AnalysisReportPage } from './components/AnalysisReportPage';
 import ProgressDashboard from './components/ProgressDashboard';
 import { Play, FileText, Bookmark, Sparkles, CheckCircle2, TrendingUp, ShieldAlert, AlertCircle } from 'lucide-react';
-import { auth, logoutFirebase } from './lib/firebase';
+import { auth, saveReportToFirestore, fetchUserSavedReports, deleteReportFromFirestore, logoutFirebase } from './lib/firebase';
 import { onAuthStateChanged } from 'firebase/auth';
 import { set, get, del } from 'idb-keyval';
-import { autoPurgeExpiredLocalVideos, saveLocalVideoWithTTL, getLocalVideo, safeJsonStringify } from './utils/privacyStorage';
-
-import { getCoachAthletes, formatAthleteFolderName, saveCoachAthlete } from './utils/rosterStorage';
+import { autoPurgeExpiredLocalVideos, saveLocalVideoWithTTL, getLocalVideo } from './utils/privacyStorage';
 
 import { MagicProcessingScreen } from './components/MagicProcessingScreen';
-import { VideoCropAndScrubber } from './components/VideoCropAndScrubber';
-import { detectCapableDevice, buildBareFallbackResult } from './utils/videoAnalyzer';
+import { detectCapableDevice } from './utils/videoAnalyzer';
 import { PinPromptModal } from './components/PinPromptModal';
 import { parseZeroKnowledgeShareHash } from './utils/shareReportUrl';
-import { NativeLiveCameraModal } from './components/NativeLiveCameraModal';
-import { wakeLock, soundCues, triggerHaptic, setupAppLifecycleHandlers, notifications } from './utils/nativeEnhancements';
 
 export default function App() {
-  const [isInitialLoading, setIsInitialLoading] = useState(true);
   const [selectedSportId, setSelectedSportId] = useState<SportId>('rugby');
   const [athleteCategory, setAthleteCategory] = useState<AthleteCategory>('middle_school');
   const [skillLevel, setSkillLevel] = useState<SkillLevel>('grassroots');
@@ -36,15 +31,6 @@ export default function App() {
   const [customVideoUrl, setCustomVideoUrl] = useState<string | null>(null);
   const [customVideoFile, setCustomVideoFile] = useState<File | null>(null);
   const [targetAthleteAnchor, setTargetAthleteAnchor] = useState<'auto' | 'left' | 'center' | 'right'>('auto');
-
-  useEffect(() => {
-    const timer = setTimeout(() => {
-      setIsInitialLoading(false);
-      // Request notification permissions early for production APK
-      notifications.requestPermission();
-    }, 2800); // Elegantly show animated loading logo for 2.8s
-    return () => clearTimeout(timer);
-  }, []);
 
   const [currentAnalysis, setCurrentAnalysis] = useState<FrameAnalysis | null>(null);
   const [keyframeList, setKeyframeList] = useState<FrameAnalysis[]>([]);
@@ -117,7 +103,7 @@ export default function App() {
     }
   });
 
-  const [viewMode, setViewMode] = useState<'workspace' | 'crop_and_scrub' | 'processing' | 'full_report' | 'progress'>('workspace');
+  const [viewMode, setViewMode] = useState<'workspace' | 'processing' | 'full_report' | 'progress'>('workspace');
   const [isAuthOpen, setIsAuthOpen] = useState(false);
   const [isSavedReportsOpen, setIsSavedReportsOpen] = useState(false);
   const [savedReportsTab, setSavedReportsTab] = useState<'folders' | 'all' | 'cards' | 'roster'>('folders');
@@ -133,12 +119,8 @@ export default function App() {
     explosivenessScore: number;
   } | null>(null);
   const useOptionBPipeline = false;
-  const [currentStartTime, setCurrentStartTime] = useState<number>(0);
-  const [currentEndTime, setCurrentEndTime] = useState<number | undefined>(undefined);
-  const [currentCropBox, setCurrentCropBox] = useState<{ x: number; y: number; width: number; height: number } | undefined>(undefined);
   const [activeReportId, setActiveReportId] = useState<string | null>(null);
   const [isPinPromptOpen, setIsPinPromptOpen] = useState(false);
-  const [isNativeCameraOpen, setIsNativeCameraOpen] = useState(false);
 
   const currentSport = SPORTS_RULES.find((s) => s.id === selectedSportId) || SPORTS_RULES[0];
 
@@ -168,6 +150,9 @@ export default function App() {
 
   // Firebase Auth listener & Local Storage Privacy Housekeeping
   useEffect(() => {
+    // Run privacy auto-purge for videos older than 30 days
+    autoPurgeExpiredLocalVideos(30).catch(() => {});
+
     const unsubscribe = onAuthStateChanged(auth, async (fbUser) => {
       if (fbUser) {
         const updatedUser: UserAccount = {
@@ -179,8 +164,12 @@ export default function App() {
           avatar: fbUser.photoURL || undefined
         };
         setCurrentUser(updatedUser);
-      } else {
-        setCurrentUser(null);
+        
+        // Fetch saved reports from Firestore
+        const remoteReports = await fetchUserSavedReports(fbUser.uid);
+        if (remoteReports && remoteReports.length > 0) {
+          setSavedReports(deduplicateReports(remoteReports));
+        }
       }
     });
 
@@ -189,10 +178,13 @@ export default function App() {
 
   useEffect(() => {
     if (currentUser) {
-      try {
-        localStorage.setItem('klutchh_user_session', safeJsonStringify(currentUser));
-      } catch (e) {
-        console.warn('Failed to persist user session:', e);
+      localStorage.setItem('klutchh_user_session', JSON.stringify(currentUser));
+      if (auth.currentUser) {
+        fetchUserSavedReports(currentUser.id).then((remote) => {
+          if (remote && remote.length > 0) {
+            setSavedReports(deduplicateReports(remote));
+          }
+        });
       }
     } else {
       localStorage.removeItem('klutchh_user_session');
@@ -200,59 +192,8 @@ export default function App() {
   }, [currentUser?.id]);
 
   useEffect(() => {
-    try {
-      localStorage.setItem('klutchh_saved_reports', safeJsonStringify(savedReports));
-    } catch (e) {
-      console.warn('Failed to persist saved reports:', e);
-    }
+    localStorage.setItem('klutchh_saved_reports', JSON.stringify(savedReports));
   }, [savedReports]);
-
-  // Screen Wake Lock & Background Lifecycle Management
-  useEffect(() => {
-    if (viewMode === 'crop_and_scrub' || viewMode === 'processing') {
-      wakeLock.request();
-    } else {
-      wakeLock.release();
-    }
-
-    const cleanupLifecycle = setupAppLifecycleHandlers(
-      () => {
-        // App went to background: release wake lock and persist state checkpoint
-        wakeLock.release();
-        
-        let title = 'Klutchh is active';
-        let body = 'Biomechanics engine is ready in the background.';
-        
-        if (viewMode === 'processing') {
-          title = 'Analyzing Video...';
-          body = `Processing your ${currentSport.name} performance. Don't close the app!`;
-        } else if (viewMode === 'full_report') {
-          title = 'Report Ready';
-          body = `Your ${currentSport.name} analysis is loaded and ready for review.`;
-        }
-
-        notifications.showBackgroundRunning(title, body);
-        
-        try {
-          localStorage.setItem('klutchh_saved_reports', safeJsonStringify(savedReports));
-        } catch {
-          // Ignore
-        }
-      },
-      () => {
-        // App came to foreground
-        notifications.hideBackgroundRunning();
-        if (viewMode === 'crop_and_scrub' || viewMode === 'processing') {
-          wakeLock.request();
-        }
-      }
-    );
-
-    return () => {
-      wakeLock.release();
-      cleanupLifecycle();
-    };
-  }, [viewMode, savedReports]);
 
   const handleSelectSport = (id: SportId) => {
     setSelectedSportId(id);
@@ -295,6 +236,15 @@ export default function App() {
       return;
     }
 
+    if (analysisCount >= maxAnalyses) {
+      setLimitModal({
+        isOpen: true,
+        title: "Analysis Limit Reached",
+        message: `You have reached the maximum limit of ${maxAnalyses} video analyses (${analysisCount}/${maxAnalyses} used). Further video analyses are blocked.`
+      });
+      return;
+    }
+
     // Reset old analysis state before starting new one
     setCurrentAnalysis(null);
     setKeyframeList([]);
@@ -311,65 +261,36 @@ export default function App() {
     setViewMode('processing');
   };
 
-  const handleProcessingMagicComplete = useCallback((res?: any) => {
+  const handleProcessingMagicComplete = useCallback((res?: AnalysisResult) => {
     console.log("MagicProcessingComplete called with:", res);
-    if (!res) {
-      console.warn("Analysis complete callback received empty result, generating fallback.");
-      const fallback = buildBareFallbackResult(currentSport, skillLevel);
-      setKeyframeList(fallback.keyframes);
-      setAllFrames(fallback.allFrames || fallback.keyframes);
-      setCurrentAIReport(fallback.aiReport);
-      setCurrentSequenceComparison(fallback.sequenceComparison || null);
-      setCurrentDynamicMetrics(fallback.dynamicMetrics || null);
-      setActiveReportId(`report-${Date.now()}`);
-      setViewMode('full_report');
-      return;
-    }
-
-    const reportObj = res.aiReport || (res.overallGrade ? res : null);
-    if (reportObj) {
+    if (res && res.aiReport) {
       const newReportId = `report-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
       setActiveReportId(newReportId);
 
       if (res.keyframes && res.keyframes.length > 0) {
         setKeyframeList(res.keyframes);
-      } else {
-        const fallback = buildBareFallbackResult(currentSport, skillLevel);
-        setKeyframeList(fallback.keyframes);
       }
-
       if (res.allFrames && res.allFrames.length > 0) {
         setAllFrames(res.allFrames);
-      } else if (res.keyframes && res.keyframes.length > 0) {
-        setAllFrames(res.keyframes);
       }
-      
-      setCurrentAIReport(reportObj);
-      notifications.send('Analysis Complete! 🚀', `Your ${currentSport.name} Titan profile has been updated with new kinetic data.`);
-
+      if (res.aiReport) {
+        setCurrentAIReport(res.aiReport);
+      }
       if (res.sequenceComparison) {
         setCurrentSequenceComparison(res.sequenceComparison);
       }
       if (res.dynamicMetrics) {
         setCurrentDynamicMetrics(res.dynamicMetrics);
       }
-      setCurrentStartTime(res.startTime || 0);
-      setCurrentEndTime(res.endTime);
-      setCurrentCropBox(res.cropBox);
-
+      
       setViewMode('full_report');
     } else {
-      console.warn("Analysis result structure unexpected, using resilient fallback:", res);
-      const fallback = buildBareFallbackResult(currentSport, skillLevel);
-      setKeyframeList(fallback.keyframes);
-      setAllFrames(fallback.allFrames || fallback.keyframes);
-      setCurrentAIReport(fallback.aiReport);
-      setCurrentSequenceComparison(fallback.sequenceComparison || null);
-      setCurrentDynamicMetrics(fallback.dynamicMetrics || null);
-      setActiveReportId(`report-${Date.now()}`);
-      setViewMode('full_report');
+      console.error("Analysis complete callback failed, invalid result:", res);
+      alert("Analysis failed. Unable to extract valid biomechanical telemetry from video.");
+      setViewMode('workspace');
+      setShowWorkspaceUploader(true);
     }
-  }, [currentSport, skillLevel, selectedMovementPhase, customVideoUrl, currentUser]);
+  }, [currentSport, selectedMovementPhase, customVideoUrl, currentUser]);
 
   const handleUpdateDrillProgress = (updatedProgress: Record<number, 'pending' | 'completed' | 'mastered'>, customReportId?: string | null) => {
     const targetId = customReportId || activeReportId;
@@ -382,6 +303,9 @@ export default function App() {
         const targetReport = { ...updatedReports[existingIndex], drillProgress: updatedProgress };
         updatedReports[existingIndex] = targetReport;
 
+        if (currentUser) {
+          saveReportToFirestore(targetReport, currentUser.id).catch(console.error);
+        }
         return deduplicateReports(updatedReports);
       }
       return prev;
@@ -401,7 +325,42 @@ export default function App() {
       } catch(e) {
         console.warn('Failed to save video with TTL to IDB', e);
       }
+
+      if (useOptionBPipeline) {
+        try {
+          const arrayBuffer = await customVideoFile.arrayBuffer();
+          const resp = await fetch('/api/upload-video-binary', {
+            method: 'POST',
+            headers: { 
+              'Content-Type': customVideoFile.type || 'video/mp4',
+              'x-video-name': encodeURIComponent(customVideoFile.name)
+            },
+            body: arrayBuffer
+          });
+          const data = await resp.json();
+          if (data.success && data.cloudVideoUrl) {
+            updatedReport.cloudVideoUrl = data.cloudVideoUrl;
+            updatedReport.videoUrl = data.cloudVideoUrl;
+            setSavedReports((prev) => prev.map((r) => r.id === updatedReport.id ? updatedReport : r));
+            if (currentUser) {
+              saveReportToFirestore(updatedReport, currentUser.id).catch(console.error);
+            }
+          }
+        } catch (err) {
+          console.warn('Option B Cloud Video upload error:', err);
+        }
+      }
     }
+    const existingIndex = savedReports.findIndex((r) => r.id === updatedReport.id);
+    if (existingIndex < 0 && savedReports.length >= 5) {
+      setLimitModal({
+        isOpen: true,
+        title: "Save Limit Reached",
+        message: "You have reached the maximum limit of 5 saved reports (5/5 used). Please delete an existing saved report from your library before saving a new one."
+      });
+      return;
+    }
+
     setActiveReportId(updatedReport.id);
     setSavedReports((prev) => {
       const idx = prev.findIndex((r) => r.id === updatedReport.id);
@@ -412,16 +371,22 @@ export default function App() {
       }
       return deduplicateReports([updatedReport, ...prev]);
     });
+    if (currentUser) {
+      try {
+        await saveReportToFirestore(updatedReport, currentUser.id);
+      } catch (err) {
+        console.error('Failed to save report to Firestore:', err);
+      }
+    }
   };
-
-
 
   const handleDeleteReport = async (id: string) => {
     setSavedReports((prev) => prev.filter((r) => r.id !== id));
     try {
+      await deleteReportFromFirestore(id);
       await del(`video-${id}`);
     } catch (err) {
-      console.warn('Local video cleanup error:', err);
+      console.error('Failed to delete report from Firestore:', err);
     }
   };
 
@@ -443,9 +408,6 @@ export default function App() {
     if (report.keyframeList) setKeyframeList(report.keyframeList);
     if (report.allFrames) setAllFrames(report.allFrames);
     if (report.report) setCurrentAIReport(report.report);
-    setCurrentStartTime(report.startTime || 0);
-    setCurrentEndTime(report.endTime);
-    setCurrentCropBox(report.cropBox);
     if (report.sequenceComparison) setCurrentSequenceComparison(report.sequenceComparison);
     if (report.dynamicMetrics) setCurrentDynamicMetrics(report.dynamicMetrics);
 
@@ -467,50 +429,7 @@ export default function App() {
 
   const handleImportKlutchhReport = async (reportData: any) => {
     try {
-      if (!reportData) return;
-
-      // Handle Athlete Folder Bundle or Full Library Bundle (Version 1.2+)
-      if (reportData.type === 'klutchh_athlete_folder_bundle' || reportData.type === 'klutchh_full_library_bundle' || (reportData.reports && reportData.athlete)) {
-        // 1. Save/Merge Athletes to Roster
-        if (reportData.type === 'klutchh_full_library_bundle' && reportData.athletes) {
-           for (const ath of reportData.athletes) {
-             await saveCoachAthlete(ath);
-           }
-        } else if (reportData.athlete) {
-          await saveCoachAthlete(reportData.athlete);
-        }
-
-        // 2. Merge Reports into local state and localStorage
-        if (reportData.reports && Array.isArray(reportData.reports)) {
-          setSavedReports(prev => {
-            const merged = [...reportData.reports, ...prev];
-            const unique = deduplicateReports(merged);
-            localStorage.setItem('klutchh_saved_reports', safeJsonStringify(unique));
-            return unique;
-          });
-        }
-
-        // 3. Merge Trophy Cards into IndexedDB
-        if (reportData.trophyCards && Array.isArray(reportData.trophyCards)) {
-          const existingCards = await get<TrophyCard[]>('klutchh_trophy_cabinet') || [];
-          const merged = [...reportData.trophyCards, ...existingCards];
-          // Deduplicate trophies by ID
-          const uniqueTrophies = merged.filter((v, i, a) => a.findIndex(t => (t.id === v.id)) === i);
-          await set('klutchh_trophy_cabinet', uniqueTrophies);
-        }
-
-        const msg = reportData.type === 'klutchh_full_library_bundle' 
-          ? `Full Library Restored! Imported ${reportData.athletes?.length || 0} athletes, ${reportData.reports?.length || 0} reports, and ${reportData.trophyCards?.length || 0} trophy cards.`
-          : `Success! Imported ${reportData.athlete?.name || 'Athlete'}'s full folder with ${reportData.reports?.length || 0} reports and ${reportData.trophyCards?.length || 0} trophies.`;
-        
-        alert(msg);
-        setIsSavedReportsOpen(true);
-        setSavedReportsTab('folders');
-        return;
-      }
-
-      // Existing single report logic
-      if (reportData.type !== 'klutchh_biometric_report' && !reportData.aiReport && !reportData.sportId) {
+      if (!reportData || (reportData.type !== 'klutchh_biometric_report' && !reportData.aiReport && !reportData.sportId)) {
         alert('Invalid .klutchh report file format.');
         return;
       }
@@ -573,52 +492,6 @@ export default function App() {
     localStorage.removeItem('klutchh_user_session');
   };
 
-  if (isInitialLoading) {
-    return (
-      <div className="min-h-screen bg-zinc-950 flex flex-col items-center justify-center relative overflow-hidden select-none">
-        {/* Animated Cybergrid background */}
-        <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,rgba(220,38,38,0.15)_0%,transparent_75%)]" />
-        <div className="absolute inset-0 opacity-[0.03] bg-[linear-gradient(to_right,#ef4444_1px,transparent_1px),linear-gradient(to_bottom,#ef4444_1px,transparent_1px)] bg-[size:32px_32px]" />
-        
-        {/* Animated logo scanner */}
-        <div className="relative flex flex-col items-center gap-6 z-10">
-          <div className="relative">
-            {/* Glowing rings */}
-            <div className="absolute inset-0 bg-gradient-to-tr from-red-600 to-amber-500 rounded-3xl blur-2xl opacity-40 animate-pulse" />
-            
-            <div className="relative bg-zinc-900 border-2 border-red-500/40 p-6 rounded-3xl flex items-center justify-center shadow-2xl shadow-red-600/20">
-              <div className="flex items-center -space-x-2 bg-zinc-950/80 px-4 py-3 border border-zinc-800/80 rounded-2xl">
-                {/* Modern visual representation of Klutchh Icon: A stylized speed gauge + kinetic peak vector */}
-                <svg className="w-12 h-12 text-red-500 animate-pulse" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
-                  <path d="M4.5 16.5c-1.5-1.5-2.5-3.5-2.5-6s2-6 6-6s6 2 6 6s-1 4.5-2.5 6" />
-                  <path d="m12 12 4-4 4 4-4 4z" />
-                </svg>
-              </div>
-            </div>
-            {/* Biometric Scanning horizontal red bar */}
-            <div className="absolute -left-6 right-6 h-0.5 bg-red-500 shadow-[0_0_12px_#ef4444] animate-bounce top-1/2" />
-          </div>
-
-          <div className="text-center">
-            <h1 className="text-4xl font-black tracking-widest uppercase italic text-transparent bg-clip-text bg-gradient-to-r from-red-500 via-amber-400 to-yellow-300">
-              Klutchh
-            </h1>
-            <p className="text-[10px] font-black tracking-widest uppercase text-zinc-400 mt-2 flex items-center justify-center gap-2">
-              <span className="w-1.5 h-1.5 bg-red-500 rounded-full animate-ping" />
-              <span>Initializing Biometrics Rule Engine...</span>
-            </p>
-          </div>
-        </div>
-
-        {/* Footer status bar */}
-        <div className="absolute bottom-6 left-6 right-6 flex justify-between text-[8px] font-mono text-zinc-600 uppercase">
-          <span>Ver: 3.2.0-Production</span>
-          <span>System active</span>
-        </div>
-      </div>
-    );
-  }
-
   return (
     <div className="min-h-screen bg-zinc-950 text-zinc-100 flex flex-col font-sans selection:bg-red-600 selection:text-white">
       
@@ -648,11 +521,7 @@ export default function App() {
         maxAnalyses={maxAnalyses}
         onUpdateUser={(updated) => {
           setCurrentUser(updated);
-          try {
-            localStorage.setItem('klutchh_user_session', safeJsonStringify(updated));
-          } catch (e) {
-            console.warn('Failed to save user session:', e);
-          }
+          localStorage.setItem('klutchh_user_session', JSON.stringify(updated));
         }}
         onLogout={handleLogout}
         onImportReport={handleImportKlutchhReport}
@@ -661,30 +530,7 @@ export default function App() {
       {/* Main Container */}
       <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6 flex flex-col gap-6">
         
-        {viewMode === 'crop_and_scrub' && customVideoUrl ? (
-          /* VIDEO CROP AND SCRUBBER VIEW */
-          <VideoCropAndScrubber
-            sportRule={currentSport}
-            videoUrl={customVideoUrl}
-            videoFile={customVideoFile}
-            skillLevel={skillLevel}
-            athleteCategory={athleteCategory}
-            calibratedFps={calibratedFps}
-            useOptionBPipeline={useOptionBPipeline}
-            onComplete={handleProcessingMagicComplete}
-            targetAthleteAnchor={targetAthleteAnchor}
-            onTargetAthleteAnchorChange={setTargetAthleteAnchor}
-            onCancel={() => {
-              setCustomVideoUrl(null);
-              setViewMode('workspace');
-              setShowWorkspaceUploader(true);
-            }}
-            onSwitchSport={(newSportId) => {
-              handleSelectSport(newSportId);
-              setViewMode('crop_and_scrub');
-            }}
-          />
-        ) : viewMode === 'processing' ? (
+        {viewMode === 'processing' ? (
           /* MAGIC AI & BIOMETRIC PROCESSING SCREEN */
           <MagicProcessingScreen
             sportRule={currentSport}
@@ -725,9 +571,6 @@ export default function App() {
             onSaveReport={handleSaveReport}
             onBack={handleExitReportMode}
             onVideoSelected={handleVideoSelected}
-            startTime={currentStartTime}
-            endTime={currentEndTime}
-            cropBox={currentCropBox}
           />
         ) : viewMode === 'progress' ? (
           /* HISTORICAL PROGRESS DASHBOARD */
@@ -748,15 +591,12 @@ export default function App() {
             selectedMovementPhase={selectedMovementPhase}
             onChangeMovementPhase={setSelectedMovementPhase}
             onVideoSelected={handleVideoSelected}
-            onOpenNativeCamera={() => setIsNativeCameraOpen(true)}
             customVideoUrl={customVideoUrl}
             analysisCount={analysisCount}
             maxAnalyses={maxAnalyses}
             currentUser={currentUser}
             onOpenAuth={() => setIsAuthOpen(true)}
             onImportReport={handleImportKlutchhReport}
-            targetAthleteAnchor={targetAthleteAnchor}
-            onSelectAthleteAnchor={setTargetAthleteAnchor}
           />
         )}
 
@@ -805,7 +645,6 @@ export default function App() {
         onDeleteReport={handleDeleteReport}
         onImportReport={handleImportKlutchhReport}
         onDeleteTrophyCard={handleDeleteTrophyCard}
-
         initialTab={savedReportsTab}
       />
 
@@ -816,14 +655,6 @@ export default function App() {
         onSuccess={(report) => {
           handleLoadSavedReport(report);
         }}
-      />
-
-      {/* Native Live Camera Modal */}
-      <NativeLiveCameraModal
-        isOpen={isNativeCameraOpen}
-        onClose={() => setIsNativeCameraOpen(false)}
-        onRecordingComplete={handleVideoSelected}
-        sportName={currentSport.name}
       />
 
       {/* Footer */}

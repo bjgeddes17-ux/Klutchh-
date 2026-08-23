@@ -6,8 +6,6 @@
     <meta name="theme-color" content="#dc2626" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
-    <link rel="icon" type="image/png" href="/icon-192.png" />
-    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
     <link rel="manifest" href="/manifest.json" />
     <title>Klutchh - Elite Sports Video Pose & Biometrics Analyzer</title>
   </head>
@@ -15,15 +13,12 @@
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
     <script>
-      // Clean up service workers in dev preview to prevent stale asset interception and Unexpected token '<' errors
       if ('serviceWorker' in navigator) {
-        if (window.location.hostname.includes('localhost') || window.location.hostname.includes('run.app')) {
-          navigator.serviceWorker.getRegistrations().then((registrations) => {
-            for (const registration of registrations) {
-              registration.unregister();
-            }
-          }).catch(() => {});
-        }
+        window.addEventListener('load', () => {
+          navigator.serviceWorker.register('/sw.js').catch((err) => {
+            console.log('SW registration note:', err);
+          });
+        });
       }
     </script>
   </body>

@@ -1,6 +1,5 @@
 import { get, set } from 'idb-keyval';
 import { AthleteProfile, SavedReport, SportId, AthleteCategory, TrophyCard } from '../types';
-import { safeJsonStringify } from './privacyStorage';
 
 const ROSTER_STORAGE_KEY = 'klutchh_coach_roster';
 const TROPHY_CABINET_KEY = 'klutchh_trophy_cabinet';
@@ -171,64 +170,8 @@ export function groupReportsByAthleteFolder(
 }
 
 /**
- * Exports an entire athlete's folder containing all their reports and cards as a single .klutchh-bundle file
+ * Exports a single report or an entire athlete's folder package
  */
-export function exportAthleteFolderBundle(group: AthleteFolderGroup) {
-  const safeAthlete = (group.athlete.name || 'Athlete').replace(/[^a-zA-Z0-9_-]/g, '_');
-  const dateStr = new Date().toISOString().split('T')[0];
-  const filename = `Klutchh_Folder_${safeAthlete}_${dateStr}.klutchh-bundle`;
-
-  const payload = {
-    version: '1.2',
-    type: 'klutchh_athlete_folder_bundle',
-    folderName: group.folderName,
-    athlete: group.athlete,
-    reportsCount: group.reports.length,
-    trophyCardsCount: group.trophyCards.length,
-    exportedAt: new Date().toISOString(),
-    reports: group.reports,
-    trophyCards: group.trophyCards
-  };
-
-  const blob = new Blob([safeJsonStringify(payload, 2)], { type: 'application/json' });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = filename;
-  document.body.appendChild(a);
-  a.click();
-  document.body.removeChild(a);
-  URL.revokeObjectURL(url);
-}
-
-/**
- * Exports everything in the app: all athletes, all reports, and all trophy cards
- */
-export async function exportFullLibraryBundle(reports: SavedReport[], athletes: AthleteProfile[]) {
-  const trophyCards = await get<TrophyCard[]>(TROPHY_CABINET_KEY) || [];
-  const dateStr = new Date().toISOString().split('T')[0];
-  const filename = `Klutchh_Master_Backup_${dateStr}.klutchh-bundle`;
-
-  const payload = {
-    version: '1.2',
-    type: 'klutchh_full_library_bundle',
-    exportedAt: new Date().toISOString(),
-    athletes,
-    reports,
-    trophyCards
-  };
-
-  const blob = new Blob([safeJsonStringify(payload, 2)], { type: 'application/json' });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = filename;
-  document.body.appendChild(a);
-  a.click();
-  document.body.removeChild(a);
-  URL.revokeObjectURL(url);
-}
-
 export function exportAthleteReportFile(report: SavedReport, videoBase64?: string | null) {
   const safeAthlete = (report.athleteName || 'Athlete').replace(/[^a-zA-Z0-9_-]/g, '_');
   const safeSport = report.sportName.toLowerCase().replace(/\s+/g, '_');
@@ -248,7 +191,7 @@ export function exportAthleteReportFile(report: SavedReport, videoBase64?: strin
     }
   };
 
-  const blob = new Blob([safeJsonStringify(payload, 2)], { type: 'application/json' });
+  const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;

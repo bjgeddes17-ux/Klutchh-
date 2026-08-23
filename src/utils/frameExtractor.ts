@@ -23,8 +23,8 @@ export async function extractFramesPipelined(
   videoUrl: string,
   onFrame: (frame: ExtractedFrame) => Promise<void>,
   onProgress: (progress: number) => void,
-  targetFps: number = 18,
-  targetHeight: number = 360,
+  targetFps: number = 20,
+  targetHeight: number = 480,
   cropBox?: { x: number; y: number; width: number; height: number },
   startTime: number = 0,
   endTime?: number
@@ -116,11 +116,15 @@ export async function extractFramesPipelined(
       }
     }, 10000); // Increased to 10s for slow mobile hardware decoders
 
-    video.onerror = () => {
+    video.onerror = (e) => {
       if (fallbackTriggered) return;
       const mediaError = video.error;
-      const errMsg = mediaError ? `MediaError code ${mediaError.code}: ${mediaError.message}` : 'Video playback/decode error';
-      console.warn(`Video element notice (${errMsg}). Switching to synthetic sport frame pipeline...`);
+      console.error('Video element encountered an error:', {
+        code: mediaError?.code,
+        message: mediaError?.message,
+        event: e
+      });
+      console.warn('Video decoding failed (Code 4) or source error. Attempting synthetic fallback...');
       runSyntheticFallback();
     };
 
@@ -165,11 +169,7 @@ export async function extractFramesPipelined(
           const currentTime = Math.round(t * 1000) / 1000;
           
           try {
-            if (typeof (video as any).fastSeek === 'function') {
-              (video as any).fastSeek(currentTime);
-            } else {
-              video.currentTime = currentTime;
-            }
+            video.currentTime = currentTime;
 
             await new Promise<void>((resolveSeek, rejectSeek) => {
               let done = false;
@@ -186,12 +186,12 @@ export async function extractFramesPipelined(
                   done = true;
                   video.removeEventListener('seeked', handleSeeked);
                   video.removeEventListener('error', handleError);
-                  rejectSeek(new Error(`Video seek error: ${err?.message || 'MediaError'}`));
+                  rejectSeek(err);
                 }
               };
               video.addEventListener('seeked', handleSeeked);
               video.addEventListener('error', handleError);
-              setTimeout(handleSeeked, 80); // Ultra-responsive seek timeout for mobile decoders
+              setTimeout(handleSeeked, 400); // Increased timeout for slow decoders
             });
 
             const vWidth = video.videoWidth || 640;
@@ -208,6 +208,13 @@ export async function extractFramesPipelined(
 
             const frame: ExtractedFrame = { imageBitmap, timestamp: currentTime, index: frameCount };
 
+            // Persist blob to IndexedDB asynchronously in background
+            canvas.toBlob((blob) => {
+              if (blob) {
+                set(`${idbPrefix}${frameCount}`, { blob, timestamp: currentTime, index: frameCount }).catch(() => {});
+              }
+            }, 'image/jpeg', 0.8);
+
             // Process immediately through pose detection pipeline
             await onFrame(frame);
 
@@ -217,12 +224,12 @@ export async function extractFramesPipelined(
             frameCount++;
             onProgress(Math.min(99, Math.round((frameCount / Math.max(1, totalExpectedFrames)) * 100)));
 
-            // Yield lightly every 8 frames to keep UI responsive
-            if (frameCount % 8 === 0) {
-              await new Promise(r => setTimeout(r, 4));
+            // Safety throttle to let hardware decoder catch up - avoids Code 4 crashes
+            if (frameCount % 5 === 0) {
+              await new Promise(r => setTimeout(r, 15));
             }
-          } catch (seekErr: any) {
-            console.warn('Seek or frame processing error, attempting recovery:', seekErr?.message || String(seekErr));
+          } catch (seekErr) {
+            console.warn('Seek or frame processing error, attempting recovery:', seekErr);
             // Non-fatal, just continue or trigger fallback if too many errors
           }
         }

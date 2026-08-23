@@ -71,7 +71,7 @@ export const D3SkeletonHeatmap: React.FC<D3SkeletonHeatmapProps> = ({
         closestIdx = idx;
       }
     });
-    if (closestIdx !== selectedKeyframeIndex) {
+    if (closestIdx !== selectedKeyframeIndex && minDiff < 0.8) {
       setSelectedKeyframeIndex(closestIdx);
     }
   }, [currentTime, keyframeList]);
