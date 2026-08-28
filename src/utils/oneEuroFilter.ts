@@ -32,6 +32,10 @@ class LowPassFilter {
     return this.y || 0;
   }
 
+  lastFilteredValue(): number {
+    return this.s || 0;
+  }
+
   reset() {
     this.y = null;
     this.s = null;
@@ -79,6 +83,21 @@ class OneEuroFilter1D {
     return this.xFilt.filter(value, this.alpha(cutoff, dt));
   }
 
+  /**
+   * Predicts the next value based on the current estimated velocity.
+   * Useful for filling gaps during occlusions or rejecting sudden jumps.
+   */
+  predict(dt: number): number {
+    if (this.lastTime === null) return 0;
+    const currentVal = this.xFilt.lastFilteredValue();
+    const velocity = this.dxFilt.lastFilteredValue();
+    return currentVal + velocity * dt;
+  }
+
+  getVelocity(): number {
+    return this.dxFilt.lastFilteredValue();
+  }
+
   reset() {
     this.xFilt.reset();
     this.dxFilt.reset();
@@ -116,21 +135,27 @@ export class PoseLandmarkSmoother {
       let rawY = lm.y;
       let rawZ = lm.z || 0;
 
-      // AWKWARD ANGLE & OCCLUSION CLAMPING:
-      // If previous frame exists, clamp velocity to prevent erratic snaps during awkward joint rotations
+      // PREDICTIVE OUTLIER REJECTION:
+      // Compare current raw detection with predicted position based on previous velocity.
+      // If the error is massive (e.g. joint jumps to opposite side of screen), we favor the prediction.
       if (this.lastValidLandmarks && this.lastValidLandmarks[index]) {
-        const prev = this.lastValidLandmarks[index];
-        const maxDeltaPerSec = 4.5; // Maximum realistic joint speed in normalized screen space per second
-        const maxDelta = maxDeltaPerSec * dt;
+        const predX = f.x.predict(dt);
+        const predY = f.y.predict(dt);
 
-        const dx = rawX - prev.x;
-        const dy = rawY - prev.y;
-        const dist = Math.sqrt(dx * dx + dy * dy);
+        const dx = rawX - predX;
+        const dy = rawY - predY;
+        const errorDist = Math.sqrt(dx * dx + dy * dy);
 
-        if (dist > maxDelta && dt < 0.2) {
-          // Velocity violation (awkward occlusion jump) -> gently clamp towards previous position
-          rawX = prev.x + (dx / dist) * maxDelta;
-          rawY = prev.y + (dy / dist) * maxDelta;
+        // Adaptive threshold: Allow more error if moving fast (high beta), 
+        // but clamp extreme jumps (e.g. > 15% of screen height/width in one frame)
+        const maxExpectedError = 0.15; 
+        
+        if (errorDist > maxExpectedError && dt < 0.1) {
+          // Detection likely failed/jumped (occlusion or motion blur ghosting)
+          // We "nudge" the raw value back towards the prediction to prevent the filter from destabilizing
+          const nudgeFactor = 0.2; // Keep 20% of the raw jump, 80% prediction
+          rawX = predX + dx * nudgeFactor;
+          rawY = predY + dy * nudgeFactor;
         }
       }
 

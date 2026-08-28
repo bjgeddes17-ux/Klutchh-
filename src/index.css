@@ -8,6 +8,21 @@
     -ms-overflow-style: none;
     scrollbar-width: none;
   }
+  .custom-scrollbar::-webkit-scrollbar {
+    height: 6px;
+    width: 6px;
+  }
+  .custom-scrollbar::-webkit-scrollbar-track {
+    background: rgba(24, 24, 27, 0.6);
+    border-radius: 8px;
+  }
+  .custom-scrollbar::-webkit-scrollbar-thumb {
+    background: rgba(239, 68, 68, 0.6);
+    border-radius: 8px;
+  }
+  .custom-scrollbar::-webkit-scrollbar-thumb:hover {
+    background: rgba(239, 68, 68, 0.9);
+  }
   .cyber-gradient {
     background: linear-gradient(135deg, #09090b 0%, #18181b 50%, #1f1014 100%);
   }

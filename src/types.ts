@@ -1,4 +1,4 @@
-export type SportId = 'rugby' | 'soccer' | 'netball' | 'hockey' | 'cricket' | 'tennis' | 'golf' | 'basketball' | 'swim';
+export type SportId = 'rugby' | 'soccer' | 'netball' | 'hockey' | 'cricket' | 'tennis' | 'golf';
 
 export type AthleteCategory = 'elementary' | 'middle_school' | 'high_school';
 
@@ -47,7 +47,6 @@ export interface Drill {
   howToExecute?: string[];
   coachingCue?: string;
   targetJoint?: string;
-  difficultyTier?: SkillLevel;
 }
 
 export type CorrectiveDrill = Drill;
@@ -61,18 +60,19 @@ export interface MediaPipeLandmark {
 
 export interface FrameAnalysis {
   timestamp: number; // seconds
-  frameNumber?: number;
+  frameNumber: number;
   landmarks: MediaPipeLandmark[];
   angles: Record<string, number>; // ruleId -> calculated angle
   ruleResults: Record<string, 'optimal' | 'good' | 'warning' | 'error'>;
-  symmetryScore?: number; // 0-100%
-  kneeSafetyScore?: number; // 0-100%
+  symmetryScore: number; // 0-100%
+  kneeSafetyScore: number; // 0-100%
   detectedPhase: string;
-  activeLevel?: SkillLevel;
+  activeLevel: SkillLevel;
   isRealDetection?: boolean;
   velocity?: Record<string, number>; // Angular velocity in deg/s
+  jointVelocities?: Record<string, number>; // Linear velocity for heatmap
   torque?: Record<string, number>; // Estimated relative torque
-  triggerTag?: string; // Biomechanical marker for this specific frame
+  matchScore?: number; // 0-100% archetype match
 }
 
 export interface PhaseTrigger {
@@ -82,7 +82,19 @@ export interface PhaseTrigger {
   jointId?: number; // For relative position triggers
   targetId?: number; // For relative position comparison
   threshold: number;
-  requiredBiomechanics?: string; // Descriptive tag of what must happen (e.g. "Lead arm must lock to 180°")
+}
+
+export interface BiomechanicalArchetype {
+  phase: string;
+  targetAngles: Record<string, number>; // jointId/name -> expected angle
+  expectedVelocity?: {
+    jointIdx: number;
+    vector: { x: number; y: number; z: number };
+    minMagnitude: number;
+  };
+  forceDirection?: { x: number; y: number; z: number }; // Direction of intended movement force
+  spineConstraint: 'linear' | 'coiled' | 'hinged';
+  centerOfGravityOffset?: { x: number; y: number }; // Relative to base of support
 }
 
 export interface MovementTechnique {
@@ -93,6 +105,7 @@ export interface MovementTechnique {
   sequence: string[];
   jointRules: JointRule[];
   triggers?: PhaseTrigger[];
+  archetypes?: BiomechanicalArchetype[];
 }
 
 export interface SportRule {
@@ -109,6 +122,7 @@ export interface SportRule {
   drills?: Drill[];
   sampleVideoUrl?: string;
   sampleVideoTitle?: string;
+  archetypes?: BiomechanicalArchetype[];
 }
 
 export interface StrengthItem {
@@ -168,14 +182,11 @@ export interface AICoachingReport {
     level: 'low' | 'moderate' | 'high';
     findings: string[];
     preventionDrills: string[];
-    explanation?: string;
   };
   funCorrectiveDrills: CorrectiveDrill[];
   coachEncouragement: string;
   averageVelocities?: Record<string, number>;
   averageTorques?: Record<string, number>;
-  gamifiedKidDossier?: any;
-  proTipsAndCoolFacts?: any;
 }
 
 export interface UserAccount {
@@ -208,6 +219,9 @@ export interface SavedReport {
   athleteName?: string;
   folderName?: string;
   videoUrl?: string;
+  startTime?: number;
+  endTime?: number;
+  cropBox?: { x: number; y: number; width: number; height: number };
   duration: number;
   overallGrade: string;
   overallScore: number;
@@ -241,6 +255,12 @@ export interface SavedReport {
     peakAngularVelocity: number;
     estimatedPeakTorque: number;
     explosivenessScore: number;
+    overallBiometricScore?: number;
+    overallSymmetry?: number;
+    overallKneeSafety?: number;
+    precisionScore?: number;
+    kineticFlowScore?: number;
+    jointArmorScore?: number;
   };
   coachNotes?: string;
   authorName: string;
@@ -253,6 +273,9 @@ export interface SavedReport {
 
 export interface AnalysisResult {
   keyframes: FrameAnalysis[];
+  startTime?: number;
+  endTime?: number;
+  cropBox?: { x: number; y: number; width: number; height: number };
   allFrames?: FrameAnalysis[];
   aiReport: AICoachingReport;
   overallSymmetry: number;
@@ -284,6 +307,12 @@ export interface AnalysisResult {
     peakAngularVelocity: number;
     estimatedPeakTorque: number;
     explosivenessScore: number;
+    overallBiometricScore?: number;
+    overallSymmetry?: number;
+    overallKneeSafety?: number;
+    precisionScore?: number;
+    kineticFlowScore?: number;
+    jointArmorScore?: number;
   };
   isInvalidVideo?: boolean;
   invalidVideoReason?: string;

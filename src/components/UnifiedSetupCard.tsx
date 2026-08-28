@@ -1,7 +1,7 @@
 import React, { useRef, useState } from 'react';
 import { SPORTS_RULES } from '../data/sportsRules';
 import { SportId, UserAccount } from '../types';
-import { Upload, Sparkles, AlertCircle, CheckCircle2, Trophy, Activity, Target, Lock, FolderOpen } from 'lucide-react';
+import { Upload, AlertCircle, CheckCircle2, Trophy, Activity, Target, Lock, FolderOpen, Dumbbell } from 'lucide-react';
 import { motion } from 'motion/react';
 import eliteHeroImage from '../assets/images/klutchh_elite_hero_1786393193958.jpg';
 
@@ -21,6 +21,7 @@ interface UnifiedSetupCardProps {
   onImportReport?: (data: any) => void;
   targetAthleteAnchor?: 'auto' | 'left' | 'center' | 'right';
   onSelectAthleteAnchor?: (anchor: 'auto' | 'left' | 'center' | 'right') => void;
+  onOpenDrillsLibrary?: () => void;
 }
 
 export const UnifiedSetupCard: React.FC<UnifiedSetupCardProps> = ({
@@ -37,6 +38,9 @@ export const UnifiedSetupCard: React.FC<UnifiedSetupCardProps> = ({
   currentUser,
   onOpenAuth,
   onImportReport,
+  targetAthleteAnchor = 'auto',
+  onSelectAthleteAnchor,
+  onOpenDrillsLibrary,
 }) => {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [fileName, setFileName] = useState<string | null>(null);
@@ -121,7 +125,7 @@ export const UnifiedSetupCard: React.FC<UnifiedSetupCardProps> = ({
       >
         <img 
           src={eliteHeroImage} 
-          alt="Klutchh Elite AI Engine" 
+          alt="Klutchh Elite Engine" 
           className="absolute inset-0 w-full h-full object-cover object-center group-hover:scale-105 transition-transform duration-700 z-0"
         />
         <div className="absolute inset-0 bg-gradient-to-r from-zinc-950/95 via-zinc-950/80 sm:via-zinc-950/60 to-transparent z-10" />
@@ -132,7 +136,6 @@ export const UnifiedSetupCard: React.FC<UnifiedSetupCardProps> = ({
             transition={{ delay: 0.3, duration: 0.5 }}
             className="inline-flex items-center gap-2 bg-gradient-to-r from-red-600/30 via-amber-500/30 to-transparent border-l-4 border-red-500 px-4 py-1.5 rounded-r-full text-amber-400 text-xs font-black uppercase tracking-wider mb-3 w-fit backdrop-blur-sm"
           >
-            <Sparkles className="w-4 h-4 fill-current" />
             <span>YOUR JOURNEY TO GREATNESS</span>
           </motion.div>
           <motion.h2 
@@ -271,6 +274,69 @@ export const UnifiedSetupCard: React.FC<UnifiedSetupCardProps> = ({
               );
             })}
           </div>
+
+          {onOpenDrillsLibrary && (
+            <button
+              onClick={onOpenDrillsLibrary}
+              className="mt-1 w-full bg-gradient-to-r from-amber-500/10 via-yellow-500/10 to-red-500/10 hover:from-amber-500/20 hover:to-red-500/20 border border-amber-500/30 hover:border-amber-400 p-3.5 rounded-xl flex items-center justify-between transition-all group cursor-pointer"
+            >
+              <div className="flex items-center gap-3">
+                <div className="w-8 h-8 rounded-lg bg-amber-400/20 text-amber-400 border border-amber-400/40 flex items-center justify-center shrink-0 group-hover:scale-110 transition-transform">
+                  <Dumbbell className="w-4 h-4" />
+                </div>
+                <div className="text-left">
+                  <h4 className="text-xs font-black text-white uppercase tracking-wider">
+                    Browse Biometric Drills & Movement Rules Library
+                  </h4>
+                  <p className="text-[11px] text-zinc-400 font-medium">
+                    Select elite coaching drills with photo guides to set custom movement rules for your analysis.
+                  </p>
+                </div>
+              </div>
+              <span className="text-xs font-black text-amber-400 uppercase tracking-wider shrink-0 flex items-center gap-1 group-hover:translate-x-1 transition-transform">
+                Explore →
+              </span>
+            </button>
+          )}
+        </div>
+
+        {/* STEP 1.7: MULTI-PERSON GRID SELECTOR */}
+        <div className="flex flex-col gap-3">
+          <div className="flex items-center justify-between border-b border-zinc-800 pb-2">
+            <div className="flex items-center gap-2">
+              <span className="w-6 h-6 rounded-lg bg-zinc-800 text-amber-400 font-black text-xs flex items-center justify-center shrink-0 border border-amber-500/30">
+                1.7
+              </span>
+              <h3 className="text-xs font-black uppercase text-white tracking-wider">
+                Multi-Person Selection
+              </h3>
+            </div>
+            <span className="text-[10px] text-zinc-400 font-mono">
+              Multiple athletes in frame? Select target zone.
+            </span>
+          </div>
+
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
+            {(['auto', 'left', 'center', 'right'] as const).map((anchor) => {
+              const isSelected = targetAthleteAnchor === anchor;
+              return (
+                <button
+                  key={anchor}
+                  onClick={() => onSelectAthleteAnchor?.(anchor)}
+                  className={`p-3 rounded-xl border text-center transition-all flex flex-col items-center justify-center gap-1.5 ${
+                    isSelected
+                      ? 'bg-amber-500 text-zinc-950 border-amber-400 shadow-md shadow-amber-500/20'
+                      : 'bg-zinc-950 border-zinc-800 text-zinc-400 hover:text-white hover:border-zinc-700'
+                  }`}
+                >
+                  <span className="text-[10px] font-black uppercase tracking-wide">
+                    {anchor === 'auto' ? 'Auto / Primary' : `${anchor} Zone`}
+                  </span>
+                  {isSelected && <CheckCircle2 className={`w-4 h-4 ${isSelected ? 'text-zinc-950' : 'text-amber-400'}`} />}
+                </button>
+              );
+            })}
+          </div>
         </div>
 
         {/* STEP 2: UPLOAD VIDEO CLIP */}
@@ -285,9 +351,6 @@ export const UnifiedSetupCard: React.FC<UnifiedSetupCardProps> = ({
               </h3>
             </div>
             <div className="flex flex-col items-end gap-1">
-              <span className="text-[10px] bg-amber-500/10 text-amber-300 border border-amber-500/30 px-2 py-0.5 rounded font-mono font-bold">
-                Analyses Used: {analysisCount}/{maxAnalyses} Free
-              </span>
               <div className="flex flex-col items-end">
                 <span className="text-[10px] text-zinc-400 font-mono">
                   MP4, MOV, WebM (Max 30s)
@@ -349,7 +412,7 @@ export const UnifiedSetupCard: React.FC<UnifiedSetupCardProps> = ({
                   Authentication Required
                 </h4>
                 <p className="text-xs text-zinc-400 mt-1 leading-relaxed">
-                  You must be signed in to upload and run AI biomechanical pose extraction on athletic footage. Save reports directly to your profile.
+                  Sign in to save your reports directly to your local profile. Pose detection and biometrics process instantly on your device.
                 </p>
               </div>
 

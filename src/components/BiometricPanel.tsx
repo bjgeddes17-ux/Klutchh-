@@ -2,6 +2,7 @@ import React from 'react';
 import { SportRule, JointRule, FrameAnalysis, SkillLevel } from '../types';
 import { calculateKlutchhScore, getBiomechanicalSequence } from '../utils/klutchhAnalysis';
 import { ShieldCheck, AlertCircle, CheckCircle2, Activity, Target, Flame, Zap, Info, Star, Cpu, ArrowRight } from 'lucide-react';
+import { checkJointVisibilityOcclusion } from '../utils/geometry';
 
 interface BiometricPanelProps {
   sportRule: SportRule;
@@ -32,6 +33,7 @@ export const BiometricPanel: React.FC<BiometricPanelProps> = ({
 
   const activeKneeScore = analysis?.kneeSafetyScore ?? 92;
   const activeSymmetryScore = analysis?.symmetryScore ?? 88;
+  const occlusion = checkJointVisibilityOcclusion(analysis?.landmarks);
 
   const getCoachingFeedback = (
     rule: JointRule,
@@ -70,6 +72,21 @@ export const BiometricPanel: React.FC<BiometricPanelProps> = ({
           <span>{sportRule.jointRules.length} Rules</span>
         </div>
       </div>
+
+      {/* Low Visibility / Occlusion Warning Banner */}
+      {occlusion.hasOcclusion && (
+        <div className="bg-amber-500/10 border border-amber-500/40 p-3.5 rounded-xl flex items-start gap-3 text-amber-200 text-xs shadow-md">
+          <AlertCircle className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
+          <div className="flex flex-col gap-1">
+            <span className="font-black uppercase tracking-wider text-amber-300">
+              ⚠️ Low Visibility Warning: {occlusion.occludedLimbs.join(', ')} Occluded or Low Confidence
+            </span>
+            <span>
+              The pose tracker detected partial occlusion or low visibility for the above body parts in this frame. Joint angle measurements and kinematics are estimated using biomechanical skeleton extrapolation. For higher tracking fidelity, ensure clear camera angles and lighting.
+            </span>
+          </div>
+        </div>
+      )}
 
       {/* KLUTCHH SCORE OUT OF 10 & 30 FPS VERIFICATION HERO CARD */}
       <div className="bg-gradient-to-r from-zinc-900 via-red-950/30 to-zinc-900 border border-red-500/30 p-3 sm:p-4 rounded-xl flex flex-col sm:flex-row items-center justify-between gap-4 shadow-lg">

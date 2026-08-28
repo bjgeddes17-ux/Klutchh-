@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
+import { motion } from 'motion/react';
 import { SportRule, FrameAnalysis } from '../types';
 import { 
   CheckCircle2, 
@@ -720,7 +721,7 @@ export const SequenceVerificationMatrix: React.FC<SequenceVerificationMatrixProp
                                   'bg-zinc-800 border-zinc-700 hover:bg-zinc-800 hover:border-zinc-750 text-zinc-300'
                                 }`}
                               >
-                                {drillState === 'mastered' ? <Sparkles className="w-3.5 h-3.5" /> : <CheckCircle2 className="w-3.5 h-3.5" />}
+                                {drillState === 'mastered' ? <Activity className="w-3.5 h-3.5" /> : <CheckCircle2 className="w-3.5 h-3.5" />}
                                 <span>
                                   {drillState === 'pending' ? 'Mark Drill as Practiced' :
                                    drillState === 'completed' ? 'Mark Drill as Mastered' :
@@ -812,7 +813,7 @@ export const SequenceVerificationMatrix: React.FC<SequenceVerificationMatrixProp
                                   'bg-zinc-855 border-zinc-700 hover:bg-zinc-800 hover:border-zinc-700 text-zinc-300'
                                 }`}
                               >
-                                {drillState === 'mastered' ? <Sparkles className="w-3.5 h-3.5" /> : <CheckCircle2 className="w-3.5 h-3.5" />}
+                                {drillState === 'mastered' ? <Activity className="w-3.5 h-3.5" /> : <CheckCircle2 className="w-3.5 h-3.5" />}
                                 <span>
                                   {drillState === 'pending' ? 'Mark Drill as Practiced' :
                                    drillState === 'completed' ? 'Mark Drill as Mastered' :
@@ -834,7 +835,7 @@ export const SequenceVerificationMatrix: React.FC<SequenceVerificationMatrixProp
           <div className="bg-zinc-900 border border-amber-500/20 rounded-2xl p-4 flex flex-col gap-3">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
-                <Sparkles className="w-4 h-4 text-amber-400" />
+                <Activity className="w-4 h-4 text-amber-400" />
                 <span className="text-xs font-black uppercase text-zinc-300">
                   Manual Sequence Calibration
                 </span>
@@ -939,7 +940,7 @@ export const SequenceVerificationMatrix: React.FC<SequenceVerificationMatrixProp
                             <span className="text-[8px] font-mono font-bold uppercase text-zinc-400">
                               {isOutOfOrder ? '⚠️ OUT OF SEQUENCE' : timestamp > 0 ? `${timestamp.toFixed(2)}s` : `✓ Detected`}
                             </span>
-                            {status === 'optimal' && <Sparkles className="w-2.5 h-2.5 text-emerald-400" />}
+                            {status === 'optimal' && <CheckCircle2 className="w-2.5 h-2.5 text-emerald-400" />}
                           </div>
                           <span className="text-xs font-black uppercase tracking-wide">{phase}</span>
                         </button>
@@ -965,6 +966,100 @@ export const SequenceVerificationMatrix: React.FC<SequenceVerificationMatrixProp
               </div>
             )}
           </div>
+
+          {/* NEW: Archetype Fidelity Report - Identifying each kinetic sequence step quality */}
+          {kineticSequence && kineticSequence.steps && kineticSequence.steps.length > 0 && (
+            <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-4 flex flex-col gap-4 animate-fadeIn">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <TrendingUp className="w-4 h-4 text-emerald-400" />
+                  <span className="text-xs font-black uppercase text-zinc-300">Biomechanical Archetype Fidelity</span>
+                </div>
+                <div className="flex items-center gap-1">
+                  <span className="text-[10px] font-mono text-zinc-500 uppercase tracking-tighter">Mean Match Quality:</span>
+                  <span className="text-[10px] font-black text-emerald-400">
+                    {Math.round(kineticSequence.steps.reduce((acc, s) => acc + s.score, 0) / kineticSequence.steps.length)}%
+                  </span>
+                </div>
+              </div>
+
+              <div className="flex flex-col gap-2">
+                {kineticSequence.steps.map((step, idx) => {
+                  const score = step.score || 0;
+                  const status = step.status || 'good';
+                  const isOptimal = status === 'optimal' || score > 85;
+                  const isWarning = status === 'warning' || (score > 40 && score <= 70);
+                  const isError = status === 'error' || score <= 40;
+
+                  return (
+                    <div 
+                      key={idx}
+                      className="group bg-zinc-950 border border-zinc-800/80 p-3 rounded-xl flex items-center justify-between transition-all hover:border-zinc-700"
+                    >
+                      <div className="flex items-center gap-3">
+                        <div className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 font-black text-[10px] border ${
+                          isOptimal ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-400' :
+                          isWarning ? 'bg-amber-500/10 border-amber-500/20 text-amber-400' :
+                          isError ? 'bg-red-500/10 border-red-500/20 text-red-400' :
+                          'bg-zinc-900 border-zinc-800 text-zinc-500'
+                        }`}>
+                          0{idx + 1}
+                        </div>
+                        <div className="flex flex-col gap-0.5">
+                          <span className="text-xs font-black text-white uppercase tracking-wide truncate max-w-[140px] sm:max-w-none">
+                            {step.name}
+                          </span>
+                          <div className="flex items-center gap-1.5">
+                            <span className={`text-[9px] font-mono font-bold uppercase ${
+                              isOptimal ? 'text-emerald-500' :
+                              isWarning ? 'text-amber-500' :
+                              isError ? 'text-red-500' :
+                              'text-zinc-500'
+                            }`}>
+                              {isOptimal ? 'High Fidelity Match' : isWarning ? 'Technique Variance' : isError ? 'Pattern Deviation' : 'Standard Match'}
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="flex items-center gap-4">
+                        <div className="hidden sm:flex flex-col items-end gap-1">
+                          <div className="w-24 h-1.5 bg-zinc-900 rounded-full border border-zinc-800 overflow-hidden">
+                            <motion.div 
+                              initial={{ width: 0 }}
+                              animate={{ width: `${score}%` }}
+                              className={`h-full rounded-full ${
+                                isOptimal ? 'bg-emerald-500' :
+                                isWarning ? 'bg-amber-500' :
+                                isError ? 'bg-red-500' :
+                                'bg-zinc-500'
+                              }`}
+                            />
+                          </div>
+                        </div>
+                        <div className={`flex flex-col items-center justify-center w-12 h-8 rounded-lg border ${
+                          isOptimal ? 'bg-emerald-500/5 border-emerald-500/20 text-emerald-400' :
+                          isWarning ? 'bg-amber-500/5 border-amber-500/20 text-amber-400' :
+                          isError ? 'bg-red-500/5 border-red-500/20 text-red-400' :
+                          'bg-zinc-900 border-zinc-800 text-zinc-500'
+                        }`}>
+                          <span className="text-[10px] font-black leading-none">{Math.round(score)}%</span>
+                          <span className="text-[7px] font-mono uppercase opacity-60">Match</span>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+
+              <div className="bg-zinc-950/50 p-3 rounded-xl border border-zinc-800/80 flex items-start gap-2.5">
+                <Info className="w-4 h-4 text-zinc-500 shrink-0 mt-0.5" />
+                <p className="text-[10px] text-zinc-400 leading-relaxed">
+                  <strong>Archetype Match Quality (Fidelity)</strong> measures how closely your skeletal geometry, velocity vectors, and joint orientations match the <strong className="text-zinc-200">Klutchh Biomechanical Archetype</strong> for this specific sport. High fidelity (85%+) indicates elite technical replication of efficient ground-force transfer.
+                </p>
+              </div>
+            </div>
+          )}
 
         </div>
 
@@ -1148,7 +1243,7 @@ export const SequenceVerificationMatrix: React.FC<SequenceVerificationMatrixProp
       <div className="bg-zinc-900 border border-zinc-800 p-4 rounded-xl flex flex-col gap-3">
         <div className="flex items-center justify-between">
           <span className="text-[10px] font-black uppercase text-amber-400 tracking-wider flex items-center gap-1.5">
-            <Sparkles className="w-3.5 h-3.5" />
+            <Activity className="w-3.5 h-3.5" />
             Biomechanical Sequence Tutor (Explore anatomical joint loading)
           </span>
           <span className="text-[9px] text-zinc-500 font-mono">

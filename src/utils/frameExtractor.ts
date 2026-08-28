@@ -1,5 +1,6 @@
-import { set, get, clear } from 'idb-keyval';
+import { set, get, clear, keys, del } from 'idb-keyval';
 import { renderSampleSportFrame } from './sportsCanvasClips';
+import { extractFramesWebCodecs, isWebCodecsSupported, WebCodecsFrame, WebCodecsTelemetry } from './webcodecsPipeline';
 
 export class DecoderError extends Error {
   constructor(message: string) {
@@ -13,11 +14,28 @@ export interface ExtractedFrame {
   imageBitmap?: ImageBitmap;
   timestamp: number;
   index: number;
+  hardwareGpuPipeline?: boolean;
+  microsecondTimestamp?: number;
 }
 
 /**
- * High-speed frame-accurate extraction using paused video timestamp seeking & ImageBitmap transfers.
- * Includes a robust fallback to synthetic canvas frame generation for unsupported video formats (Code 4).
+ * Clears all cached frames from IndexedDB to free up space and prevent stale data overlap.
+ */
+export async function clearFrameCache(): Promise<void> {
+  try {
+    const allKeys = await keys();
+    const frameKeys = allKeys.filter(k => typeof k === 'string' && k.startsWith('frames_'));
+    for (const key of frameKeys) {
+      await del(key);
+    }
+    console.log('🗑️ IndexedDB Frame Cache Cleared');
+  } catch (err) {
+    console.warn('Failed to clear frame cache:', err);
+  }
+}
+/**
+ * Demuxes raw NAL units in JS and decodes frame-by-frame on GPU hardware without seeking lag.
+ * Falls back gracefully to HTML5 video element seeking or synthetic frame synthesis.
  */
 export async function extractFramesPipelined(
   videoUrl: string,
@@ -29,6 +47,55 @@ export async function extractFramesPipelined(
   startTime: number = 0,
   endTime?: number
 ): Promise<{ frameCount: number; duration: number }> {
+  // 1. Attempt Native GPU WebCodecs + MP4Box.js Pipeline First (Fastest, zero seeking lag)
+  if (isWebCodecsSupported() && videoUrl) {
+    try {
+      console.log('⚡ Initializing WebCodecs + MP4Box.js Native GPU Extraction Pipeline...');
+      const pendingTasks: Promise<void>[] = [];
+      const MAX_CONCURRENT = 1; // Strict limit for pose detection heavy tasks
+
+      const result = await extractFramesWebCodecs(
+        videoUrl,
+        async (wcFrame: WebCodecsFrame) => {
+          const task = onFrame({
+            imageBitmap: wcFrame.imageBitmap,
+            timestamp: wcFrame.timestamp,
+            index: wcFrame.index,
+            hardwareGpuPipeline: true,
+            microsecondTimestamp: wcFrame.microsecondTimestamp
+          });
+          
+          pendingTasks.push(task);
+          if (pendingTasks.length >= MAX_CONCURRENT) {
+            await pendingTasks[0];
+            pendingTasks.shift();
+          }
+        },
+        (progressPct) => {
+          onProgress(progressPct);
+        },
+        {
+          targetFps,
+          targetHeight,
+          cropBox,
+          startTime,
+          endTime
+        }
+      );
+
+      // Await all frames being processed by pose detection before finishing
+      await Promise.all(pendingTasks);
+
+      if (result.frameCount > 0) {
+        console.log(`✅ WebCodecs + MP4Box.js GPU Pipeline successful: ${result.frameCount} frames extracted at ${result.telemetry.decodingSpeedFps} FPS!`);
+        return { frameCount: result.frameCount, duration: result.duration };
+      }
+    } catch (wcError) {
+      console.warn('⚠️ WebCodecs + MP4Box.js GPU Pipeline bypassed, falling back to HTML5 video player pipeline:', wcError);
+    }
+  }
+
+  // 2. HTML5 Video Player Fallback Pipeline
   return new Promise((resolve, reject) => {
     const video = document.createElement('video');
     video.muted = true;
@@ -116,15 +183,22 @@ export async function extractFramesPipelined(
       }
     }, 10000); // Increased to 10s for slow mobile hardware decoders
 
-    video.onerror = (e) => {
+    video.onerror = (_e) => {
       if (fallbackTriggered) return;
-      const mediaError = video.error;
-      console.error('Video element encountered an error:', {
-        code: mediaError?.code,
-        message: mediaError?.message,
-        event: e
-      });
-      console.warn('Video decoding failed (Code 4) or source error. Attempting synthetic fallback...');
+
+      // CORS Retry: If CORS error occurred with crossOrigin = 'anonymous', try clearing crossOrigin once
+      if (video.crossOrigin && !video.dataset.corsRetried) {
+        video.dataset.corsRetried = 'true';
+        video.crossOrigin = null;
+        video.src = videoUrl;
+        video.load();
+        return;
+      }
+
+      const mediaErr = video.error;
+      const code = mediaErr ? mediaErr.code : 'unknown';
+      const message = mediaErr ? mediaErr.message : 'Source loading or decoding issue';
+      console.warn(`Video element load warning (Code ${code}): ${message}. Switching to canvas frame synthesis fallback.`);
       runSyntheticFallback();
     };
 
@@ -157,11 +231,130 @@ export async function extractFramesPipelined(
         }
 
         const idbPrefix = `frames_${videoUrl}_`;
-        const frameInterval = 1 / targetFps; // 0.033s for 30 FPS
+        const frameInterval = 1 / targetFps; // e.g., 0.0333s for 30 FPS
         const totalExpectedFrames = Math.floor(duration / frameInterval);
         let frameCount = 0;
 
-        // Pause video to ensure currentTime remains static during frame capture and analysis
+        // Attempt Native Hardware Sequential Frame Extraction via requestVideoFrameCallback
+        if ('requestVideoFrameCallback' in HTMLVideoElement.prototype) {
+          try {
+            video.currentTime = actualStart;
+            await new Promise<void>((resSeek) => {
+              const handleSeek = () => {
+                video.removeEventListener('seeked', handleSeek);
+                resSeek();
+              };
+              video.addEventListener('seeked', handleSeek);
+              setTimeout(handleSeek, 300);
+            });
+
+            let lastCapturedTime = -1;
+            const minInterval = 0.85 / targetFps; // Prevents duplicate frames (~0.028s for 30fps)
+            const cutoffTime = Math.max(actualStart + 0.1, actualEnd - 0.08);
+
+            // Play video at 1.0x normal speed for real-time extraction
+            video.playbackRate = 1.0;
+
+            const pendingRVFCTasks: Promise<void>[] = [];
+
+            await new Promise<void>((resolveExtract) => {
+              let isDone = false;
+              let inactivityTimer: ReturnType<typeof setTimeout> | null = null;
+
+              const finish = async () => {
+                if (isDone) return;
+                isDone = true;
+                if (inactivityTimer) clearTimeout(inactivityTimer);
+                video.pause();
+                video.removeEventListener('ended', finish);
+                video.removeEventListener('pause', finish);
+                
+                // Wait for all RVFC frame detections to complete
+                await Promise.all(pendingRVFCTasks);
+                resolveExtract();
+              };
+
+              video.addEventListener('ended', finish);
+              video.addEventListener('pause', () => {
+                // If paused near the end, treat as done
+                if (video.currentTime >= cutoffTime - 0.2) finish();
+              });
+
+              const resetInactivityTimer = () => {
+                if (inactivityTimer) clearTimeout(inactivityTimer);
+                inactivityTimer = setTimeout(() => {
+                  console.warn('RVFC extraction stall detected, wrapping up extraction.');
+                  finish();
+                }, 1200);
+              };
+
+              resetInactivityTimer();
+
+              const onCallback = async (_now: DOMHighResTimeStamp, metadata: VideoFrameCallbackMetadata) => {
+                if (isDone || fallbackTriggered) return;
+                resetInactivityTimer();
+
+                const mediaTime = metadata.mediaTime;
+
+                if (mediaTime >= actualStart && mediaTime <= actualEnd + 0.05) {
+                  if (lastCapturedTime < 0 || (mediaTime - lastCapturedTime) >= minInterval) {
+                    lastCapturedTime = mediaTime;
+
+                    const vWidth = video.videoWidth || 640;
+                    const vHeight = video.videoHeight || 360;
+                    const sx = cropBox ? cropBox.x * vWidth : 0;
+                    const sy = cropBox ? cropBox.y * vHeight : 0;
+                    const sWidth = cropBox ? cropBox.width * vWidth : vWidth;
+                    const sHeight = cropBox ? cropBox.height * vHeight : vHeight;
+
+                    ctx.drawImage(video, sx, sy, sWidth, sHeight, 0, 0, targetWidth, targetHeight);
+
+                    const imageBitmap = await createImageBitmap(canvas);
+                    const frame: ExtractedFrame = { imageBitmap, timestamp: mediaTime, index: frameCount };
+
+                    canvas.toBlob((blob) => {
+                      if (blob) {
+                        set(`${idbPrefix}${frameCount}`, { blob, timestamp: mediaTime, index: frameCount }).catch(() => {});
+                      }
+                    }, 'image/jpeg', 0.8);
+
+                    // Track this detection task
+                    const task = onFrame(frame).then(() => {
+                      if (imageBitmap.close) imageBitmap.close();
+                    });
+                    pendingRVFCTasks.push(task);
+
+                    frameCount++;
+                    const progressPct = Math.min(99, Math.round(((mediaTime - actualStart) / duration) * 100));
+                    onProgress(progressPct);
+                  }
+                }
+
+                if (mediaTime >= cutoffTime || video.ended || video.paused) {
+                  finish();
+                  return;
+                }
+
+                (video as any).requestVideoFrameCallback(onCallback);
+              };
+
+              (video as any).requestVideoFrameCallback(onCallback);
+              video.play().catch(() => {
+                finish();
+              });
+            });
+
+            if (frameCount > 0) {
+              cleanup();
+              resolve({ frameCount, duration });
+              return;
+            }
+          } catch (rvfcErr) {
+            console.warn('requestVideoFrameCallback failed, falling back to seek loop:', rvfcErr);
+          }
+        }
+
+        // Fallback Step Extractor (for environments without rvfc or blocked playback)
         video.pause();
 
         for (let t = actualStart; t <= actualEnd; t += frameInterval) {
@@ -191,8 +384,10 @@ export async function extractFramesPipelined(
               };
               video.addEventListener('seeked', handleSeeked);
               video.addEventListener('error', handleError);
-              setTimeout(handleSeeked, 400); // Increased timeout for slow decoders
+              setTimeout(handleSeeked, 150);
             });
+
+            const actualSeekedTime = video.currentTime;
 
             const vWidth = video.videoWidth || 640;
             const vHeight = video.videoHeight || 360;
@@ -203,34 +398,24 @@ export async function extractFramesPipelined(
 
             ctx.drawImage(video, sx, sy, sWidth, sHeight, 0, 0, targetWidth, targetHeight);
 
-            // Instantaneous ImageBitmap creation without JPEG compression latency
             const imageBitmap = await createImageBitmap(canvas);
 
             const frame: ExtractedFrame = { imageBitmap, timestamp: currentTime, index: frameCount };
 
-            // Persist blob to IndexedDB asynchronously in background
             canvas.toBlob((blob) => {
               if (blob) {
                 set(`${idbPrefix}${frameCount}`, { blob, timestamp: currentTime, index: frameCount }).catch(() => {});
               }
             }, 'image/jpeg', 0.8);
 
-            // Process immediately through pose detection pipeline
             await onFrame(frame);
 
-            // CRITICAL: Close bitmap after processing to avoid GPU memory leaks
             if (imageBitmap.close) imageBitmap.close();
 
             frameCount++;
             onProgress(Math.min(99, Math.round((frameCount / Math.max(1, totalExpectedFrames)) * 100)));
-
-            // Safety throttle to let hardware decoder catch up - avoids Code 4 crashes
-            if (frameCount % 5 === 0) {
-              await new Promise(r => setTimeout(r, 15));
-            }
           } catch (seekErr) {
-            console.warn('Seek or frame processing error, attempting recovery:', seekErr);
-            // Non-fatal, just continue or trigger fallback if too many errors
+            console.warn('Seek or frame processing error:', seekErr);
           }
         }
 

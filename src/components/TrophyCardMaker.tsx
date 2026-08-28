@@ -14,7 +14,9 @@ import {
   Info, 
   ShieldCheck, 
   Save, 
-  Coins 
+  Coins,
+  Activity,
+  RefreshCw
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { get, set } from 'idb-keyval';
@@ -376,7 +378,7 @@ export const TrophyCardMaker: React.FC<TrophyCardMakerProps> = ({ report, curren
       coachingCue: report.report.injuryRiskAssessment.explanation || 'Maintain dynamic stability and complete complete action sequence.',
       createdAt: new Date().toISOString(),
       capturedImage,
-      sportAttributes: savedSportAttributes as any
+      sportAttributes: savedSportAttributes
     };
 
     try {
@@ -547,7 +549,7 @@ export const TrophyCardMaker: React.FC<TrophyCardMakerProps> = ({ report, curren
                 : 'bg-zinc-950 text-zinc-400 border-zinc-800 hover:text-white hover:bg-zinc-900'
             }`}
           >
-            {isCollectionView ? <Sparkles className="w-4 h-4" /> : <Trophy className="w-4 h-4" />}
+            {isCollectionView ? <Activity className="w-4 h-4" /> : <Trophy className="w-4 h-4" />}
             <span>{isCollectionView ? 'Back to Designer' : 'View My Cabinet'}</span>
           </button>
           <div className="hidden sm:flex items-center gap-2.5 bg-zinc-950/80 border border-zinc-800/80 px-4 py-2.5 rounded-xl text-xs font-mono">
@@ -766,7 +768,7 @@ export const TrophyCardMaker: React.FC<TrophyCardMakerProps> = ({ report, curren
                   <span>{isSaving ? 'Minting Card...' : 'Mint & Save to Trophy Cabinet'}</span>
                 </button>
                 <p className="text-[10px] text-zinc-500 text-center">
-                  * Minting cards automatically syncs them with your cloud account and saves your local progress.
+                  * Minting cards saves them locally to your device and tracks your progress.
                 </p>
               </div>
             </>
@@ -777,7 +779,7 @@ export const TrophyCardMaker: React.FC<TrophyCardMakerProps> = ({ report, curren
         <div className="lg:col-span-7 flex flex-col items-center justify-center gap-6 py-6 bg-zinc-950/30 border border-zinc-900 rounded-2xl">
           
           <span className="text-[10px] text-zinc-500 font-bold uppercase tracking-wider flex items-center gap-1.5">
-            <Sparkles className="w-3.5 h-3.5 text-amber-400" />
+            <Activity className="w-3.5 h-3.5 text-amber-400" />
             Hover card to trigger holographic skew. Flip to view coaching details.
           </span>
 
@@ -1020,7 +1022,7 @@ export const TrophyCardMaker: React.FC<TrophyCardMakerProps> = ({ report, curren
               </div>
 
               <div className="w-14 h-14 rounded-full bg-amber-500/15 border border-amber-500/30 flex items-center justify-center">
-                <Sparkles className="w-8 h-8 text-amber-400 animate-spin" />
+                <RefreshCw className="w-8 h-8 text-amber-400 animate-spin" />
               </div>
 
               <div>

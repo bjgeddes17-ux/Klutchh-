@@ -406,8 +406,8 @@ export const ProgressDashboard: React.FC<ProgressDashboardProps> = ({
         
         <div className="flex items-center gap-2 sm:gap-3 flex-wrap">
           <div className="hidden sm:flex items-center gap-2 bg-amber-950/40 border border-amber-500/40 px-3 py-1.5 rounded-xl text-xs font-mono text-amber-300">
-            <Sparkles className="w-3.5 h-3.5 text-amber-400 animate-pulse" />
-            <span>Real-time Sync Active</span>
+            <Activity className="w-3.5 h-3.5 text-amber-400 animate-pulse" />
+            <span>Local Mode Active</span>
           </div>
           <button className="p-2.5 rounded-xl bg-zinc-900 border border-zinc-800 text-zinc-400 hover:text-white transition-all flex items-center justify-center">
             <Download className="w-4 h-4" />
@@ -472,7 +472,7 @@ export const ProgressDashboard: React.FC<ProgressDashboardProps> = ({
         >
           <div className="absolute top-0 right-0 w-24 h-24 bg-amber-500/5 rounded-full blur-xl pointer-events-none group-hover:bg-amber-500/10 transition-all" />
           <div className="flex items-center gap-2 text-amber-400 mb-1">
-            <Sparkles className="w-4 h-4 text-amber-400 shrink-0" />
+            <TrendingUp className="w-4 h-4 text-amber-400 shrink-0" />
             <span className="text-[10px] font-black uppercase tracking-wider text-amber-300">Drill Mastery</span>
           </div>
           <div className="flex items-end gap-2">
@@ -539,7 +539,7 @@ export const ProgressDashboard: React.FC<ProgressDashboardProps> = ({
 
           <div className="bg-zinc-950 p-3 rounded-xl border border-zinc-800/80 flex items-center justify-between text-xs">
             <span className="text-zinc-400 text-[11px] flex items-center gap-1.5">
-              <Sparkles className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+              <TrendingUp className="w-3.5 h-3.5 text-amber-400 shrink-0" />
               Marking drills as <strong>"Mastered"</strong> dynamically updates the cyan trend line & performance nodes.
             </span>
           </div>
@@ -576,7 +576,7 @@ export const ProgressDashboard: React.FC<ProgressDashboardProps> = ({
       <div className="bg-zinc-900 border border-zinc-800 rounded-3xl overflow-hidden shadow-xl flex flex-col mb-8">
         <div className="p-5 border-b border-zinc-800 flex items-center justify-between bg-zinc-950/60">
           <div className="flex items-center gap-2">
-            <Sparkles className="w-4 h-4 text-amber-400" />
+            <Activity className="w-4 h-4 text-amber-400" />
             <h3 className="text-sm font-black uppercase tracking-widest text-zinc-200">
               Prescribed Drills & Session History Matrix
             </h3>
@@ -646,7 +646,7 @@ export const ProgressDashboard: React.FC<ProgressDashboardProps> = ({
                         onClick={() => {
                           if (onUpdateDrillProgress) {
                             const nextStatus = status === 'pending' ? 'completed' : status === 'completed' ? 'mastered' : 'pending';
-                            const newDp: Record<number, 'pending' | 'completed' | 'mastered'> = { ...dp, [idx]: nextStatus };
+                            const newDp = { ...dp, [idx]: nextStatus };
                             onUpdateDrillProgress(report.id, newDp);
                           }
                         }}
@@ -660,7 +660,7 @@ export const ProgressDashboard: React.FC<ProgressDashboardProps> = ({
                         title="Click to toggle drill mastery (Pending -> Completed -> Mastered)"
                       >
                         {status === 'mastered' ? (
-                          <Sparkles className="w-3 h-3 text-amber-400 shrink-0" />
+                          <Activity className="w-3 h-3 text-amber-400 shrink-0" />
                         ) : status === 'completed' ? (
                           <CheckCircle2 className="w-3 h-3 text-emerald-400 shrink-0" />
                         ) : (

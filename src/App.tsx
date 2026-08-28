@@ -6,20 +6,23 @@ import { VideoPosePlayer } from './components/VideoPosePlayer';
 import { BiometricPanel } from './components/BiometricPanel';
 import { KeyframeTimeline } from './components/KeyframeTimeline';
 import { UnifiedSetupCard } from './components/UnifiedSetupCard';
-import { AuthModal } from './components/AuthModal';
 import { SavedReportsModal } from './components/SavedReportsModal';
 import { AnalysisReportPage } from './components/AnalysisReportPage';
 import ProgressDashboard from './components/ProgressDashboard';
-import { Play, FileText, Bookmark, Sparkles, CheckCircle2, TrendingUp, ShieldAlert, AlertCircle } from 'lucide-react';
-import { auth, saveReportToFirestore, fetchUserSavedReports, deleteReportFromFirestore, logoutFirebase } from './lib/firebase';
-import { onAuthStateChanged } from 'firebase/auth';
+import { BiometricDrillsLibrary } from './components/BiometricDrillsLibrary';
+import { DrillItem } from './data/drillLibrary';
+import { Play, FileText, Bookmark, ShieldAlert, AlertCircle } from 'lucide-react';
 import { set, get, del } from 'idb-keyval';
 import { autoPurgeExpiredLocalVideos, saveLocalVideoWithTTL, getLocalVideo } from './utils/privacyStorage';
 
 import { MagicProcessingScreen } from './components/MagicProcessingScreen';
+import { VideoCropAndScrubber } from './components/VideoCropAndScrubber';
 import { detectCapableDevice } from './utils/videoAnalyzer';
 import { PinPromptModal } from './components/PinPromptModal';
 import { parseZeroKnowledgeShareHash } from './utils/shareReportUrl';
+import { resetPoseCache } from './utils/mediapipePose';
+import { clearFrameCache } from './utils/frameExtractor';
+import { calculateKlutchhScore } from './utils/klutchhAnalysis';
 
 export default function App() {
   const [selectedSportId, setSelectedSportId] = useState<SportId>('rugby');
@@ -51,27 +54,29 @@ export default function App() {
     message: string;
   } | null>(null);
 
-  // User Auth & Saved Reports State
+  // User Auth & Saved Reports State (100% Local)
   const [currentUser, setCurrentUser] = useState<UserAccount | null>(() => {
     const saved = localStorage.getItem('klutchh_user_session');
     if (saved) {
       try {
-        const parsed = JSON.parse(saved);
-        if (parsed && parsed.email !== 'marcus.vance@klutchh.app') {
-          return parsed;
-        }
+        return JSON.parse(saved);
       } catch (e) {
         return null;
       }
     }
-    return null;
+    // Default local coach profile for zero-config startup
+    const defaultUser: UserAccount = {
+      id: 'local-coach-' + Math.random().toString(36).substring(2, 9),
+      name: 'Local Coach',
+      email: 'coach@local.klutchh',
+      role: 'Coach',
+      clubOrSchool: 'Local Institution'
+    };
+    localStorage.setItem('klutchh_user_session', JSON.stringify(defaultUser));
+    return defaultUser;
   });
 
-  const maxAnalyses = currentUser?.email === 'bjgeddes17@gmail.com' 
-    ? 1000 
-    : (currentUser?.email?.includes('@klutchh.demo') || currentUser?.id?.startsWith('demo-coach-'))
-      ? 100 
-      : 10;
+  const maxAnalyses = 1000; 
 
   const deduplicateReports = (reports: SavedReport[]): SavedReport[] => {
     if (!Array.isArray(reports)) return [];
@@ -103,8 +108,7 @@ export default function App() {
     }
   });
 
-  const [viewMode, setViewMode] = useState<'workspace' | 'processing' | 'full_report' | 'progress'>('workspace');
-  const [isAuthOpen, setIsAuthOpen] = useState(false);
+  const [viewMode, setViewMode] = useState<'workspace' | 'crop_and_scrub' | 'processing' | 'full_report' | 'progress'>('workspace');
   const [isSavedReportsOpen, setIsSavedReportsOpen] = useState(false);
   const [savedReportsTab, setSavedReportsTab] = useState<'folders' | 'all' | 'cards' | 'roster'>('folders');
   const [currentSequenceComparison, setCurrentSequenceComparison] = useState<{
@@ -117,10 +121,34 @@ export default function App() {
     peakAngularVelocity: number;
     estimatedPeakTorque: number;
     explosivenessScore: number;
+    overallBiometricScore?: number;
+    overallSymmetry?: number;
+    overallKneeSafety?: number;
+    precisionScore?: number;
+    kineticFlowScore?: number;
+    jointArmorScore?: number;
   } | null>(null);
+  const [currentOverallSymmetry, setCurrentOverallSymmetry] = useState<number | undefined>(undefined);
+  const [currentOverallKneeSafety, setCurrentOverallKneeSafety] = useState<number | undefined>(undefined);
   const useOptionBPipeline = false;
+  const [currentStartTime, setCurrentStartTime] = useState<number>(0);
+  const [currentEndTime, setCurrentEndTime] = useState<number | undefined>(undefined);
+  const [currentCropBox, setCurrentCropBox] = useState<{ x: number; y: number; width: number; height: number } | undefined>(undefined);
   const [activeReportId, setActiveReportId] = useState<string | null>(null);
   const [isPinPromptOpen, setIsPinPromptOpen] = useState(false);
+  const [isDrillsLibraryOpen, setIsDrillsLibraryOpen] = useState(false);
+
+  const handleSelectDrillAsRule = (drill: DrillItem) => {
+    let mappedSportId: SportId = 'rugby';
+    const sId = drill.sportId.toLowerCase();
+    if (sId.includes('hockey')) mappedSportId = 'hockey';
+    else if (sId.includes('netball')) mappedSportId = 'netball';
+    else if (sId.includes('cricket')) mappedSportId = 'cricket';
+
+    handleSelectSport(mappedSportId);
+    setSelectedMovementPhase(drill.title);
+    setIsDrillsLibraryOpen(false);
+  };
 
   const currentSport = SPORTS_RULES.find((s) => s.id === selectedSportId) || SPORTS_RULES[0];
 
@@ -148,44 +176,15 @@ export default function App() {
     return () => window.removeEventListener('hashchange', handleUrlHash);
   }, []);
 
-  // Firebase Auth listener & Local Storage Privacy Housekeeping
+  // Local Privacy Housekeeping
   useEffect(() => {
     // Run privacy auto-purge for videos older than 30 days
     autoPurgeExpiredLocalVideos(30).catch(() => {});
-
-    const unsubscribe = onAuthStateChanged(auth, async (fbUser) => {
-      if (fbUser) {
-        const updatedUser: UserAccount = {
-          id: fbUser.uid,
-          name: fbUser.displayName || fbUser.email?.split('@')[0] || 'Athlete',
-          email: fbUser.email || '',
-          role: 'Coach',
-          clubOrSchool: 'Klutchh Sports Member',
-          avatar: fbUser.photoURL || undefined
-        };
-        setCurrentUser(updatedUser);
-        
-        // Fetch saved reports from Firestore
-        const remoteReports = await fetchUserSavedReports(fbUser.uid);
-        if (remoteReports && remoteReports.length > 0) {
-          setSavedReports(deduplicateReports(remoteReports));
-        }
-      }
-    });
-
-    return () => unsubscribe();
   }, []);
 
   useEffect(() => {
     if (currentUser) {
       localStorage.setItem('klutchh_user_session', JSON.stringify(currentUser));
-      if (auth.currentUser) {
-        fetchUserSavedReports(currentUser.id).then((remote) => {
-          if (remote && remote.length > 0) {
-            setSavedReports(deduplicateReports(remote));
-          }
-        });
-      }
     } else {
       localStorage.removeItem('klutchh_user_session');
     }
@@ -231,11 +230,6 @@ export default function App() {
   const [showWorkspaceUploader, setShowWorkspaceUploader] = useState(!customVideoUrl);
 
   const handleVideoSelected = (url: string, file?: File) => {
-    if (!currentUser) {
-      setIsAuthOpen(true);
-      return;
-    }
-
     if (analysisCount >= maxAnalyses) {
       setLimitModal({
         isOpen: true,
@@ -245,6 +239,13 @@ export default function App() {
       return;
     }
 
+    // Zero-server-cost memory purge: revoke previous blob URL, reset pose cache and clear frame cache
+    if (customVideoUrl && customVideoUrl.startsWith('blob:')) {
+      URL.revokeObjectURL(customVideoUrl);
+    }
+    resetPoseCache();
+    clearFrameCache();
+
     // Reset old analysis state before starting new one
     setCurrentAnalysis(null);
     setKeyframeList([]);
@@ -252,7 +253,12 @@ export default function App() {
     setCurrentAIReport(null);
     setCurrentSequenceComparison(null);
     setCurrentDynamicMetrics(null);
+    setCurrentOverallSymmetry(undefined);
+    setCurrentOverallKneeSafety(undefined);
     setActiveReportId(null);
+    setCurrentStartTime(0);
+    setCurrentEndTime(undefined);
+    setCurrentCropBox(undefined);
 
     setAnalysisCount((prev) => prev + 1);
     setCustomVideoUrl(url);
@@ -282,7 +288,11 @@ export default function App() {
       if (res.dynamicMetrics) {
         setCurrentDynamicMetrics(res.dynamicMetrics);
       }
-      
+      setCurrentOverallSymmetry(res.overallSymmetry);
+      setCurrentOverallKneeSafety(res.overallKneeSafety);
+      setCurrentStartTime(res.startTime || 0);
+      setCurrentEndTime(res.endTime);
+      setCurrentCropBox(res.cropBox);
       setViewMode('full_report');
     } else {
       console.error("Analysis complete callback failed, invalid result:", res);
@@ -302,10 +312,6 @@ export default function App() {
         const updatedReports = [...prev];
         const targetReport = { ...updatedReports[existingIndex], drillProgress: updatedProgress };
         updatedReports[existingIndex] = targetReport;
-
-        if (currentUser) {
-          saveReportToFirestore(targetReport, currentUser.id).catch(console.error);
-        }
         return deduplicateReports(updatedReports);
       }
       return prev;
@@ -324,31 +330,6 @@ export default function App() {
         await saveLocalVideoWithTTL(report.id, customVideoFile);
       } catch(e) {
         console.warn('Failed to save video with TTL to IDB', e);
-      }
-
-      if (useOptionBPipeline) {
-        try {
-          const arrayBuffer = await customVideoFile.arrayBuffer();
-          const resp = await fetch('/api/upload-video-binary', {
-            method: 'POST',
-            headers: { 
-              'Content-Type': customVideoFile.type || 'video/mp4',
-              'x-video-name': encodeURIComponent(customVideoFile.name)
-            },
-            body: arrayBuffer
-          });
-          const data = await resp.json();
-          if (data.success && data.cloudVideoUrl) {
-            updatedReport.cloudVideoUrl = data.cloudVideoUrl;
-            updatedReport.videoUrl = data.cloudVideoUrl;
-            setSavedReports((prev) => prev.map((r) => r.id === updatedReport.id ? updatedReport : r));
-            if (currentUser) {
-              saveReportToFirestore(updatedReport, currentUser.id).catch(console.error);
-            }
-          }
-        } catch (err) {
-          console.warn('Option B Cloud Video upload error:', err);
-        }
       }
     }
     const existingIndex = savedReports.findIndex((r) => r.id === updatedReport.id);
@@ -371,22 +352,14 @@ export default function App() {
       }
       return deduplicateReports([updatedReport, ...prev]);
     });
-    if (currentUser) {
-      try {
-        await saveReportToFirestore(updatedReport, currentUser.id);
-      } catch (err) {
-        console.error('Failed to save report to Firestore:', err);
-      }
-    }
   };
 
   const handleDeleteReport = async (id: string) => {
     setSavedReports((prev) => prev.filter((r) => r.id !== id));
     try {
-      await deleteReportFromFirestore(id);
       await del(`video-${id}`);
     } catch (err) {
-      console.error('Failed to delete report from Firestore:', err);
+      console.error('Failed to delete report local data:', err);
     }
   };
 
@@ -408,8 +381,13 @@ export default function App() {
     if (report.keyframeList) setKeyframeList(report.keyframeList);
     if (report.allFrames) setAllFrames(report.allFrames);
     if (report.report) setCurrentAIReport(report.report);
+    setCurrentStartTime(report.startTime || 0);
+    setCurrentEndTime(report.endTime);
+    setCurrentCropBox(report.cropBox);
     if (report.sequenceComparison) setCurrentSequenceComparison(report.sequenceComparison);
     if (report.dynamicMetrics) setCurrentDynamicMetrics(report.dynamicMetrics);
+    setCurrentOverallSymmetry(report.symmetryScore);
+    setCurrentOverallKneeSafety(report.kneeSafetyScore);
 
     try {
       const file = await get(`video-${report.id}`);
@@ -470,7 +448,12 @@ export default function App() {
   };
 
   const handleExitReportMode = () => {
-    // Zero-server-cost memory purge: clear all active session report & video state immediately on exit
+    // Zero-server-cost memory purge & garbage collection: revoke video blob URL, reset pose cache, clear frame cache and clear all session report & video state immediately
+    if (customVideoUrl && customVideoUrl.startsWith('blob:')) {
+      URL.revokeObjectURL(customVideoUrl);
+    }
+    resetPoseCache();
+    clearFrameCache();
     setCustomVideoUrl(null);
     setCustomVideoFile(null);
     setCurrentAIReport(null);
@@ -479,15 +462,14 @@ export default function App() {
     setCurrentSequenceComparison(null);
     setCurrentDynamicMetrics(null);
     setActiveReportId(null);
+    setCurrentStartTime(0);
+    setCurrentEndTime(undefined);
+    setCurrentCropBox(undefined);
     setViewMode('workspace');
+    setShowWorkspaceUploader(true);
   };
 
   const handleLogout = async () => {
-    try {
-      await logoutFirebase();
-    } catch (e) {
-      console.warn('Firebase logout failed:', e);
-    }
     setCurrentUser(null);
     localStorage.removeItem('klutchh_user_session');
   };
@@ -506,7 +488,7 @@ export default function App() {
         calibratedFps={calibratedFps}
         onChangeCalibratedFps={setCalibratedFps}
         currentUser={currentUser}
-        onOpenAuth={() => setIsAuthOpen(true)}
+        onOpenAuth={() => setIsPinPromptOpen(true)}
         savedReportsCount={savedReports.length}
         onOpenSavedReports={() => {
           setSavedReportsTab('folders');
@@ -517,6 +499,7 @@ export default function App() {
           setIsSavedReportsOpen(true);
         }}
         onOpenDashboard={() => setViewMode('progress')}
+        onOpenDrillsLibrary={() => setIsDrillsLibraryOpen(true)}
         analysisCount={analysisCount}
         maxAnalyses={maxAnalyses}
         onUpdateUser={(updated) => {
@@ -530,9 +513,34 @@ export default function App() {
       {/* Main Container */}
       <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6 flex flex-col gap-6">
         
-        {viewMode === 'processing' ? (
+        {viewMode === 'crop_and_scrub' && customVideoUrl ? (
+          /* VIDEO CROP AND SCRUBBER VIEW */
+          <VideoCropAndScrubber
+            key={customVideoUrl}
+            sportRule={currentSport}
+            videoUrl={customVideoUrl}
+            videoFile={customVideoFile}
+            skillLevel={skillLevel}
+            athleteCategory={athleteCategory}
+            calibratedFps={calibratedFps}
+            useOptionBPipeline={useOptionBPipeline}
+            onComplete={handleProcessingMagicComplete}
+            targetAthleteAnchor={targetAthleteAnchor}
+            onTargetAthleteAnchorChange={setTargetAthleteAnchor}
+            onCancel={() => {
+              setCustomVideoUrl(null);
+              setViewMode('workspace');
+              setShowWorkspaceUploader(true);
+            }}
+            onSwitchSport={(newSportId) => {
+              handleSelectSport(newSportId);
+              setViewMode('crop_and_scrub');
+            }}
+          />
+        ) : viewMode === 'processing' ? (
           /* MAGIC AI & BIOMETRIC PROCESSING SCREEN */
           <MagicProcessingScreen
+            key={customVideoUrl || 'processing'}
             sportRule={currentSport}
             videoUrl={customVideoUrl}
             skillLevel={skillLevel}
@@ -541,6 +549,9 @@ export default function App() {
             useOptionBPipeline={useOptionBPipeline}
             onComplete={handleProcessingMagicComplete}
             targetAthleteAnchor={targetAthleteAnchor}
+            startTime={currentStartTime}
+            endTime={currentEndTime}
+            cropBox={currentCropBox}
             onCancel={() => {
               setCustomVideoUrl(null);
               setViewMode('workspace');
@@ -554,6 +565,7 @@ export default function App() {
         ) : viewMode === 'full_report' ? (
           /* DEDICATED FULL REPORT SCRUBBER PAGE */
           <AnalysisReportPage
+            key={activeReportId || customVideoUrl || 'report'}
             sportRule={currentSport}
             videoUrl={customVideoUrl}
             keyframeList={keyframeList}
@@ -561,6 +573,8 @@ export default function App() {
             aiReport={currentAIReport}
             sequenceComparison={currentSequenceComparison}
             dynamicMetrics={currentDynamicMetrics}
+            overallSymmetry={currentOverallSymmetry}
+            overallKneeSafety={currentOverallKneeSafety}
             currentUser={currentUser}
             calibratedFps={calibratedFps}
             athleteCategory={athleteCategory}
@@ -571,6 +585,9 @@ export default function App() {
             onSaveReport={handleSaveReport}
             onBack={handleExitReportMode}
             onVideoSelected={handleVideoSelected}
+            startTime={currentStartTime}
+            endTime={currentEndTime}
+            cropBox={currentCropBox}
           />
         ) : viewMode === 'progress' ? (
           /* HISTORICAL PROGRESS DASHBOARD */
@@ -595,12 +612,27 @@ export default function App() {
             analysisCount={analysisCount}
             maxAnalyses={maxAnalyses}
             currentUser={currentUser}
-            onOpenAuth={() => setIsAuthOpen(true)}
+            onOpenAuth={() => {}}
             onImportReport={handleImportKlutchhReport}
+            targetAthleteAnchor={targetAthleteAnchor}
+            onSelectAthleteAnchor={setTargetAthleteAnchor}
+            onOpenDrillsLibrary={() => setIsDrillsLibraryOpen(true)}
           />
         )}
 
       </main>
+
+      {/* Biometric Drills & Movement Rules Library Modal */}
+      {isDrillsLibraryOpen && (
+        <div className="fixed inset-0 z-50 bg-black/85 backdrop-blur-md flex items-center justify-center p-4 overflow-y-auto">
+          <BiometricDrillsLibrary
+            selectedSportId={selectedSportId}
+            onSelectSport={handleSelectSport}
+            onSelectDrillAsRule={handleSelectDrillAsRule}
+            onClose={() => setIsDrillsLibraryOpen(false)}
+          />
+        </div>
+      )}
 
       {/* Limit Reached Modal */}
       {limitModal?.isOpen && (
@@ -626,15 +658,6 @@ export default function App() {
           </div>
         </div>
       )}
-
-      {/* Login & User Profile Modal */}
-      <AuthModal
-        isOpen={isAuthOpen}
-        onClose={() => setIsAuthOpen(false)}
-        currentUser={currentUser}
-        onLoginSuccess={(user) => setCurrentUser(user)}
-        onLogout={() => setCurrentUser(null)}
-      />
 
       {/* Saved Reports Library Modal */}
       <SavedReportsModal

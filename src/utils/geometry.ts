@@ -358,7 +358,8 @@ export function drawPoseSkeleton(
         ctx.stroke();
 
         // Draw Biometric Angle Pill Label
-        const labelText = `${rule.name}: ${angleVal}${rule.unit}`;
+        const displayAngle = typeof angleVal === 'number' ? angleVal.toFixed(1) : angleVal;
+        const labelText = `${rule.name}: ${displayAngle}${rule.unit}`;
         ctx.font = 'bold 11px Inter, system-ui, sans-serif';
         const textWidth = ctx.measureText(labelText).width;
 
@@ -462,5 +463,36 @@ export function drawTrajectoryHeatmap(
       }
     });
   });
+}
+
+/**
+ * Checks landmark visibility for shoulders, arms, and legs.
+ * If visibility is below threshold (0.45), marks them as occluded so the app can show a clear message.
+ */
+export function checkJointVisibilityOcclusion(landmarks: MediaPipeLandmark[] | undefined): {
+  hasOcclusion: boolean;
+  occludedLimbs: string[];
+} {
+  if (!landmarks || landmarks.length === 0) return { hasOcclusion: false, occludedLimbs: [] };
+  const occluded: string[] = [];
+  const leftShoulder = landmarks[11];
+  const rightShoulder = landmarks[12];
+  if ((leftShoulder?.visibility !== undefined && leftShoulder.visibility < 0.45) ||
+      (rightShoulder?.visibility !== undefined && rightShoulder.visibility < 0.45)) {
+    occluded.push('Shoulders');
+  }
+  const leftArm = landmarks[13] || landmarks[15];
+  const rightArm = landmarks[14] || landmarks[16];
+  if ((leftArm?.visibility !== undefined && leftArm.visibility < 0.45) ||
+      (rightArm?.visibility !== undefined && rightArm.visibility < 0.45)) {
+    occluded.push('Arms / Elbows');
+  }
+  const leftLeg = landmarks[25] || landmarks[27];
+  const rightLeg = landmarks[26] || landmarks[28];
+  if ((leftLeg?.visibility !== undefined && leftLeg.visibility < 0.45) ||
+      (rightLeg?.visibility !== undefined && rightLeg.visibility < 0.45)) {
+    occluded.push('Legs / Knees');
+  }
+  return { hasOcclusion: occluded.length > 0, occludedLimbs: occluded };
 }
 

@@ -11,7 +11,7 @@ import {
   Boxes,
   ShieldCheck,
   Layers,
-  Sparkles
+  Activity
 } from 'lucide-react';
 
 interface ArchitectureModalProps {
@@ -75,14 +75,14 @@ npx cap open android`;
             <div>
               <div className="flex items-center gap-2">
                 <span className="bg-amber-500/20 text-amber-300 border border-amber-500/30 text-[10px] font-black px-2 py-0.5 rounded uppercase">
-                  Serverless Processing Pipeline
+                  Local Processing Pipeline
                 </span>
                 <span className="bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 text-[10px] font-black px-2 py-0.5 rounded uppercase">
                   30 FPS • 200 Rules Engine
                 </span>
               </div>
               <h2 className="text-xl font-black uppercase italic tracking-wide text-white mt-1">
-                Serverless Pipeline & Skeleton Estimation Architecture
+                Local Pipeline & Skeleton Estimation Architecture
               </h2>
             </div>
           </div>
@@ -96,16 +96,32 @@ npx cap open android`;
         </div>
 
         {/* Core Pillars */}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           
-          {/* Pillar 1: Serverless 30 FPS Inference */}
+          {/* Pillar 1: WebCodecs + MP4Box.js Native GPU Pipeline */}
+          <div className="bg-zinc-950/90 border border-amber-500/40 p-4 rounded-xl flex flex-col gap-2.5 shadow-lg shadow-amber-500/5">
+            <div className="flex items-center gap-2 text-amber-400 font-extrabold text-xs uppercase tracking-wider">
+              <Zap className="w-4 h-4 text-amber-400" />
+              <span>WebCodecs + MP4Box GPU Engine</span>
+            </div>
+            <p className="text-xs text-zinc-300 leading-relaxed">
+              Bypasses the HTML5 &lt;video&gt; player completely. MP4Box.js demuxes the MP4 container into raw NAL units, and VideoDecoder decodes H.264/HEVC directly on GPU hardware.
+            </p>
+            <ul className="text-[11px] text-zinc-400 flex flex-col gap-1 list-disc list-inside mt-1 font-mono">
+              <li>Direct GPU Hardware Decoding</li>
+              <li>Zero Seeking Lag & Snap Free</li>
+              <li>Exact Microsecond Timestamps</li>
+            </ul>
+          </div>
+
+          {/* Pillar 2: Local 30 FPS Inference */}
           <div className="bg-zinc-950/80 border border-zinc-800 p-4 rounded-xl flex flex-col gap-2.5">
             <div className="flex items-center gap-2 text-amber-400 font-extrabold text-xs uppercase tracking-wider">
               <Boxes className="w-4 h-4 text-red-500" />
-              <span>Serverless Pipeline (30 FPS)</span>
+              <span>Local Pipeline (30 FPS)</span>
             </div>
             <p className="text-xs text-zinc-300 leading-relaxed">
-              Both Live Camera feeds and Uploaded Videos are dispatched to the serverless processing pipeline, decoded frame-by-frame at 30 FPS, and processed through MediaPipe BlazePose to calculate 33 keypoint 3D spatial vectors.
+              Both Live Camera feeds and Uploaded Videos are dispatched to the local processing pipeline, decoded frame-by-frame at 30 FPS, and processed through MediaPipe BlazePose to calculate 33 keypoint 3D spatial vectors.
             </p>
             <ul className="text-[11px] text-zinc-400 flex flex-col gap-1 list-disc list-inside mt-1 font-mono">
               <li>30 FPS frame-rate synchronization</li>
@@ -114,7 +130,7 @@ npx cap open android`;
             </ul>
           </div>
 
-          {/* Pillar 2: Live & Upload Dual Integration */}
+          {/* Pillar 3: Live & Upload Dual Integration */}
           <div className="bg-zinc-950/80 border border-zinc-800 p-4 rounded-xl flex flex-col gap-2.5">
             <div className="flex items-center gap-2 text-amber-400 font-extrabold text-xs uppercase tracking-wider">
               <Smartphone className="w-4 h-4 text-emerald-400" />

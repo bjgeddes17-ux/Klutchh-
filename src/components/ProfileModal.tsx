@@ -1,7 +1,6 @@
 import React, { useState } from 'react';
 import { UserAccount } from '../types';
-import { X, User, Shield, Briefcase, Trophy, LogIn, LogOut, Check, Save, Sparkles } from 'lucide-react';
-import { updateUserProfileInFirestore } from '../lib/firebase';
+import { X, User, Shield, Briefcase, Trophy, LogIn, LogOut, Check, Save } from 'lucide-react';
 
 interface ProfileModalProps {
   isOpen: boolean;
@@ -61,13 +60,6 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({
         clubOrSchool: clubOrSchool.trim() || 'Klutchh Academy',
         avatar: avatarUrl
       };
-
-      // Sync to Firestore
-      await updateUserProfileInFirestore(currentUser.id, {
-        name: updatedAccount.name,
-        role: updatedAccount.role,
-        clubOrSchool: updatedAccount.clubOrSchool
-      });
 
       // Update parent state
       onUpdateUser(updatedAccount);
@@ -214,7 +206,7 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({
           {/* Usage limit bar */}
           <div className="bg-zinc-950/80 border border-zinc-850 rounded-xl p-3 flex flex-col gap-2">
             <div className="flex justify-between items-center text-[10px] font-black uppercase tracking-wider text-zinc-400">
-              <span>Klutchh Cloud Storage Usage</span>
+              <span>Klutchh Local Repository Usage</span>
               <span className="font-mono text-zinc-300">
                 {analysisCount} / {maxAnalyses} clips
               </span>
@@ -226,14 +218,14 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({
               />
             </div>
             <span className="text-[9px] text-zinc-500 leading-tight">
-              Premium tier allows unlimited local caching and up to {maxAnalyses} durable cloud biomechanical records.
+              Klutchh allows unlimited local caching and high-precision on-device biomechanical records.
             </span>
           </div>
 
           {/* Success / Action buttons */}
           {successMsg && (
             <div className="bg-emerald-950/80 border border-emerald-500/40 text-emerald-300 text-xs py-2 px-3.5 rounded-xl font-bold flex items-center gap-1.5 justify-center animate-fade-in">
-              <Sparkles className="w-4 h-4 text-emerald-400" />
+              <Check className="w-4 h-4 text-emerald-400" />
               <span>{successMsg}</span>
             </div>
           )}

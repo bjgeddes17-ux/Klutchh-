@@ -144,12 +144,12 @@ export function validateKinematicSportFit(
   const validFrames = allSampledLandmarks.filter(f => f.landmarks && f.landmarks.length >= 25);
   const humanRatio = validFrames.length / totalFrames;
 
-  if (humanRatio < 0.35) {
+  if (humanRatio < 0.20) {
     return {
       isValid: false,
       category: 'no_human',
-      title: 'No Consistent Athlete In Frame',
-      message: `A human athlete was only visible in ${Math.round(humanRatio * 100)}% of the video clip. Please ensure the athlete is centrally framed throughout the movement.`,
+      title: 'Insufficient Athlete Visibility',
+      message: `A human athlete was only detected in ${Math.round(humanRatio * 100)}% of the video clip. Please ensure the athlete is clearly visible for at least a quarter of the recording.`,
       confidenceScore: Math.round(humanRatio * 100),
       details: { humanFrameRatio: humanRatio }
     };
@@ -224,12 +224,12 @@ export function validateKinematicSportFit(
   const trunkROM = getRange(trunkAngles);
   maxAngleRangeOfMotion = Math.max(elbowROM, kneeROM, trunkROM);
 
-  if (maxDisplacement < 0.035 && maxAngleRangeOfMotion < 12) {
+  if (maxDisplacement < 0.02 && maxAngleRangeOfMotion < 8) {
     return {
       isValid: false,
       category: 'stationary',
-      title: 'Stationary Pose Detected',
-      message: 'The person in this video is standing or sitting still with minimal athletic range of motion. Please upload an active repetition of the movement.',
+      title: 'Static Pose Detected',
+      message: 'The subject appears stationary or with very low range of motion. For accurate biomechanical analysis, please perform a dynamic repetition of the movement.',
       confidenceScore: 30,
       details: { maxJointRangeOfMotion: maxAngleRangeOfMotion }
     };

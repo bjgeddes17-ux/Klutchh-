@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Sparkles, Scan, CheckCircle2, AlertTriangle, ArrowRight, RefreshCw, UploadCloud, ShieldAlert } from 'lucide-react';
+import { Scan, CheckCircle2, AlertTriangle, ArrowRight, RefreshCw, UploadCloud, ShieldAlert } from 'lucide-react';
 import { SportRule, SkillLevel, AthleteCategory, AnalysisResult, SportId } from '../types';
 import { analyzeVideoBiometrics, generateFallbackAnalysisResult } from '../utils/videoAnalyzer';
 import { DecoderError } from '../utils/frameExtractor';
@@ -37,16 +37,19 @@ export const MagicProcessingScreen: React.FC<MagicProcessingScreenProps> = ({
 }) => {
   const [progress, setProgress] = useState(0);
   const [currentStepIndex, setCurrentStepIndex] = useState(0);
+  const [status, setStatus] = useState<'warmup' | 'processing' | 'done' | 'error'>('warmup');
+  const [result, setResult] = useState<AnalysisResult | undefined>(undefined);
+  const resultRef = useRef<AnalysisResult | undefined>(undefined);
   const [invalidResult, setInvalidResult] = useState<AnalysisResult | null>(null);
   const [invalidError, setInvalidError] = useState<string | null>(null);
-  const resultRef = useRef<AnalysisResult | undefined>(undefined);
-  const lastAnalyzedKeyRef = useRef<string | null>(null);
+  const [retryCount, setRetryCount] = useState(0);
 
   const STEPS = [
-    { id: 1, label: 'Smart Frame Extraction (360p Optimization)', sub: 'Buffering 3D spatial joints into IndexedDB sequence' },
-    { id: 2, label: useOptionBPipeline ? '⚡ Pro Analysis Pipeline' : 'Dedicated AI Analysis Firewall', sub: `Evaluating kinetic chain @ ${useOptionBPipeline ? 20 : calibratedFps} FPS telemetry` },
+    { id: 0, label: 'Initializing Klutchh Engine...', sub: 'Warming up pose detection & camera buffers...' },
+    { id: 1, label: 'High-Precision Frame Extraction', sub: 'Buffering 3D spatial joints into local IndexedDB sequence' },
+    { id: 2, label: 'Kinetic Biometrics Engine', sub: `Evaluating kinetic chain @ ${calibratedFps} FPS telemetry` },
     { id: 3, label: 'Calculating Symmetry & Knee Safety Score', sub: 'Checking joint valgus stress & angular tolerances' },
-    { id: 4, label: 'Synthesizing AI Coaching Report', sub: 'Generating personalized drills & performance grade' },
+    { id: 4, label: 'Synthesizing Biomechanical Report', sub: 'Generating physics-based drills & performance grade' },
   ];
 
   const onCompleteRef = useRef(onComplete);
@@ -54,31 +57,36 @@ export const MagicProcessingScreen: React.FC<MagicProcessingScreenProps> = ({
     onCompleteRef.current = onComplete;
   }, [onComplete]);
 
+  useEffect(() => {
+    // Add a 1.5-second warm-up delay before starting actual processing
+    const timer = setTimeout(() => {
+        setStatus('processing');
+        setProgress(5); 
+    }, 1500);
+    return () => clearTimeout(timer);
+  }, []);
+
   const hasFiredRef = useRef(false);
 
   useEffect(() => {
-    if (progress >= 100 && !hasFiredRef.current && resultRef.current) {
+    if (progress >= 100 && !hasFiredRef.current && result) {
       hasFiredRef.current = true;
+      setStatus('done');
       setTimeout(() => {
-        onCompleteRef.current(resultRef.current);
-      }, 800);
+        onCompleteRef.current(result);
+      }, 1500); // Increased from 800ms to 1500ms for browser stability
     }
     
     if (progress > 75) setCurrentStepIndex(3);
     else if (progress > 50) setCurrentStepIndex(2);
     else if (progress > 25) setCurrentStepIndex(1);
     else setCurrentStepIndex(0);
-  }, [progress]);
+  }, [progress, result]);
 
   useEffect(() => {
-    const inputsKey = `${videoUrl}_${sportRule.id}_${skillLevel}_${athleteCategory}_${calibratedFps}_${targetAthleteAnchor}`;
-    if (lastAnalyzedKeyRef.current === inputsKey) {
-      console.log("Analysis already processed/processing for this specific video and configuration. Safeguard triggered.");
-      return;
-    }
+    if (status !== 'processing') return;
 
     let isMounted = true;
-    lastAnalyzedKeyRef.current = inputsKey;
     hasFiredRef.current = false;
     setInvalidResult(null);
     setInvalidError(null);
@@ -91,7 +99,7 @@ export const MagicProcessingScreen: React.FC<MagicProcessingScreenProps> = ({
         skillLevel, 
         athleteCategory, 
         calibratedFps, 
-        useOptionBPipeline,
+        retryCount === 0 ? useOptionBPipeline : false, // Disable WebCodecs on retry
         (p) => {
           if (isMounted) setProgress(p);
         },
@@ -106,22 +114,49 @@ export const MagicProcessingScreen: React.FC<MagicProcessingScreenProps> = ({
             if (res.isInvalidVideo) {
               setInvalidResult(res);
               setInvalidError(res.invalidVideoReason || `No human athlete detected in this video clip.`);
+              setStatus('error');
               return;
             }
             resultRef.current = res;
+            setResult(res);
             setProgress(100);
           }
         })
         .catch(async (err: any) => {
-          console.warn("Video analysis had issues, falling back to local high-precision telemetry engine:", err);
+          console.error("Video analysis FAILED (critical):", err);
           if (isMounted) {
+            if (err instanceof DecoderError) {
+              setInvalidError("DECODER_CRASH");
+              setStatus('error');
+              return;
+            }
+            const errorMessage = err?.message || String(err);
+            
+            // If we have retries left, try the fallback
+            if (retryCount < 1) {
+              console.warn("Attempting fallback analysis after primary failure (cooldown starting)...");
+              
+              // Move to a 'cooldown' state visually if needed, but for now just wait
+              setTimeout(() => {
+                if (isMounted) {
+                  setRetryCount(prev => prev + 1);
+                  setStatus('processing');
+                }
+              }, 2000); // 2-second cooldown to let GPU/Decoder/CDN clear
+              return;
+            }
+
+            // For other unexpected errors, we can try the fallback but with a console note
+            console.log("Attempting final fallback analysis for non-critical error...");
             try {
               const fallback = await generateFallbackAnalysisResult(videoUrl, sportRule, skillLevel, athleteCategory, calibratedFps);
               resultRef.current = fallback;
+              setResult(fallback);
               setProgress(100);
             } catch (fallbackErr) {
-              console.error("Fallback analysis also failed:", fallbackErr);
-              setInvalidError("Analysis failed completely: " + String(err?.message || err));
+              console.error("Fallback analysis also FAILED:", fallbackErr);
+              setInvalidError("Analysis failed completely: " + String(errorMessage));
+              setStatus('error');
             }
           }
         });
@@ -132,7 +167,7 @@ export const MagicProcessingScreen: React.FC<MagicProcessingScreenProps> = ({
     return () => {
       isMounted = false;
     };
-  }, [videoUrl, sportRule.id, skillLevel, athleteCategory, calibratedFps, targetAthleteAnchor]);
+  }, [videoUrl, sportRule.id, skillLevel, athleteCategory, calibratedFps, targetAthleteAnchor, status, retryCount]);
 
   if (invalidError === 'DECODER_CRASH') {
     return (
@@ -255,9 +290,9 @@ export const MagicProcessingScreen: React.FC<MagicProcessingScreenProps> = ({
 
       {/* Main Title */}
       <div className="flex items-center justify-center gap-2 mb-2">
-        <Sparkles className="w-5 h-5 text-amber-400 fill-current animate-spin" style={{ animationDuration: '4s' }} />
+        <div className="w-5 h-5 rounded-lg bg-amber-500 animate-pulse" />
         <h2 className="text-2xl font-black text-white uppercase tracking-tight">
-          Klutchh AI Processing Magic
+          Klutchh Biometric Engine
         </h2>
       </div>
       <p className="text-xs text-zinc-400 max-w-md mx-auto mb-8 leading-relaxed">
@@ -271,7 +306,14 @@ export const MagicProcessingScreen: React.FC<MagicProcessingScreenProps> = ({
       {/* Progress Bar */}
       <div className="w-full max-w-lg mb-8">
         <div className="flex items-center justify-between text-xs font-mono mb-2">
-          <span className="text-zinc-400 font-bold uppercase tracking-wider">Analysis Progress</span>
+          <div className="flex items-center gap-2">
+            <span className="text-zinc-400 font-bold uppercase tracking-wider">Analysis Progress</span>
+            {retryCount > 0 && (
+              <span className="px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-400 text-[10px] font-black border border-amber-500/30 animate-pulse">
+                RETRY #{retryCount}: COMPATIBILITY MODE
+              </span>
+            )}
+          </div>
           <span className="text-red-400 font-black">{progress}%</span>
         </div>
         <div className="w-full h-3 bg-zinc-900 border border-zinc-800 rounded-full overflow-hidden p-0.5">

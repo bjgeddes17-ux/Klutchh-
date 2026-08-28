@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { SPORTS_RULES } from '../data/sportsRules';
 import { SportId, AthleteCategory, SkillLevel, UserAccount } from '../types';
-import { Flame, Shield, Target, BookOpen, LogIn, Gauge, TrendingUp, WifiOff, Wifi, Activity, Bookmark, Sparkles, ChevronsUp, ArrowUpRight, FolderOpen, Trophy } from 'lucide-react';
+import { Flame, Shield, Target, BookOpen, LogIn, Gauge, TrendingUp, WifiOff, Wifi, Activity, Bookmark, ChevronsUp, ArrowUpRight, FolderOpen, Trophy, Dumbbell } from 'lucide-react';
 import { ArchitectureModal } from './ArchitectureModal';
 import { ProfileModal } from './ProfileModal';
 
@@ -20,6 +20,7 @@ interface HeaderProps {
   onOpenSavedReports: () => void;
   onOpenCabinet: () => void;
   onOpenDashboard: () => void;
+  onOpenDrillsLibrary?: () => void;
   analysisCount: number;
   maxAnalyses: number;
   onUpdateUser: (updated: UserAccount) => void;
@@ -42,6 +43,7 @@ export const Header: React.FC<HeaderProps> = ({
   onOpenSavedReports,
   onOpenCabinet,
   onOpenDashboard,
+  onOpenDrillsLibrary,
   analysisCount,
   maxAnalyses,
   onUpdateUser,
@@ -128,7 +130,7 @@ export const Header: React.FC<HeaderProps> = ({
                     <span className="text-[9px] font-bold text-zinc-400 flex items-center gap-1.5 leading-none mt-0.5">
                       <span>ENGINE:</span>
                       <span className="text-yellow-400 font-black tracking-wider flex items-center gap-0.5">
-                        <Sparkles className="w-2.5 h-2.5 text-yellow-400" /> KLUTCHH INTERFACE TECH
+                        KLUTCHH INTERFACE TECH
                       </span>
                     </span>
                   </div>
@@ -192,6 +194,18 @@ export const Header: React.FC<HeaderProps> = ({
                 <span className="sm:hidden text-[10px]">Cabinet</span>
               </button>
 
+              {onOpenDrillsLibrary && (
+                <button
+                  onClick={onOpenDrillsLibrary}
+                  className="bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 text-amber-300 font-bold text-xs px-2.5 py-1.5 sm:px-3 sm:py-1.5 rounded-xl flex items-center gap-1.5 transition-all"
+                  title="Biometric Drills & Movement Rules Library"
+                >
+                  <Dumbbell className="w-3.5 h-3.5 text-amber-400" />
+                  <span className="hidden sm:inline">Drills & Rules</span>
+                  <span className="sm:hidden text-[10px]">Drills</span>
+                </button>
+              )}
+
               <label
                 className="bg-zinc-900 hover:bg-zinc-800 border border-amber-500/30 hover:border-amber-400 text-amber-300 font-extrabold text-xs px-2.5 py-1.5 sm:px-3 sm:py-1.5 rounded-xl flex items-center gap-1.5 transition-all cursor-pointer"
                 title="Open/Import an exported .klutchh report file stored on your device or Google Drive"
@@ -222,17 +236,7 @@ export const Header: React.FC<HeaderProps> = ({
                 />
               </label>
 
-              {/* Monthly Analyses Used Badge */}
-              <div 
-                className="hidden sm:flex items-center bg-zinc-900 border border-zinc-800 text-zinc-300 text-xs px-3 py-1.5 rounded-xl font-bold gap-1.5" 
-                title={`Accounts receive 10 free video analyses per month (${analysisCount} used so far)`}
-              >
-                <Activity className="w-3.5 h-3.5 text-red-500" />
-                <span>Analyses Used:</span>
-                <span className={`font-mono font-black ${analysisCount >= maxAnalyses ? 'text-red-400' : 'text-amber-400'}`}>
-                  {analysisCount}/{maxAnalyses} Free
-                </span>
-              </div>
+              {/* Monthly Analyses Used Badge (Removed for local-first) */}
 
               {/* FPS Calibration Selector */}
               <div
@@ -284,7 +288,7 @@ export const Header: React.FC<HeaderProps> = ({
               <span>• MEDIAPIPE CORE SKINS: 33 THREE-DIMENSIONAL COORDINATES AUTOMATICALLY RESOLVED</span>
               <span>• ACTIVE DIFFICULTY CHECK: {skillLevel === 'elite_pro' ? 'ELITE PROFESSIONAL TIER (STRICTEST ERROR BOUNDS)' : skillLevel === 'academy' ? 'ACADEMY TIER (OPTIMIZED GAP)' : 'GRASSROOTS RECREATIONAL FORMULA'}</span>
               <span>• LIVE CORES: ANGULAR MOMENTUM, DECELERATION TORQUE, JOINT FORCE VECTOR INDEX</span>
-              <span>• CLOUD STORAGE PERSISTENCE: SYNCHRONIZED SECURELY VIA FIRESTORE Blueprints</span>
+              <span>• LOCAL STORAGE PERSISTENCE: SECURED ON-DEVICE VIA INDEXED DB</span>
               <span>• KLUTCHH INTEGRATED VERIFICATION KINETIC FEED: 320 JOINT ROTATION CHECKS CONSTANTLY PARSED</span>
               <span>• YOUR JOURNEY TO GREATNESS: UNLOCKING ELITE POTENTIAL ONE FRAME AT A TIME</span>
             </div>

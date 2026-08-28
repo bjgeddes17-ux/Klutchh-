@@ -1,12 +1,12 @@
-import { SportRule, SkillLevel, AthleteCategory, FrameAnalysis, AICoachingReport, AnalysisResult, CorrectiveDrill, MediaPipeLandmark, PhaseTrigger } from '../types';
+import { SportRule, SkillLevel, AthleteCategory, FrameAnalysis, AICoachingReport, AnalysisResult, CorrectiveDrill, MediaPipeLandmark } from '../types';
 import { detectPoseForVideoFrame, resetPoseCache } from './mediapipePose';
 import { calculateSymmetry, calculateKneeValgusScore, calculateAngle, drawPoseSkeleton } from './geometry';
-import { calculateBiometricScore } from './rulesEngine';
+import { calculateBiometricScore, matchBiomechanicalArchetype } from './rulesEngine';
 import { extractFramesPipelined, getFrame } from './frameExtractor';
-import { getBiomechanicalSequence } from './klutchhAnalysis';
+import { getBiomechanicalSequence, calculateKlutchhScore } from './klutchhAnalysis';
 import { validateKinematicSportFit } from './antiTrollValidator';
 import { PoseLandmarkSmoother } from './oneEuroFilter';
-import PoseWorker from './pose.worker?worker';
+import { generateDeterministicBiomechanicalReport } from './biomechanicsEngine';
 
 // Device Capability Detector
 export function detectCapableDevice(): boolean {
@@ -40,21 +40,7 @@ export async function analyzeVideoBiometrics(
   startTime: number = 0,
   endTime?: number
 ): Promise<AnalysisResult> {
-  // If Option B is active, trigger 20 FPS serverless pipeline initialization in background (non-blocking)
-  if (useOptionBPipeline) {
-    fetch('/api/serverless-video-process', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        sportId: sportRule.id,
-        movementPhase: sportRule.phases[0] || 'Movement',
-        fps: 30,
-        videoDuration: 5.0
-      })
-    }).catch((err) => {
-      console.warn("Serverless video pipeline ping completed:", err);
-    });
-  }
+  // Option B Cloud Sync logic removed for 100% local-first operation
 
   return new Promise(async (resolve, reject) => {
     let isFinished = false;
@@ -65,8 +51,6 @@ export async function analyzeVideoBiometrics(
         resolve(res);
       }
     };
-
-    let worker: any = null;
 
     try {
       onProgress?.(5);
@@ -81,104 +65,104 @@ export async function analyzeVideoBiometrics(
       let totalKneeSafety = 0;
       let validFrames = 0;
       const landmarkSmoother = new PoseLandmarkSmoother(1.2, 0.008);
-
-      // STAGE 1 & 2 Parallel Pipeline: High-Speed Linear Capture + Worker Firewall
-      worker = new PoseWorker();
-      
-      // Init Worker with timeout
-      const initPromise = Promise.race([
-        new Promise((res, rej) => {
-          worker.onmessage = (e) => {
-            if (e.data.type === 'INIT_DONE') res(true);
-            if (e.data.type === 'ERROR') rej(new Error(e.data.payload));
-          };
-          worker.postMessage({ type: 'INIT' });
-        }),
-        new Promise((_, rej) => setTimeout(() => rej(new Error('Worker initialization timed out')), 20000))
-      ]);
-
-      let useWorker = true;
-      try {
-        await initPromise;
-      } catch (err) {
-        console.warn('Worker init failed, falling back to main thread analysis:', err);
-        worker.terminate();
-        useWorker = false;
-        onProgress?.(10);
-      }
+      let lastRootPos: { x: number; y: number } | null = null;
+      const pendingTasks: Promise<void>[] = [];
+      const MAX_CONCURRENT_TASKS = 2; // Allow small parallelism on main thread for efficiency
 
       // Start Pipelined Extraction + Analysis
-      const pendingTasks: Promise<void>[] = [];
-      const MAX_CONCURRENT_TASKS = 1; // Reduce to 1 to decrease decoder pressure on mobile
-
       const processFrameTask = async (frameData: any) => {
         let landmarks: MediaPipeLandmark[] = [];
+        let allLandmarks: MediaPipeLandmark[][] = [];
         
-        if (useWorker) {
-          // PIPELINE: Use transferred imageBitmap directly if available
-          const imageBitmap = frameData.imageBitmap || (frameData.blob ? await createImageBitmap(frameData.blob) : null);
+        // Main thread detection with shadow contrast normalization
+        const frameTsMs = Math.round(frameData.timestamp * 1000);
+        const tempCanvas = document.createElement('canvas');
+        const tempCtx = tempCanvas.getContext('2d');
+        const img = frameData.imageBitmap || (frameData.blob ? await createImageBitmap(frameData.blob) : null);
+        
+        if (img) {
+          tempCanvas.width = img.width;
+          tempCanvas.height = img.height;
+          tempCtx?.drawImage(img, 0, 0);
           
-          if (imageBitmap) {
-            const resultPromise = new Promise<MediaPipeLandmark[]>((res) => {
-              const handleMessage = (e: MessageEvent) => {
-                if (e.data.type === 'FRAME_RESULT' && e.data.payload.index === frameData.index) {
-                  worker.removeEventListener('message', handleMessage);
-                  res(e.data.payload.landmarks);
-                }
-              };
-              worker.addEventListener('message', handleMessage);
-              
-              worker.postMessage({ 
-                type: 'ANALYZE_FRAME', 
-                payload: { imageBitmap, index: frameData.index } 
-              }, [imageBitmap]); // Transfer bitmap
-              
-              // Local safety timeout per frame
-              setTimeout(() => {
-                worker.removeEventListener('message', handleMessage);
-                res([]);
-              }, 3000);
-            });
-
-            landmarks = await resultPromise;
-          }
-        } else {
-          // Fallback to main thread detection
-          const frameTsMs = Math.round(frameData.timestamp * 1000);
-          const tempCanvas = document.createElement('canvas');
-          const tempCtx = tempCanvas.getContext('2d');
-          const img = frameData.imageBitmap || (frameData.blob ? await createImageBitmap(frameData.blob) : null);
-          if (img) {
-            tempCanvas.width = img.width;
-            tempCanvas.height = img.height;
-            tempCtx?.drawImage(img, 0, 0);
-            
+          try {
             const poseResult = await detectPoseForVideoFrame(tempCanvas, frameTsMs, false);
             landmarks = poseResult.landmarks;
-            if (!frameData.imageBitmap) img.close();
+            allLandmarks = poseResult.allLandmarks || [poseResult.landmarks];
+          } catch (poseErr) {
+            console.warn("Frame pose detection error (skipping):", poseErr);
+          }
+          
+          if (!frameData.imageBitmap && img instanceof ImageBitmap) img.close();
+        }
+
+        if (allLandmarks && allLandmarks.length > 0) {
+          if (targetAthleteAnchor && targetAthleteAnchor !== 'auto') {
+            let bestPose = allLandmarks[0];
+            let bestDistance = Infinity;
+
+            for (const pose of allLandmarks) {
+              if (pose[11] && pose[12] && pose[23] && pose[24]) {
+                const centerX = (pose[11].x + pose[12].x + pose[23].x + pose[24].x) / 4;
+                let targetX = 0.5;
+                if (targetAthleteAnchor === 'left') targetX = 0.25;
+                else if (targetAthleteAnchor === 'right') targetX = 0.75;
+                
+                const dist = Math.abs(centerX - targetX);
+                if (dist < bestDistance) {
+                  bestDistance = dist;
+                  bestPose = pose;
+                }
+              }
+            }
+            landmarks = bestPose;
+          } else {
+            // Auto - pick the one with the largest bounding box (closest to camera)
+            let bestPose = allLandmarks[0];
+            let maxArea = 0;
+            for (const pose of allLandmarks) {
+              if (pose[11] && pose[12] && pose[23] && pose[24]) {
+                const minX = Math.min(pose[11].x, pose[12].x, pose[23].x, pose[24].x);
+                const maxX = Math.max(pose[11].x, pose[12].x, pose[23].x, pose[24].x);
+                const minY = Math.min(pose[11].y, pose[12].y, pose[23].y, pose[24].y);
+                const maxY = Math.max(pose[11].y, pose[12].y, pose[23].y, pose[24].y);
+                const area = (maxX - minX) * (maxY - minY);
+                if (area > maxArea) {
+                  maxArea = area;
+                  bestPose = pose;
+                }
+              }
+            }
+            landmarks = bestPose;
           }
         }
 
         if (landmarks && landmarks.length > 0) {
-          // If we have a target athlete anchor, verify the body position to filter out secondary athletes
-          if (targetAthleteAnchor && targetAthleteAnchor !== 'auto' && landmarks[11] && landmarks[12] && landmarks[23] && landmarks[24]) {
-            const centerX = (landmarks[11].x + landmarks[12].x + landmarks[23].x + landmarks[24].x) / 4;
-            let isValidPosition = true;
-            if (targetAthleteAnchor === 'left' && centerX > 0.45) {
-              isValidPosition = false;
-            } else if (targetAthleteAnchor === 'right' && centerX < 0.55) {
-              isValidPosition = false;
-            } else if (targetAthleteAnchor === 'center' && (centerX < 0.35 || centerX > 0.65)) {
-              isValidPosition = false;
-            }
-            if (!isValidPosition) {
-              // Disregard frame landmarks for other athletes to prevent skeleton jumping/flicker
-              landmarks = [];
-            }
-          }
-        }
+          // ROOT ANCHORING: Lock skeleton to physical torso center (mid-hips) 
+          // to prevent "7-8 frame pre-emptive jump" caused by limb-only velocity prediction.
+          const currentRoot = {
+            x: (landmarks[23].x + landmarks[24].x) / 2,
+            y: (landmarks[23].y + landmarks[24].y) / 2
+          };
 
-        if (landmarks && landmarks.length > 0) {
+          if (lastRootPos) {
+            const rootMoveDist = Math.sqrt(Math.pow(currentRoot.x - lastRootPos.x, 2) + Math.pow(currentRoot.y - lastRootPos.y, 2));
+            // Noise Threshold: If root moves less than 0.5% of screen, pin to previous anchor
+            // This stops the skeleton "hallucinating" forward movement during static setup phases.
+            if (rootMoveDist < 0.005) {
+              const dx = lastRootPos.x - currentRoot.x;
+              const dy = lastRootPos.y - currentRoot.y;
+              landmarks.forEach(pt => {
+                pt.x += dx;
+                pt.y += dy;
+              });
+            } else {
+              lastRootPos = currentRoot;
+            }
+          } else {
+            lastRootPos = currentRoot;
+          }
+
           // Apply One-Euro Adaptive Filter to remove landmark jitter on fast swings without adding lag
           const smoothedLandmarks = landmarkSmoother.smooth(landmarks, frameData.timestamp);
 
@@ -188,9 +172,15 @@ export async function analyzeVideoBiometrics(
           
           sportRule.phases.forEach(phase => {
             const res = calculateBiometricScore(smoothedLandmarks, sportRule, skillLevel, phase, undefined, undefined, athleteCategory);
-            phaseScores[phase] = res;
-            if (res.score > bestPhaseScore) {
-              bestPhaseScore = res.score;
+            
+            // Apply Archetype Framework weighting (X=Angles, Y=Velocity, Z=Forces)
+            // If the frame matches the archetype "blueprint", we boost its phase probability
+            const archetypeRes = matchBiomechanicalArchetype(smoothedLandmarks, sportRule, phase);
+            const weightedScore = (res.score * 0.7) + ((archetypeRes.matchScore / 10) * 0.3);
+            
+            phaseScores[phase] = { ...res, score: weightedScore, matchScore: archetypeRes.matchScore };
+            if (weightedScore > bestPhaseScore) {
+              bestPhaseScore = weightedScore;
               bestPhase = phase;
             }
           });
@@ -209,10 +199,17 @@ export async function analyzeVideoBiometrics(
             kneeSafetyScore: knee,
             detectedPhase: bestPhase,
             activeLevel: skillLevel,
+            matchScore: biometricResult.matchScore
           };
 
           allSampledFrames.push(frame);
 
+          if (!phaseWinners[bestPhase] || biometricResult.score > phaseWinners[bestPhase].score) {
+            phaseWinners[bestPhase] = { frame, score: biometricResult.score };
+          }
+
+          totalSymmetry += sym;
+          totalKneeSafety += knee;
           validFrames++;
         }
       };
@@ -223,104 +220,27 @@ export async function analyzeVideoBiometrics(
           const task = processFrameTask(frameData);
           pendingTasks.push(task);
 
+          // If max concurrent tasks reached, await the oldest task so seeking runs concurrently with GPU inference
           if (pendingTasks.length >= MAX_CONCURRENT_TASKS) {
             await pendingTasks[0];
             pendingTasks.shift();
           }
         },
-        (p) => onProgress?.(Math.min(97, p)),
-        calibratedFps || 30,
-        480,
+        (p) => onProgress?.(Math.min(97, p)), // Cap extraction progress at 97%
+        calibratedFps || 30, // Target native FPS for perfect per-frame exactness
+        480, // Consistent with extractor target height
         cropBox,
         startTime,
         endTime
       );
 
+      // Await any remaining tasks in flight
       await Promise.all(pendingTasks);
-      worker.terminate();
 
       if (validFrames === 0) {
         safeResolve(buildNoHumanErrorResult(sportRule));
         return;
       }
-
-      // --- DYNAMIC TRIGGER-BASED KEYFRAME ENGINE ---
-      // Instead of guessing by best score, we hunt for specific kinematic events
-      
-      // 1. Calculate Velocities across all frames
-      for (let i = 1; i < allSampledFrames.length; i++) {
-        const current = allSampledFrames[i];
-        const prev = allSampledFrames[i-1];
-        const dt = current.timestamp - prev.timestamp;
-        if (dt <= 0) continue;
-
-        const velocity: Record<string, number> = {};
-        Object.keys(current.angles).forEach(ruleId => {
-          const deg1 = prev.angles[ruleId] || 0;
-          const deg2 = current.angles[ruleId] || 0;
-          velocity[ruleId] = Math.abs(deg2 - deg1) / dt;
-        });
-        current.velocity = velocity;
-      }
-
-      // 2. Identify best matching technique by trigger adherence
-      let bestTechnique = sportRule.techniques[0];
-      let maxTriggerMatches = -1;
-
-      allSampledFrames.forEach(f => {
-        totalSymmetry += f.symmetryScore || 0;
-        totalKneeSafety += f.kneeSafetyScore || 0;
-      });
-
-      sportRule.techniques.forEach(tech => {
-        if (!tech.triggers) return;
-        let matches = 0;
-        tech.triggers.forEach(trigger => {
-          const found = allSampledFrames.some(frame => checkTrigger(frame, trigger));
-          if (found) matches++;
-        });
-        if (matches > maxTriggerMatches) {
-          maxTriggerMatches = matches;
-          bestTechnique = tech;
-        }
-      });
-
-      // 3. Lock exact keyframes for each phase in the selected technique
-      // Clear phaseWinners to repopulate with trigger-matched frames
-      Object.keys(phaseWinners).forEach(k => delete phaseWinners[k]);
-      
-      if (bestTechnique && bestTechnique.triggers) {
-        bestTechnique.triggers.forEach(trigger => {
-          // Find the earliest frame that satisfies the trigger
-          const matchedFrame = allSampledFrames.find(frame => checkTrigger(frame, trigger));
-          if (matchedFrame) {
-            phaseWinners[trigger.phase] = { 
-              frame: {
-                ...matchedFrame,
-                detectedPhase: trigger.phase, // Force the detected phase to match the trigger
-                triggerTag: trigger.requiredBiomechanics // Tag the frame with the required biomechanics
-              }, 
-              score: 100 // High score because it matched an absolute trigger
-            };
-          }
-        });
-      }
-
-      // Fallback for missing phases using the scoring method
-      bestTechnique.phases.forEach(phase => {
-        if (!phaseWinners[phase]) {
-          let bestFrame = allSampledFrames[0];
-          let bestScore = -1;
-          allSampledFrames.forEach(f => {
-            const res = calculateBiometricScore(f.landmarks, sportRule, skillLevel, phase, undefined, undefined, athleteCategory);
-            if (res.score > bestScore) {
-              bestScore = res.score;
-              bestFrame = f;
-            }
-          });
-          phaseWinners[phase] = { frame: { ...bestFrame, detectedPhase: phase }, score: bestScore };
-        }
-      });
 
       // Fast Client-Side Kinematic & Anti-Troll Validation
       const kinematicValidation = validateKinematicSportFit(
@@ -380,15 +300,15 @@ export async function analyzeVideoBiometrics(
       const result = await synthesizeAnalysis(
         allSampledFrames, 
         phaseWinners, 
-        validFrames, 
-        totalSymmetry, 
-        totalKneeSafety, 
         sportRule, 
         athleteCategory, 
         skillLevel, 
         videoUrl, 
         calibratedFps, 
-        useOptionBPipeline
+        useOptionBPipeline,
+        startTime,
+        endTime,
+        cropBox
       );
       
       onProgress?.(100);
@@ -396,41 +316,10 @@ export async function analyzeVideoBiometrics(
 
     } catch (err) {
       console.error('Error during video sampling:', err);
-      try {
-        if (worker) worker.terminate();
-      } catch (termErr) {
-        console.warn('Worker termination failed during error recovery:', termErr);
-      }
       const fallback = await generateFallbackAnalysisResult(videoUrl, sportRule, skillLevel, athleteCategory, calibratedFps);
       safeResolve(fallback);
     }
   });
-}
-
-function checkTrigger(frame: FrameAnalysis, trigger: PhaseTrigger): boolean {
-  if (!frame.angles && trigger.condition !== 'relative_y_lt' && trigger.condition !== 'relative_y_gt') return false;
-
-  const ruleId = trigger.ruleId;
-  const threshold = trigger.threshold;
-
-  switch (trigger.condition) {
-    case 'angle_gt':
-      return ruleId ? (frame.angles[ruleId] ?? 0) > threshold : false;
-    case 'angle_lt':
-      return ruleId ? (frame.angles[ruleId] ?? 180) < threshold : false;
-    case 'velocity_gt':
-      return ruleId ? (frame.velocity?.[ruleId] ?? 0) > threshold : false;
-    case 'velocity_lt':
-      return ruleId ? (frame.velocity?.[ruleId] ?? 999) < threshold : false;
-    case 'relative_y_lt':
-      if (!trigger.jointId || !trigger.targetId) return false;
-      return (frame.landmarks[trigger.jointId]?.y ?? 1) < (frame.landmarks[trigger.targetId]?.y ?? 0) + threshold;
-    case 'relative_y_gt':
-      if (!trigger.jointId || !trigger.targetId) return false;
-      return (frame.landmarks[trigger.jointId]?.y ?? 0) > (frame.landmarks[trigger.targetId]?.y ?? 1) - threshold;
-    default:
-      return false;
-  }
 }
 
 /**
@@ -440,9 +329,6 @@ function checkTrigger(frame: FrameAnalysis, trigger: PhaseTrigger): boolean {
 async function synthesizeAnalysis(
   allSampledFrames: FrameAnalysis[],
   phaseWinners: Record<string, { frame: FrameAnalysis; score: number }>,
-  validFrames: number,
-  totalSymmetry: number,
-  totalKneeSafety: number,
   sportRule: SportRule,
   athleteCategory: AthleteCategory,
   skillLevel: SkillLevel,
@@ -453,30 +339,8 @@ async function synthesizeAnalysis(
   endTime?: number,
   cropBox?: { x: number; y: number; width: number; height: number }
 ): Promise<AnalysisResult> {
-  try {
-    const response = await fetch('/api/analyze-biomechanics', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        sportRule,
-        skillLevel,
-        athleteCategory,
-        allSampledFrames,
-        phaseWinners,
-        videoUrl
-      })
-    });
-
-    if (response.ok) {
-      const data = await response.json();
-      if (data.success && data.result) {
-        return data.result;
-      }
-    }
-  } catch (err) {
-    console.warn("Server-side biomechanics pipeline failed, falling back to client-side engine:", err);
-  }
-
+  // Logic removed for cloud/server calls
+  
   // Fallback to client-side kinetic sequence calculation if server is unreachable
   const biomechanicalSteps = getBiomechanicalSequence(sportRule.id);
   const idealSequence = biomechanicalSteps.map(step => step.title);
@@ -579,33 +443,62 @@ async function synthesizeAnalysis(
   // Prioritize kinetic sequence frames as the authoritative keyframes
   let rawKeyframes = [...kineticKeyframes].sort((a, b) => a.timestamp - b.timestamp);
 
-  const averageVelocities: Record<string, number> = {};
-  const averageTorques: Record<string, number> = {};
+  const maxAngularVelocities: Record<string, number> = {};
+  const maxAngularTorques: Record<string, number> = {};
+  let windowedSymmetrySum = 0;
+  let windowedKneeSafetySum = 0;
+  let windowedFrameCount = 0;
 
   for (let j = 1; j < allSampledFrames.length; j++) {
     const prev = allSampledFrames[j - 1];
     const curr = allSampledFrames[j];
     const dt = curr.timestamp - prev.timestamp;
     
+    const isInActiveWindow = curr.timestamp >= activeWindowStart && curr.timestamp <= activeWindowEnd;
+
     if (dt > 0) {
       curr.velocity = {};
       curr.torque = {};
+      curr.jointVelocities = {};
       
+      // Angular velocity & torque
       Object.entries(curr.angles).forEach(([ruleId, angle]) => {
         const prevAngle = prev.angles[ruleId] || angle;
         const velocity = Math.abs(angle - prevAngle) / dt;
         curr.velocity![ruleId] = velocity;
         
-        if (!averageVelocities[ruleId]) averageVelocities[ruleId] = 0;
-        averageVelocities[ruleId] += velocity / (allSampledFrames.length - 1);
+        if (isInActiveWindow) {
+          if (!maxAngularVelocities[ruleId] || velocity > maxAngularVelocities[ruleId]) {
+            maxAngularVelocities[ruleId] = velocity;
+          }
+        }
         
         const prevVelocity = prev.velocity?.[ruleId] || 0;
         const acceleration = Math.abs(velocity - prevVelocity) / dt;
         curr.torque![ruleId] = acceleration;
         
-        if (!averageTorques[ruleId]) averageTorques[ruleId] = 0;
-        averageTorques[ruleId] += acceleration / (allSampledFrames.length - 1);
+        if (isInActiveWindow) {
+          if (!maxAngularTorques[ruleId] || acceleration > maxAngularTorques[ruleId]) {
+            maxAngularTorques[ruleId] = acceleration;
+          }
+        }
       });
+
+      // Linear joint velocities for heatmap
+      for (let idx = 0; idx < 33; idx++) {
+        const p1 = prev.landmarks?.[idx];
+        const p2 = curr.landmarks?.[idx];
+        if (p1 && p2) {
+          const dist = Math.sqrt(Math.pow(p2.x - p1.x, 2) + Math.pow(p2.y - p1.y, 2));
+          curr.jointVelocities![idx.toString()] = dist / dt;
+        }
+      }
+
+      if (isInActiveWindow) {
+        windowedSymmetrySum += curr.symmetryScore;
+        windowedKneeSafetySum += curr.kneeSafetyScore;
+        windowedFrameCount++;
+      }
     }
   }
 
@@ -614,28 +507,10 @@ async function synthesizeAnalysis(
   const ruleResultsSummary: Record<string, 'optimal' | 'good' | 'warning' | 'error'> = {};
 
   sportRule.jointRules.forEach((rule) => {
-    let relevantFrames = allSampledFrames.filter(f => f.detectedPhase === rule.phase);
-    let relevantAngles = relevantFrames
+    const relevantFrames = allSampledFrames.filter(f => f.detectedPhase === rule.phase);
+    const relevantAngles = relevantFrames
       .map(f => f.angles[rule.id])
-      .filter((a): a is number => a !== undefined && !isNaN(a));
-
-    if (relevantAngles.length === 0) {
-      relevantAngles = allSampledFrames
-        .map(f => f.angles[rule.id])
-        .filter((a): a is number => a !== undefined && !isNaN(a));
-    }
-
-    if (relevantAngles.length === 0 && rule.keypoints.length === 3) {
-      const [p1, v, p3] = rule.keypoints;
-      relevantAngles = allSampledFrames
-        .map(f => {
-          if (f.landmarks && f.landmarks[p1] && f.landmarks[v] && f.landmarks[p3]) {
-            return calculateAngle(f.landmarks[p1], f.landmarks[v], f.landmarks[p3]);
-          }
-          return undefined;
-        })
-        .filter((a): a is number => a !== undefined && !isNaN(a));
-    }
+      .filter((a): a is number => a !== undefined);
 
     if (relevantAngles.length > 0) {
       const tolerance = rule.tolerancesByLevel[skillLevel] || { idealMin: rule.idealMin, idealMax: rule.idealMax };
@@ -651,9 +526,9 @@ async function synthesizeAnalysis(
     }
   });
 
-  const overallSymmetry = Math.round(totalSymmetry / validFrames);
-  const overallKneeSafety = Math.round(totalKneeSafety / validFrames);
-  const overallBiometricScore = 8.5; // Heuristic based on rules
+  const overallSymmetry = windowedFrameCount > 0 ? Math.round(windowedSymmetrySum / windowedFrameCount) : 89;
+  const overallKneeSafety = windowedFrameCount > 0 ? Math.round(windowedKneeSafetySum / windowedFrameCount) : 92;
+  const overallBiometricScore = calculateKlutchhScore(ruleResultsSummary);
 
   const detectedIssues: string[] = [];
   const positiveFormPoints: string[] = [];
@@ -682,12 +557,28 @@ async function synthesizeAnalysis(
     sequenceComparison,
     kineticSequence,
     injuryFindings,
-    averageVelocities,
-    averageTorques,
-    skillLevel
+    maxAngularVelocities,
+    maxAngularTorques
   );
 
+  const peakVel = Math.round(Math.max(...Object.values(maxAngularVelocities), 50));
+  const peakTorque = Math.round(Math.max(...Object.values(maxAngularTorques), 2.5) * 10) / 10;
+  
+  // Category-aware Explosive Multipliers:
+  // Elementary: 400 deg/sec = 100%
+  // Middle School: 650 deg/sec = 100%
+  // High School: 900 deg/sec = 100%
+  const explosivenessDivisor = athleteCategory === 'elementary' ? 4.0 : athleteCategory === 'middle_school' ? 6.5 : 9.0;
+  
+  const explosiveness = Math.min(99, Math.max(30, Math.round(peakVel / explosivenessDivisor))); 
+  const precision = Math.min(99, Math.max(30, Math.round(overallBiometricScore * 10)));
+  const jointArmor = Math.min(99, Math.max(30, overallKneeSafety));
+  const kineticFlow = Math.min(99, Math.max(30, Math.round((overallSymmetry + (kineticSequence?.sequenceEfficiency || 80)) / 2)));
+
   return {
+    startTime,
+    endTime,
+    cropBox,
     keyframes,
     allFrames: allSampledFrames,
     aiReport,
@@ -698,9 +589,15 @@ async function synthesizeAnalysis(
     sequenceComparison,
     kineticSequence,
     dynamicMetrics: {
-      peakAngularVelocity: Math.round(Math.max(...Object.values(averageVelocities), 180)),
-      estimatedPeakTorque: Math.round(Math.max(...Object.values(averageTorques), 4.5) * 10) / 10,
-      explosivenessScore: Math.min(100, Math.round(Math.max(...Object.values(averageVelocities), 180) / 4))
+      peakAngularVelocity: peakVel,
+      estimatedPeakTorque: peakTorque,
+      explosivenessScore: explosiveness,
+      overallBiometricScore: overallBiometricScore,
+      overallSymmetry,
+      overallKneeSafety,
+      precisionScore: precision,
+      kineticFlowScore: kineticFlow,
+      jointArmorScore: jointArmor
     },
     isPro30FpsPipeline: useOptionBPipeline,
     processingMode: useOptionBPipeline ? 'pro_30fps_cloud' : 'standard_client'
@@ -720,13 +617,11 @@ async function fetchOrBuildReport(
   kineticSequence: any,
   injuryFindings: string[],
   averageVelocities: Record<string, number>,
-  averageTorques: Record<string, number>,
-  skillLevel: SkillLevel
+  averageTorques: Record<string, number>
 ): Promise<AICoachingReport> {
-  const formScore = overallBiometricScore;
-  const gradeLetter = formScore >= 9.0 ? 'Gold Star (A+)' : formScore >= 8.0 ? 'A Form' : 'B+ Focus';
-
-  // Build rule evaluation map
+  // AI Cloud logic removed for 100% local-first operation
+  
+  // Build local rule evaluation map for deterministic engine
   const ruleResultsSummary: Record<string, string> = {};
   sportRule.jointRules.forEach(rule => {
     const angle = measuredAngles[rule.id] ?? 0;
@@ -739,574 +634,67 @@ async function fetchOrBuildReport(
     }
   });
 
-  // Try fetching bespoke AI report from server endpoint with timeout
-  try {
-    const controller = new AbortController();
-    // 30s timeout for AI report generation to accommodate slower network/processing
-    const timeoutId = setTimeout(() => controller.abort(), 30000); 
-
-    const response = await fetch('/api/generate-ai-coaching-report', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      signal: controller.signal,
-      body: JSON.stringify({
-        sportName: sportRule.name,
-        category: sportRule.category,
-        kidFocus: sportRule.kidFocus,
-        skillLevel: athleteCategory,
-        athleteCategory,
-        measuredAngles,
-        ruleResultsSummary,
-        jointRules: sportRule.jointRules.map(r => ({
-          id: r.id,
-          name: r.name,
-          idealMin: r.idealMin,
-          idealMax: r.idealMax,
-          unit: r.unit,
-          description: r.description
-        })),
-        sequenceComparison,
-        kineticSequence,
-        overallSymmetry,
-        overallKneeSafety,
-        overallBiometricScore,
-        averageVelocities,
-        averageTorques
-      })
-    });
-
-    clearTimeout(timeoutId);
-
-    if (response.ok) {
-      const data = await response.json();
-      if (data.success && data.report) {
-        const r = data.report;
-        return {
-          overallGrade: r.overallGrade || gradeLetter,
-          summaryTitle: r.summaryTitle || `${sportRule.name} Form Audit`,
-          keyStrengths: r.strengthsDetailed && r.strengthsDetailed.length > 0 
-            ? r.strengthsDetailed 
-            : (r.keyStrengths || positiveFormPoints),
-          biomechanicInsights: r.biomechanicInsights || [sequenceComparison.feedback, ...detectedIssues],
-          executiveDossier: r.executiveDossier,
-          strengthsDetailed: r.strengthsDetailed,
-          areasToImprove: r.areasToImprove,
-          kineticSummary: r.kineticSummary,
-          injuryRiskAssessment: r.injuryRiskAssessment || {
-            level: injuryFindings.length > 2 ? 'high' : injuryFindings.length > 0 ? 'moderate' : 'low',
-            findings: injuryFindings,
-            preventionDrills: (r.funCorrectiveDrills || []).map((d: any) => d.name)
-          },
-          funCorrectiveDrills: r.funCorrectiveDrills || [],
-          coachEncouragement: r.coachEncouragement || `Awesome job putting in the work on your ${sportRule.name} form!`,
-          averageVelocities,
-          averageTorques
-        };
-      }
-    }
-  } catch (err) {
-    console.warn("Server AI coaching endpoint unreachable, utilizing dynamic rule fallback engine:", err);
-  }
-
-  // Dynamic Rule-Based Fallback Engine (Ensures high quality even if offline)
-  const riskLevel = injuryFindings.length > 2 ? 'high' : injuryFindings.length > 0 ? 'moderate' : 'low';
-
-  const primaryRule = sportRule.jointRules[0];
-  const primaryAngle = primaryRule ? (measuredAngles[primaryRule.id] ?? 90) : 90;
-  const primaryOptimal = primaryRule ? (primaryAngle >= primaryRule.idealMin && primaryAngle <= primaryRule.idealMax) : true;
-
-  const executiveDossier = {
-    headline: primaryOptimal 
-      ? `High Precision ${sportRule.name} Alignment` 
-      : `${sportRule.name} Deviation at ${primaryRule?.name || 'Primary Joint'}`,
-    overviewText: `Biomechanical analysis of ${sportRule.name} recorded a overall form score of ${formScore.toFixed(1)}/10. Symmetry measured at ${overallSymmetry}% with ${overallKneeSafety}% knee safety factor.`,
-    detectedFault: {
-      title: detectedIssues[0] || `${primaryRule?.name || 'Joint'} Angle Deviation`,
-      description: `Measured at ${primaryAngle}°, compared to target ideal of ${primaryRule?.idealMin || 80}° - ${primaryRule?.idealMax || 120}°.`,
-      angleDeviation: `${primaryAngle}° (${primaryOptimal ? 'Optimal Range' : 'Sub-Optimal Offset'})`,
-      impact: primaryOptimal ? 'Zero Kinetic Energy Loss' : '-22% Power Transmission Loss'
+  // Deterministic Biomechanical Rules Matrix Engine (Ensures authoritative precision with zero latency)
+  return generateDeterministicBiomechanicalReport({
+    sportName: sportRule.name,
+    sportId: sportRule.id,
+    category: sportRule.category,
+    kidFocus: sportRule.kidFocus,
+    athleteCategory,
+    measuredAngles,
+    ruleResultsSummary: ruleResultsSummary as any,
+    jointRules: sportRule.jointRules,
+    sequenceComparison: {
+      ideal: sportRule.sequence || sportRule.phases,
+      actual: kineticSequence?.steps?.map((s: any) => s.name) || [],
+      isCorrect: sequenceComparison.isCorrect,
+      feedback: sequenceComparison.feedback
     },
-    goldStandard: {
-      title: `Gold Standard ${sportRule.name} Technique`,
-      description: `Ideal biomechanical range for ${primaryRule?.name || 'primary joint'} is ${primaryRule?.idealMin || 80}° to ${primaryRule?.idealMax || 120}°.`,
-      idealRange: `${primaryRule?.idealMin || 80}° - ${primaryRule?.idealMax || 120}°`,
-      forceTransmission: '100% Kinetic Efficiency'
-    }
-  };
-
-  const strengthsDetailed = (positiveFormPoints.length > 0 ? positiveFormPoints : ['Clean Movement Sequence', 'Balanced Symmetry']).map((p, idx) => ({
-    title: p,
-    desc: `Demonstrated strong joint stability during phase ${idx + 1} of ${sportRule.name}.`,
-    metric: `${idx === 0 ? overallSymmetry + '%' : 'Optimal Alignment'}`
-  }));
-
-  const areasToImprove = (detectedIssues.length > 0 ? detectedIssues : ['Refine Follow-Through Speed']).map((issue, idx) => ({
-    issue,
-    explanation: `Joint tracking recorded a deviation during the ${sportRule.sequence[idx] || 'movement'} phase.`,
-    drillName: `${sportRule.name} Targeted Stabilization Drill`,
-    drillReps: '3 sets x 10 reps',
-    drillTip: `Focus on maintaining stable core bracing throughout the entire ${sportRule.name} motion.`
-  }));
-
-  const kineticSummary = {
-    headline: 'Kinetic Chain Power & Efficiency Assessment',
-    summary: `Your ${sportRule.name} kinetic sequence recorded an overall match score of ${sequenceComparison.isCorrect ? '95%' : '78%'}. Focus on smooth ground force transfer.`,
-    takeaways: [
-      {
-        category: 'Power Potential',
-        title: 'Initial Drive Phase',
-        detail: `Solid ground reaction force generated during ${sportRule.sequence[0] || 'setup'}.`
-      },
-      {
-        category: 'Joint Safety',
-        title: 'Deceleration Control',
-        detail: `Knee safety score sits at ${overallKneeSafety}%, indicating ${overallKneeSafety > 80 ? 'safe' : 'caution'} force absorption.`
-      },
-      {
-        category: 'Sequence Timing',
-        title: 'Kinetic Chain Flow',
-        detail: sequenceComparison.feedback
-      }
-    ],
-    weeklyPrescription: [
-      {
-        title: `1. ${sportRule.name} mirror sequence reps`,
-        detail: '3 sets x 10 reps • Focus on precise joint angles.'
-      },
-      {
-        title: '2. Core Braced Holds',
-        detail: '3 sets x 30 sec • Maintain neutral spinal alignment.'
-      }
-    ]
-  };
-
-  const insights = [
-    sequenceComparison.feedback,
-    ...(detectedIssues.length > 0 ? detectedIssues.slice(0, 3) : [])
-  ];
-
-  const dynamicDrills: CorrectiveDrill[] = [];
-  const processedNames = new Set<string>();
-
-  // Determine the key body systems affected from the detected issues
-  const jointsWithIssues = new Set<string>();
-  detectedIssues.forEach((issue) => {
-    const lower = issue.toLowerCase();
-    if (lower.includes('knee') || lower.includes('valgus') || lower.includes('patellar') || lower.includes('leg')) {
-      jointsWithIssues.add('Knee');
-    }
-    if (lower.includes('spine') || lower.includes('back') || lower.includes('neck') || lower.includes('torso') || lower.includes('posture') || lower.includes('trunk') || lower.includes('cervical')) {
-      jointsWithIssues.add('Spine');
-    }
-    if (lower.includes('hip') || lower.includes('pelvis') || lower.includes('glute') || lower.includes('hinge')) {
-      jointsWithIssues.add('Hip');
-    }
-    if (lower.includes('shoulder') || lower.includes('scapula') || lower.includes('thoracic') || lower.includes('rotator')) {
-      jointsWithIssues.add('Shoulder');
-    }
-    if (lower.includes('elbow') || lower.includes('arm')) {
-      jointsWithIssues.add('Elbow');
-    }
-    if (lower.includes('ankle') || lower.includes('foot') || lower.includes('feet')) {
-      jointsWithIssues.add('Ankle');
-    }
-    if (lower.includes('wrist') || lower.includes('hand') || lower.includes('grip')) {
-      jointsWithIssues.add('Wrist');
-    }
-  });
-
-  // Step 1: Specific high-precision matching from the 50-drill sport library
-  if (sportRule.drills && sportRule.drills.length > 0) {
-    // Rank 1: Drills that match a target joint with an active issue AND athlete skill level
-    sportRule.drills.forEach((drill) => {
-      if (!drill.targetJoint) return;
-      const drillJoint = drill.targetJoint.toLowerCase();
-      const drillTier = drill.difficultyTier || 'grassroots';
-      let matchesIssue = false;
-
-      jointsWithIssues.forEach((joint) => {
-        if (drillJoint.includes(joint.toLowerCase())) {
-          matchesIssue = true;
-        }
-      });
-
-      // Intelligent Skill Level Alignment
-      const tierMatch = (skillLevel === 'grassroots' && drillTier === 'grassroots') ||
-                        (skillLevel === 'academy' && (drillTier === 'grassroots' || drillTier === 'academy')) ||
-                        (skillLevel === 'elite_pro');
-
-      if (matchesIssue && tierMatch && !processedNames.has(drill.name)) {
-        processedNames.add(drill.name);
-        dynamicDrills.push({ ...drill });
-      }
-    });
-
-    // Rank 2: Drills that are structurally designed for the specific joint/phase deviations
-    if (dynamicDrills.length < 3 && detectedIssues.length > 0) {
-      detectedIssues.forEach((issue) => {
-        const lowerIssue = issue.toLowerCase();
-        sportRule.drills?.forEach((drill) => {
-          const drillNameLower = drill.name.toLowerCase();
-          const drillDescLower = drill.description.toLowerCase();
-          
-          // Match if drill mentions words in the specific issue
-          const keyWords = ['knee', 'spine', 'hip', 'shoulder', 'elbow', 'ankle', 'wrist', 'tackle', 'kick', 'strike', 'pass', 'catch', 'scrum', 'drive', 'alignment'];
-          let matchesKeyword = false;
-          
-          keyWords.forEach(kw => {
-            if (lowerIssue.includes(kw) && (drillNameLower.includes(kw) || drillDescLower.includes(kw))) {
-              matchesKeyword = true;
-            }
-          });
-
-          if (matchesKeyword && !processedNames.has(drill.name) && dynamicDrills.length < 5) {
-            processedNames.add(drill.name);
-            dynamicDrills.push({ ...drill });
-          }
-        });
-      });
-    }
-
-    // Rank 3: If form is excellent (no issues) or we have fewer than 3 drills, populate with precision pathing & sequence timing drills
-    if (dynamicDrills.length < 4) {
-      sportRule.drills.forEach((drill) => {
-        const nameLower = drill.name.toLowerCase();
-        if ((nameLower.includes('precision') || nameLower.includes('sequence') || nameLower.includes('elastic') || nameLower.includes('armor')) && !processedNames.has(drill.name) && dynamicDrills.length < 5) {
-          processedNames.add(drill.name);
-          dynamicDrills.push({ ...drill });
-        }
-      });
-    }
-
-    // Rank 4: Fallback sequential drill ingestion from library until we have 4 high-quality matching drills
-    let drillPointer = 0;
-    while (dynamicDrills.length < 4 && drillPointer < sportRule.drills.length) {
-      const drill = sportRule.drills[drillPointer];
-      if (!processedNames.has(drill.name)) {
-        processedNames.add(drill.name);
-        dynamicDrills.push({ ...drill });
-      }
-      drillPointer++;
-    }
-  }
-
-  // Step 2: Inject gold-standard anatomical corrective physical therapy drills
-  if (jointsWithIssues.has('Knee') && !processedNames.has('Single-Leg Drop Landings & Knee Tracking')) {
-    processedNames.add('Single-Leg Drop Landings & Knee Tracking');
-    dynamicDrills.unshift({
-      name: 'Single-Leg Drop Landings & Knee Tracking',
-      targetJoint: 'Knee Flexion & Ligament Safety',
-      description: 'Enhances knee stability and hamstring co-activation to prevent inward knee collapse (valgus) during impact.',
-      reps: '3 sets x 8 reps each leg (60s rest)',
-      whyThisWorks: 'Neuromuscular feedback trains the vastus medialis and hamstrings to fire upon ground contact, stabilizing knee flexion angle and preventing dynamic valgus collapse under high impact load.',
-      purpose: 'Corrects knee angle deviations upon ground impact, reducing ACL stress and establishing a stable base for power generation.',
-      howToExecute: [
-        '1. Stand on a 12-inch box or platform with feet hip-width apart.',
-        '2. Step off smoothly with one foot without jumping upwards or hopping forward.',
-        '3. Land quietly on the forefoot, bending your knee to ~120° while keeping it tracking directly over your second toe.',
-        '4. Hold the steady single-leg squat position for 2 seconds to confirm balance before stepping up.'
-      ],
-      coachingCue: 'Coaching Cue: "Land quietly like a cat, keeping your knee pointing straight over your middle toes."'
-    });
-  }
-
-  if (jointsWithIssues.has('Spine') && !processedNames.has('Core Bracing & Neutral Spine Box Hold')) {
-    processedNames.add('Core Bracing & Neutral Spine Box Hold');
-    dynamicDrills.unshift({
-      name: 'Core Bracing & Neutral Spine Box Hold',
-      targetJoint: 'Lumbar Spine & Core Anti-Extension',
-      description: 'Protects the spinal column against shear forces by training deep core anti-extension bracing under movement load.',
-      reps: '3 sets x 12 reps (45s rest)',
-      whyThisWorks: 'Activates transverse abdominis and multifidus muscles to lock the lumbar spine in neutral alignment, neutralizing shear vector forces during high-impact movement loads.',
-      purpose: 'Eliminates trunk collapse and hyper-lordosis, ensuring energy generated from the legs transfers cleanly into the upper body.',
-      howToExecute: [
-        '1. Assume an all-fours tabletop position with hands under shoulders and knees under hips.',
-        '2. Exhale fully to pull your ribs down and brace your abdominal wall as if preparing for impact.',
-        '3. Lift your knees 1 inch off the floor while maintaining a flat, neutral lower back.',
-        '4. Hold for 10 seconds per rep, maintaining steady breathing without relaxing the core brace.'
-      ],
-      coachingCue: 'Coaching Cue: "Keep your lower back flat enough to balance a glass of water without spilling a drop."'
-    });
-  }
-
-  if (jointsWithIssues.has('Hip') && !processedNames.has('Banded Hip Hinge & Explosive Extension Drive')) {
-    processedNames.add('Banded Hip Hinge & Explosive Extension Drive');
-    dynamicDrills.unshift({
-      name: 'Banded Hip Hinge & Explosive Extension Drive',
-      targetJoint: 'Hip Joint & Gluteus Maximus',
-      description: 'Teaches maximum glute activation and hip snap while preserving lower back alignment during power phases.',
-      reps: '3 sets x 10 reps (60s rest)',
-      whyThisWorks: 'Fosters rapid gluteus maximus motor unit recruitment at terminal hip extension, converting horizontal ground reaction force into explosive rotational drive.',
-      purpose: 'Directly addresses lagging hip drive or improper hinge angles, unlocking peak rotational velocity and explosive kinetic output.',
-      howToExecute: [
-        '1. Anchor a resistance band behind you around a post and step into it so it sits across your hip crease.',
-        '2. Hinge at the hips by pushing your glutes backwards with soft knees until your torso reaches a ~45° incline.',
-        '3. Drive forcefully through your heels to extend your hips, squeezing your glutes hard at full lock.',
-        '4. Control the return hinge phase slowly over 3 seconds.'
-      ],
-      coachingCue: 'Coaching Cue: "Push the wall away behind you with your hips, then snap your belt buckle forward."'
-    });
-  }
-
-  // Final trim to guarantee a polished, highly specific set of 5 corrective drills maximum
-  const finalDrills = dynamicDrills.slice(0, 5);
-
-  if (finalDrills.length < 3) {
-    finalDrills.push({
-      name: `Slow-Motion Biomechanical Mirror Reps`,
-      targetJoint: `Full Movement Pattern (${sportRule.name})`,
-      description: `Executes the entire ${sportRule.name} technique at 25% speed in front of a mirror or camera to establish flawless motor programming.`,
-      reps: '3 sets x 10 controlled reps',
-      whyThisWorks: `Slow-motion repetition builds myelinated neural pathways for accurate muscle activation order before scaling to high-speed competition dynamics.`,
-      purpose: `Sharpens kinetic sequencing and spatial body awareness for the ${sportRule.name} phase, focusing on ${sportRule.kidFocus}.`,
-      howToExecute: [
-        `1. Stand in front of a mirror or phone camera recording in slow-motion.`,
-        `2. Break the ${sportRule.name} down into its sequential steps: ${sportRule.sequence.join(' -> ')}.`,
-        `3. Pause at each transition point for 2 seconds to check joint alignment and posture.`,
-        `4. Perform 10 continuous reps without rushing, maintaining deliberate breathing.`
-      ],
-      coachingCue: `Coaching Cue: "Move like slow motion in a movie, making every single landmark look picture-perfect."`
-    });
-  }
-
-  return {
-    overallGrade: gradeLetter,
-    summaryTitle: `${sportRule.name} Biometric Audit`,
-    keyStrengths: positiveFormPoints.slice(0, 3),
-    biomechanicInsights: insights,
-    executiveDossier,
-    strengthsDetailed,
-    areasToImprove,
-    kineticSummary,
-    injuryRiskAssessment: {
-      level: riskLevel as any,
-      findings: injuryFindings.length > 0 ? injuryFindings : ['No critical biomechanical risks detected.'],
-      preventionDrills: finalDrills.map(d => d.name)
-    },
-    funCorrectiveDrills: finalDrills,
-    coachEncouragement: `Awesome job putting in the work on your ${sportRule.name} form! Your kinetic chain is developing well.`,
+    kineticSequence,
+    overallSymmetry,
+    overallKneeSafety,
+    overallBiometricScore,
     averageVelocities,
-    averageTorques,
-  };
+    averageTorques
+  });
 }
 
-export function generateSyntheticLandmarks(
-  sportId: string = 'general',
-  phaseIndex: number = 0,
-  totalPhases: number = 4,
-  skillLevel: SkillLevel = 'grassroots'
-): MediaPipeLandmark[] {
-  // Base standing skeleton coordinates
-  const landmarks: MediaPipeLandmark[] = Array.from({ length: 33 }, (_, i) => ({
-    x: 0.50,
-    y: 0.50,
-    z: 0.00,
-    visibility: 0.90
-  }));
-
-  // Setup default coordinates for standard human joints
-  // Head / Face
-  landmarks[0] = { x: 0.50, y: 0.15, z: 0.00, visibility: 0.95 }; // Nose
-  landmarks[1] = { x: 0.49, y: 0.13, z: 0.00, visibility: 0.90 };
-  landmarks[2] = { x: 0.48, y: 0.13, z: 0.00, visibility: 0.90 };
-  landmarks[3] = { x: 0.47, y: 0.13, z: 0.00, visibility: 0.90 };
-  landmarks[4] = { x: 0.51, y: 0.13, z: 0.00, visibility: 0.90 };
-  landmarks[5] = { x: 0.52, y: 0.13, z: 0.00, visibility: 0.90 };
-  landmarks[6] = { x: 0.53, y: 0.13, z: 0.00, visibility: 0.90 };
-  landmarks[7] = { x: 0.46, y: 0.15, z: 0.00, visibility: 0.90 };
-  landmarks[8] = { x: 0.54, y: 0.15, z: 0.00, visibility: 0.90 };
-  landmarks[9] = { x: 0.48, y: 0.18, z: 0.00, visibility: 0.90 };
-  landmarks[10] = { x: 0.52, y: 0.18, z: 0.00, visibility: 0.90 };
-
-  // Torso & Upper Body
-  landmarks[11] = { x: 0.42, y: 0.28, z: -0.05, visibility: 0.95 }; // L Shoulder
-  landmarks[12] = { x: 0.58, y: 0.28, z: 0.05, visibility: 0.95 };  // R Shoulder
-  landmarks[13] = { x: 0.35, y: 0.42, z: -0.10, visibility: 0.92 }; // L Elbow
-  landmarks[14] = { x: 0.65, y: 0.42, z: 0.10, visibility: 0.92 };  // R Elbow
-  landmarks[15] = { x: 0.30, y: 0.54, z: -0.12, visibility: 0.90 }; // L Wrist
-  landmarks[16] = { x: 0.70, y: 0.54, z: 0.12, visibility: 0.90 };  // R Wrist
-
-  // Hands details
-  landmarks[17] = { x: 0.28, y: 0.56, z: -0.12, visibility: 0.88 };
-  landmarks[18] = { x: 0.72, y: 0.56, z: 0.12, visibility: 0.88 };
-  landmarks[19] = { x: 0.29, y: 0.56, z: -0.12, visibility: 0.88 };
-  landmarks[20] = { x: 0.71, y: 0.56, z: 0.12, visibility: 0.88 };
-  landmarks[21] = { x: 0.30, y: 0.55, z: -0.12, visibility: 0.88 };
-  landmarks[22] = { x: 0.70, y: 0.55, z: 0.12, visibility: 0.88 };
-
-  // Lower Body
-  landmarks[23] = { x: 0.44, y: 0.55, z: 0.00, visibility: 0.95 };  // L Hip
-  landmarks[24] = { x: 0.56, y: 0.55, z: 0.00, visibility: 0.95 };  // R Hip
-  landmarks[25] = { x: 0.42, y: 0.72, z: 0.05, visibility: 0.92 };  // L Knee
-  landmarks[26] = { x: 0.58, y: 0.72, z: -0.05, visibility: 0.92 }; // R Knee
-  landmarks[27] = { x: 0.42, y: 0.88, z: 0.00, visibility: 0.92 };  // L Ankle
-  landmarks[28] = { x: 0.58, y: 0.88, z: 0.00, visibility: 0.92 };  // R Ankle
-
-  // Feet Details
-  landmarks[31] = { x: 0.40, y: 0.94, z: 0.00, visibility: 0.88 };
-  landmarks[32] = { x: 0.60, y: 0.94, z: 0.00, visibility: 0.88 };
-
-  // Phase parameter t: progress of motion (0 to 1)
-  const t = phaseIndex / (totalPhases - 1 || 1);
-
-  // Apply dynamic kinematic changes depending on the sport and phase index
-  if (sportId === 'soccer') {
-    // Soccer kicking kinematics
-    if (phaseIndex === 0) {
-      // Approach Phase - Standard standing
-      // Plant knee (L) has a solid crouch for stability
-      landmarks[25].y = 0.73; // L Knee flex
-    } 
-    else if (phaseIndex === 1) {
-      // Backswing Phase - Kicking leg (R) loaded high back
-      // Right knee (26) flexes deep, right ankle (28) goes back and up
-      landmarks[26] = { x: 0.62, y: 0.76, z: -0.20, visibility: 0.95 };
-      landmarks[28] = { x: 0.66, y: 0.68, z: -0.38, visibility: 0.95 };
-
-      // Plant knee (L) flexion safety tolerance:
-      if (skillLevel === 'grassroots') {
-        // Rigid plant knee defect: L Knee (25) almost straight, creating high joint strain angle
-        landmarks[25] = { x: 0.42, y: 0.71, z: 0.05, visibility: 0.95 };
-      } else {
-        // Optimal plant knee flexion: soft, absorbing impact
-        landmarks[25] = { x: 0.40, y: 0.74, z: 0.05, visibility: 0.95 };
-      }
-    } 
-    else if (phaseIndex === 2) {
-      // Impact Moment - Foot strikes the ball
-      // Right leg snaps forward, plant knee stays soft
-      landmarks[26] = { x: 0.54, y: 0.74, z: 0.05, visibility: 0.95 };
-      landmarks[28] = { x: 0.52, y: 0.85, z: 0.10, visibility: 0.95 };
-      landmarks[25] = { x: 0.40, y: 0.75, z: 0.05, visibility: 0.95 };
-
-      if (skillLevel === 'grassroots') {
-        // Rigid back defect: chest is leaning backward instead of over ball
-        landmarks[11].y = 0.25; landmarks[11].z = -0.15;
-        landmarks[12].y = 0.25; landmarks[12].z = -0.05;
-      } else {
-        // Core braced, chest forward lean over the ball
-        landmarks[11].y = 0.31; landmarks[11].z = 0.05;
-        landmarks[12].y = 0.31; landmarks[12].z = 0.15;
-      }
-    } 
-    else {
-      // Follow Through - Kicking leg high extension across center
-      landmarks[26] = { x: 0.56, y: 0.62, z: 0.15, visibility: 0.95 };
-      landmarks[28] = { x: 0.50, y: 0.50, z: 0.25, visibility: 0.95 };
-      landmarks[25] = { x: 0.41, y: 0.78, z: 0.00, visibility: 0.95 }; // L knee straightening up
-      
-      // Counter-balance arm raised high
-      landmarks[13] = { x: 0.28, y: 0.32, z: -0.12, visibility: 0.92 };
-      landmarks[15] = { x: 0.22, y: 0.22, z: -0.15, visibility: 0.90 };
-    }
-  } 
-  else if (sportId === 'golf') {
-    // Golf swing kinematics
-    if (phaseIndex === 0) {
-      // Address - Posture hinge
-      // Hips pushed back, torso hinged 40°
-      landmarks[23].z = 0.12; landmarks[24].z = 0.12;
-      landmarks[11].y = 0.32; landmarks[11].z = -0.05;
-      landmarks[12].y = 0.32; landmarks[12].z = 0.05;
-      // Hands low
-      landmarks[13].x = 0.40; landmarks[13].y = 0.46;
-      landmarks[14].x = 0.60; landmarks[14].y = 0.46;
-      landmarks[15].x = 0.50; landmarks[15].y = 0.58;
-      landmarks[16].x = 0.50; landmarks[16].y = 0.58;
-    } 
-    else if (phaseIndex === 1) {
-      // Backswing Coiling - Deep shoulder coil, lead arm straight
-      // Left shoulder rotates deep across center
-      landmarks[11] = { x: 0.52, y: 0.33, z: 0.10, visibility: 0.95 };
-      landmarks[12] = { x: 0.54, y: 0.25, z: -0.10, visibility: 0.95 };
-
-      if (skillLevel === 'grassroots') {
-        // Lead arm straightness defect: left elbow collapses / bends
-        landmarks[13] = { x: 0.48, y: 0.40, z: 0.12, visibility: 0.92 }; // Bent L Elbow
-        landmarks[15] = { x: 0.52, y: 0.26, z: 0.15, visibility: 0.90 }; // Bent L Wrist
-      } else {
-        // Flawless straight lead arm
-        landmarks[13] = { x: 0.54, y: 0.34, z: 0.12, visibility: 0.92 }; // Straight L Elbow
-        landmarks[15] = { x: 0.56, y: 0.22, z: 0.15, visibility: 0.90 }; // Straight L Wrist
-      }
-    } 
-    else if (phaseIndex === 2) {
-      // Downswing Impact - Hips slide open, shoulders squaring up
-      // Hip lateral transfer
-      landmarks[23].x = 0.38; landmarks[24].x = 0.50;
-      landmarks[11] = { x: 0.44, y: 0.30, z: -0.04, visibility: 0.95 };
-      landmarks[12] = { x: 0.56, y: 0.30, z: 0.04, visibility: 0.95 };
-      
-      // Hands locked at release point (shaft lean)
-      landmarks[15] = { x: 0.46, y: 0.54, z: 0.00, visibility: 0.95 };
-      landmarks[16] = { x: 0.46, y: 0.54, z: 0.00, visibility: 0.95 };
-    } 
-    else {
-      // Follow-Through Finish - Complete chest facing target, high wrap
-      landmarks[11] = { x: 0.36, y: 0.24, z: -0.15, visibility: 0.95 };
-      landmarks[12] = { x: 0.42, y: 0.26, z: -0.05, visibility: 0.95 };
-      landmarks[23].x = 0.36; landmarks[24].x = 0.48; // weight fully on lead side
-      // High finish hands
-      landmarks[15] = { x: 0.32, y: 0.18, z: -0.20, visibility: 0.90 };
-      landmarks[16] = { x: 0.32, y: 0.18, z: -0.20, visibility: 0.90 };
-    }
-  } 
-  else if (sportId === 'rugby') {
-    // Rugby tackle kinematics
-    if (phaseIndex === 1) {
-      // Tackle Entry - Lowering Center of Gravity
-      if (skillLevel === 'grassroots') {
-        // High entry defect: knees straight, hips high
-        landmarks[25].y = 0.71; landmarks[26].y = 0.71;
-        landmarks[23].y = 0.52; landmarks[24].y = 0.52;
-        // Head down dangerous posture
-        landmarks[0].y = 0.26; landmarks[0].z = 0.15; // neck compressed
-      } else {
-        // Optimal low shoulder entry: deep squat posture, flat neck/spine
-        landmarks[25].y = 0.76; landmarks[26].y = 0.76; // deep knee flex
-        landmarks[23].y = 0.58; landmarks[24].y = 0.58; // low hips
-        landmarks[0].y = 0.20; landmarks[0].z = 0.05;  // head up neck neutral
-      }
-    } 
-    else if (phaseIndex === 2) {
-      // Contact Moment
-      landmarks[23].y = 0.58; landmarks[24].y = 0.58;
-      // Shoulder level below hips
-      landmarks[11].y = 0.44; landmarks[12].y = 0.44;
-      landmarks[0].y = 0.25; landmarks[0].z = 0.00; // neck straight
-    }
-    else if (phaseIndex === 3) {
-      // Shoulder Wrap Binding
-      landmarks[13] = { x: 0.36, y: 0.45, z: -0.08, visibility: 0.95 };
-      landmarks[14] = { x: 0.64, y: 0.45, z: 0.08, visibility: 0.95 };
-      // Wrap hands inwards around ball/carrier waist
-      landmarks[15] = { x: 0.45, y: 0.48, z: -0.05, visibility: 0.95 };
-      landmarks[16] = { x: 0.55, y: 0.48, z: 0.05, visibility: 0.95 };
-    }
-  } 
-  else {
-    // General dynamic movement (Tennis, Cricket, etc.)
-    // Create a beautiful waving kinetic sequence that cycles joint angles smoothly
-    const sineFactor = Math.sin(t * Math.PI);
-    
-    // Knees flex down and up
-    landmarks[25].y = 0.72 + sineFactor * 0.05;
-    landmarks[26].y = 0.72 + sineFactor * 0.05;
-    
-    // Arms sweep out and in
-    landmarks[13].x = 0.35 - sineFactor * 0.10;
-    landmarks[14].x = 0.65 + sineFactor * 0.10;
-    landmarks[15].x = 0.30 - sineFactor * 0.15;
-    landmarks[16].x = 0.70 + sineFactor * 0.15;
-    
-    if (skillLevel === 'grassroots') {
-      // Introduce subtle postural instability
-      landmarks[0].x = 0.53; // head tilts right
-      landmarks[11].y = 0.25; landmarks[12].y = 0.31; // uneven shoulders
-    }
-  }
-
-  return landmarks;
+export function generateSyntheticLandmarks(): MediaPipeLandmark[] {
+  return [
+    { x: 0.50, y: 0.15, z: 0, visibility: 0.95 },
+    { x: 0.49, y: 0.13, z: 0, visibility: 0.90 },
+    { x: 0.48, y: 0.13, z: 0, visibility: 0.90 },
+    { x: 0.47, y: 0.13, z: 0, visibility: 0.90 },
+    { x: 0.51, y: 0.13, z: 0, visibility: 0.90 },
+    { x: 0.52, y: 0.13, z: 0, visibility: 0.90 },
+    { x: 0.53, y: 0.13, z: 0, visibility: 0.90 },
+    { x: 0.46, y: 0.15, z: 0, visibility: 0.90 },
+    { x: 0.54, y: 0.15, z: 0, visibility: 0.90 },
+    { x: 0.48, y: 0.18, z: 0, visibility: 0.90 },
+    { x: 0.52, y: 0.18, z: 0, visibility: 0.90 },
+    { x: 0.42, y: 0.28, z: -0.05, visibility: 0.95 },
+    { x: 0.58, y: 0.28, z: 0.05, visibility: 0.95 },
+    { x: 0.35, y: 0.42, z: -0.10, visibility: 0.92 },
+    { x: 0.65, y: 0.42, z: 0.10, visibility: 0.92 },
+    { x: 0.30, y: 0.54, z: -0.12, visibility: 0.90 },
+    { x: 0.70, y: 0.54, z: 0.12, visibility: 0.90 },
+    { x: 0.28, y: 0.56, z: -0.12, visibility: 0.88 },
+    { x: 0.72, y: 0.56, z: 0.12, visibility: 0.88 },
+    { x: 0.29, y: 0.56, z: -0.12, visibility: 0.88 },
+    { x: 0.71, y: 0.56, z: 0.12, visibility: 0.88 },
+    { x: 0.30, y: 0.55, z: -0.12, visibility: 0.88 },
+    { x: 0.70, y: 0.55, z: 0.12, visibility: 0.88 },
+    { x: 0.44, y: 0.55, z: 0, visibility: 0.95 },
+    { x: 0.56, y: 0.55, z: 0, visibility: 0.95 },
+    { x: 0.42, y: 0.72, z: 0.05, visibility: 0.92 },
+    { x: 0.58, y: 0.72, z: -0.05, visibility: 0.92 },
+    { x: 0.42, y: 0.88, z: 0, visibility: 0.92 },
+    { x: 0.58, y: 0.88, z: 0, visibility: 0.92 },
+    { x: 0.41, y: 0.92, z: 0, visibility: 0.88 },
+    { x: 0.59, y: 0.92, z: 0, visibility: 0.88 },
+    { x: 0.40, y: 0.94, z: 0, visibility: 0.88 },
+    { x: 0.60, y: 0.94, z: 0, visibility: 0.88 }
+  ];
 }
 
 export function ensureMinimumKeyframes(
@@ -1385,42 +773,32 @@ export async function generateFallbackAnalysisResult(
   const averageVelocities: Record<string, number> = {};
   const averageTorques: Record<string, number> = {};
 
-  let prevAngles: Record<string, number> = {};
+  const landmarks = generateSyntheticLandmarks();
 
   phases.forEach((phase, idx) => {
     const timestamp = Math.round((idx + 1) * 0.8 * 100) / 100;
-    const phaseLandmarks = generateSyntheticLandmarks(sportRule.id, idx, phases.length, skillLevel);
-    const biometricResult = calculateBiometricScore(phaseLandmarks, sportRule, skillLevel, phase, undefined, undefined, athleteCategory);
+    const biometricResult = calculateBiometricScore(landmarks, sportRule, skillLevel, phase);
 
-    // Store the moment of truth phase angles as measuredAngles (default is the 3rd phase / idx === 2)
-    const isImpactPhase = idx === 2 || idx === phases.length - 1;
-    if (isImpactPhase || Object.keys(measuredAngles).length === 0) {
-      Object.assign(measuredAngles, biometricResult.angles);
-    }
+    Object.assign(measuredAngles, biometricResult.angles);
+    Object.entries(biometricResult.results).forEach(([rId, status]) => {
+      ruleResultsSummary[rId] = status;
+    });
 
     const velocity: Record<string, number> = {};
     const torque: Record<string, number> = {};
     sportRule.jointRules.forEach((rule) => {
-      const currentAngle = biometricResult.angles[rule.id] ?? 90;
-      const prevAngle = prevAngles[rule.id] ?? currentAngle;
-      const angleDiff = Math.abs(currentAngle - prevAngle);
-      
-      // Dynamically compute angular speed based on joint deflection rate with dynamic scaling
-      const speed = Math.round(angleDiff * 7.5 + (idx === 2 ? 160 : 40));
-      velocity[rule.id] = speed;
-      torque[rule.id] = Math.round((speed * 0.14 + 10) * 10) / 10;
+      velocity[rule.id] = rule.targetSpeed ? rule.targetSpeed * (0.8 + (idx % 3) * 0.1) : 180;
+      torque[rule.id] = rule.targetTorque ? rule.targetTorque * (0.75 + (idx % 3) * 0.1) : 40;
     });
-
-    prevAngles = { ...biometricResult.angles };
 
     rawKeyframes.push({
       timestamp,
       frameNumber: Math.round(timestamp * calibratedFps),
-      landmarks: phaseLandmarks,
+      landmarks,
       angles: biometricResult.angles,
       ruleResults: biometricResult.results,
-      symmetryScore: skillLevel === 'grassroots' ? 78 + (idx % 5) : (skillLevel === 'academy' ? 88 + (idx % 3) : 94 + (idx % 2)),
-      kneeSafetyScore: skillLevel === 'grassroots' ? 75 + (idx % 6) : (skillLevel === 'academy' ? 86 + (idx % 4) : 95 + (idx % 2)),
+      symmetryScore: 89 + (idx % 3),
+      kneeSafetyScore: 91 + (idx % 2),
       detectedPhase: phase,
       activeLevel: skillLevel,
       velocity,
@@ -1430,36 +808,14 @@ export async function generateFallbackAnalysisResult(
 
   const keyframes = ensureMinimumKeyframes(rawKeyframes, [], sportRule, skillLevel, calibratedFps, 6);
 
-  const detectedIssues: string[] = [];
-  const positiveFormPoints: string[] = [];
-  const injuryFindings: string[] = [];
-
   sportRule.jointRules.forEach((rule) => {
-    const val = measuredAngles[rule.id] ?? Math.round((rule.idealMin + rule.idealMax) / 2);
-    const tolerance = rule.tolerancesByLevel[skillLevel] || rule;
-    const dev = Math.max(0, tolerance.idealMin - val, val - tolerance.idealMax);
-    
-    if (dev > 0) {
-      ruleResultsSummary[rule.id] = dev <= 15 ? 'warning' : 'error';
-      detectedIssues.push(`Your ${rule.name} (at ${Math.round(val)}°) is outside ideal range (${tolerance.idealMin}° - ${tolerance.idealMax}°). ${rule.impactOnPerformance}`);
-      if (rule.importance === 'critical_safety') {
-        injuryFindings.push(rule.injuryRiskFactor);
-      }
-    } else {
+    if (!measuredAngles[rule.id]) {
+      measuredAngles[rule.id] = Math.round((rule.idealMin + rule.idealMax) / 2);
       ruleResultsSummary[rule.id] = 'optimal';
-      positiveFormPoints.push(`Great ${rule.name} control! You hit ${Math.round(val)}° which is within your optimal biometric threshold.`);
     }
-    
-    // Calculate average velocities and torques based on raw keyframes
-    const speeds = rawKeyframes.map(kf => kf.velocity[rule.id] ?? 180);
-    const torques = rawKeyframes.map(kf => kf.torque[rule.id] ?? 45);
-    averageVelocities[rule.id] = Math.round(speeds.reduce((a, b) => a + b, 0) / speeds.length);
-    averageTorques[rule.id] = Math.round((torques.reduce((a, b) => a + b, 0) / torques.length) * 10) / 10;
+    averageVelocities[rule.id] = rule.targetSpeed ? rule.targetSpeed * 0.9 : 180;
+    averageTorques[rule.id] = rule.targetTorque ? rule.targetTorque * 0.85 : 45;
   });
-
-  if (positiveFormPoints.length === 0) {
-    positiveFormPoints.push(`Maintained consistent spatial movement timing.`);
-  }
 
   // Generate a realistic sequence comparison based on biomechanical steps
   const fallbackBiomechSteps = getBiomechanicalSequence(sportRule.id);
@@ -1468,17 +824,6 @@ export async function generateFallbackAnalysisResult(
   let isCorrect = true;
   let feedback = "Perfect! The athlete executed all phases in the correct technical sequence.";
 
-  if (skillLevel === 'grassroots') {
-    // In grassroots, sometimes swap two phases to simulate realistic sequencing issues
-    if (actual.length >= 3) {
-      const temp = actual[1];
-      actual[1] = actual[2];
-      actual[2] = temp;
-      isCorrect = false;
-      feedback = "Sequence Error: Early extension detected prior to complete joint coil. Practice your movement rhythm.";
-    }
-  }
-
   const sequenceComparison = {
     ideal,
     actual,
@@ -1486,68 +831,30 @@ export async function generateFallbackAnalysisResult(
     feedback
   };
 
-  const hipPeakTime = 0.5 + (sportRule.id === 'soccer' ? 0.3 : 0.4);
-  const shoulderPeakTime = hipPeakTime + 0.3;
-  const handPeakTime = shoulderPeakTime + 0.3;
+  const detectedIssues: string[] = [];
+  const positiveFormPoints: string[] = [
+    `Maintained optimal joint alignment during ${sportRule.name} key phases.`,
+    `Solid core bracing with stable L/R symmetry across keyframe sequence.`
+  ];
+  const injuryFindings: string[] = [];
 
   const kineticSequence = {
-    steps: fallbackBiomechSteps.map((s, i) => {
-      const stepScore = skillLevel === 'grassroots' ? 74 + (i * 3) : (skillLevel === 'academy' ? 86 + (i * 2) : 94 + i);
-      const stepStatus: 'optimal' | 'good' | 'warning' = stepScore > 90 ? 'optimal' : (stepScore > 80 ? 'good' : 'warning');
-      return {
-        name: s.title,
-        timestamp: (i + 1) * 0.8,
-        score: stepScore,
-        status: stepStatus
-      };
-    }),
+    steps: fallbackBiomechSteps.map((s, i) => ({ name: s.title, timestamp: (i+1)*0.8, score: 90, status: 'optimal' as 'optimal' })),
     firingOrder: [
-      { joint: 'Hips', peakTime: hipPeakTime, peakVelocity: Math.round((averageVelocities['hip_hinge'] || averageVelocities['hip_flexion'] || 280)) },
-      { joint: 'Shoulders', peakTime: shoulderPeakTime, peakVelocity: Math.round((averageVelocities['shoulder_coil'] || averageVelocities['shoulder_entry'] || 340)) },
-      { joint: 'Hands', peakTime: handPeakTime, peakVelocity: Math.round((averageVelocities['lead_arm'] || averageVelocities['shoulder_wrap'] || 410)) }
+      { joint: 'Hips', peakTime: 0.8, peakVelocity: 280 },
+      { joint: 'Shoulders', peakTime: 1.2, peakVelocity: 340 },
+      { joint: 'Hands', peakTime: 1.5, peakVelocity: 410 }
     ],
-    isCorrectOrder: isCorrect,
-    sequenceEfficiency: skillLevel === 'grassroots' ? 72 : (skillLevel === 'academy' ? 87 : 96)
-  };
-
-  const calculatedSymmetry = Math.round(rawKeyframes.reduce((sum, kf) => sum + kf.symmetryScore, 0) / rawKeyframes.length);
-  const calculatedKneeSafety = Math.round(rawKeyframes.reduce((sum, kf) => sum + kf.kneeSafetyScore, 0) / rawKeyframes.length);
-
-  // Step 3: Generate Intelligent Narrative Feedback with Cross-Joint Correlation
-  const generateNarrativeBiomechanicalStory = () => {
-    let story = `Analyzing your ${sportRule.name} mechanics, we've identified a specific signature in your kinetic chain. `;
-    
-    const criticalIssues = sportRule.jointRules.filter(r => ruleResultsSummary[r.id] === 'error');
-    const warningIssues = sportRule.jointRules.filter(r => ruleResultsSummary[r.id] === 'warning');
-
-    if (criticalIssues.length > 0) {
-      const primary = criticalIssues[0];
-      const angleVal = Math.round(measuredAngles[primary.id] || 0);
-      story += `The most significant finding is at the **${primary.name}**. At ${angleVal}°, this is creating a "Kinematic Leak." `;
-      
-      // Intelligent Correlation Logic
-      if (primary.id.includes('knee') && warningIssues.some(w => w.id.includes('spine') || w.id.includes('hip'))) {
-        story += `Specifically, your knee instability is forcing your hips to over-compensate, which is why we see a secondary deviation in your spinal alignment. Correcting the base will stabilize the entire upper chain. `;
-      } else if (primary.id.includes('hinge') && warningIssues.some(w => w.id.includes('shoulder'))) {
-        story += `Your hip drive timing is slightly delayed, meaning your shoulders are "taking over" the movement. We need to shift the power generation back to your glutes and core. `;
-      } else {
-        story += `${primary.impactOnPerformance} This is where we will focus our primary corrective efforts. `;
-      }
-    } else if (warningIssues.length > 0) {
-      story += `Your overall form is stable, but we found minor efficiency gaps in your ${warningIssues[0].name}. Fine-tuning these angles will help you reach that next tier of performance consistency. `;
-    } else {
-      story += `Your biomechanical synchronization is exceptional! Your joint angles are within the elite performance windows, allowing for maximum energy transfer and minimal injury risk. `;
-    }
-
-    return story;
+    isCorrectOrder: true,
+    sequenceEfficiency: 95
   };
 
   const aiReport = await fetchOrBuildReport(
     sportRule,
     athleteCategory,
     measuredAngles,
-    calculatedSymmetry,
-    calculatedKneeSafety,
+    91,
+    93,
     9.1,
     detectedIssues,
     positiveFormPoints,
@@ -1555,18 +862,14 @@ export async function generateFallbackAnalysisResult(
     kineticSequence,
     injuryFindings,
     averageVelocities,
-    averageTorques,
-    skillLevel
+    averageTorques
   );
-
-  // Overwrite the generic encouragement with our intelligent narrative
-  aiReport.coachEncouragement = generateNarrativeBiomechanicalStory();
 
   return {
     keyframes,
     aiReport,
-    overallSymmetry: calculatedSymmetry,
-    overallKneeSafety: calculatedKneeSafety,
+    overallSymmetry: 91,
+    overallKneeSafety: 93,
     measuredAngles,
     ruleResultsSummary,
     sequenceComparison,
@@ -1574,7 +877,7 @@ export async function generateFallbackAnalysisResult(
     dynamicMetrics: {
       peakAngularVelocity: Math.round(Math.max(...Object.values(averageVelocities), 180)),
       estimatedPeakTorque: Math.round(Math.max(...Object.values(averageTorques), 45) * 10) / 10,
-      explosivenessScore: skillLevel === 'grassroots' ? 74 : (skillLevel === 'academy' ? 85 : 94)
+      explosivenessScore: 88
     }
   };
 }

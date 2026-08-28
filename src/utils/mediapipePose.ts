@@ -1,83 +1,149 @@
 import { PoseLandmarker, FilesetResolver } from '@mediapipe/tasks-vision';
 import { MediaPipeLandmark } from '../types';
+import { PoseLandmarkSmoother } from './oneEuroFilter';
 
 let poseLandmarker: PoseLandmarker | null = null;
 let isInitializing = false;
 let lastVideoTimestamp = 0;
 let isDetecting = false;
 let cachedLandmarks: MediaPipeLandmark[] = [];
+let cachedWorldLandmarks: MediaPipeLandmark[] = [];
+const liveSmoother = new PoseLandmarkSmoother(0.8, 0.008);
 
 /**
  * Resets the cached landmarks when loading a new video source.
  */
 export function resetPoseCache() {
   cachedLandmarks = [];
-  // Note: lastVideoTimestamp must NEVER be reset to 0 because MediaPipe WASM's VIDEO graph requires strictly monotonic increasing timestamps.
+  cachedWorldLandmarks = [];
+  liveSmoother.reset();
+  lastVideoTimestamp = 0;
+  isDetecting = false;
 }
 
 /**
- * Initializes the MediaPipe PoseLandmarker with GPU and CPU fallbacks.
+ * Pre-processes an image/canvas source with adaptive contrast equalization 
+ * to lift dark shadows and isolate athlete limbs against harsh turf or backlit sun.
+ */
+function enhanceShadowContrast(source: CanvasImageSource, width: number, height: number): HTMLCanvasElement {
+  const canvas = document.createElement('canvas');
+  canvas.width = Math.min(width, 640);
+  canvas.height = Math.min(height, 640);
+  const ctx = canvas.getContext('2d', { willReadFrequently: true });
+  if (!ctx) return canvas;
+
+  // Draw scaled down
+  ctx.drawImage(source, 0, 0, canvas.width, canvas.height);
+
+  // Quick contrast boost pass (simulating CLAHE for edge separation in turf shadows)
+  const imgData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+  const data = imgData.data;
+  const len = data.length;
+
+  for (let i = 0; i < len; i += 4) {
+    // Boost luminance in dark shadows without blowing out highlights
+    const r = data[i];
+    const g = data[i + 1];
+    const b = data[i + 2];
+    const luma = 0.299 * r + 0.587 * g + 0.114 * b;
+
+    if (luma < 110) {
+      // Lift shadow details by 25%
+      const boost = (110 - luma) * 0.28;
+      data[i] = Math.min(255, r + boost);
+      data[i + 1] = Math.min(255, g + boost);
+      data[i + 2] = Math.min(255, b + boost);
+    } else if (luma > 200) {
+      // Slight highlight compression to preserve edges in direct sun
+      data[i] = Math.max(0, r - 10);
+      data[i + 1] = Math.max(0, g - 10);
+      data[i + 2] = Math.max(0, b - 10);
+    }
+  }
+
+  ctx.putImageData(imgData, 0, 0);
+  return canvas;
+}
+
+/**
+ * Initializes the MediaPipe PoseLandmarker with the high-precision Full model (GPU and CPU fallbacks).
  */
 export async function initializePoseLandmarker(): Promise<PoseLandmarker | null> {
   if (poseLandmarker) return poseLandmarker;
+  
   if (isInitializing) {
     let attempts = 0;
-    while (isInitializing && attempts < 30) {
+    while (isInitializing && attempts < 100) {
       await new Promise((r) => setTimeout(r, 100));
       attempts++;
     }
     return poseLandmarker;
   }
 
-  try {
-    isInitializing = true;
-    const vision = await FilesetResolver.forVisionTasks(
-      'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/wasm'
-    );
+  isInitializing = true;
+  let retryCount = 0;
+  const maxRetries = 2;
 
+  while (retryCount <= maxRetries) {
     try {
-      poseLandmarker = await PoseLandmarker.createFromOptions(vision, {
-        baseOptions: {
-          modelAssetPath: `https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_lite/float16/1/pose_landmarker_lite.task`,
-          delegate: 'GPU',
-        },
-        runningMode: 'IMAGE',
-        numPoses: 1,
-        minPoseDetectionConfidence: 0.5,
-        minPosePresenceConfidence: 0.5,
-        minTrackingConfidence: 0.5,
-      });
-    } catch (gpuErr) {
-      console.warn('GPU delegate failed for MediaPipe Pose, attempting CPU delegate fallback:', gpuErr);
-      poseLandmarker = await PoseLandmarker.createFromOptions(vision, {
-        baseOptions: {
-          modelAssetPath: `https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_lite/float16/1/pose_landmarker_lite.task`,
-          delegate: 'CPU',
-        },
-        runningMode: 'IMAGE',
-        numPoses: 1,
-        minPoseDetectionConfidence: 0.5,
-        minPosePresenceConfidence: 0.5,
-        minTrackingConfidence: 0.5,
-      });
-    }
+      const vision = await FilesetResolver.forVisionTasks(
+        'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/wasm'
+      );
 
-    isInitializing = false;
-    return poseLandmarker;
-  } catch (err) {
-    console.warn('MediaPipe PoseLandmarker initialization failed:', err);
-    isInitializing = false;
-    return null;
+      const fullModelUrl = `https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_full/float16/1/pose_landmarker_full.task`;
+      const liteModelUrl = `https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_lite/float16/1/pose_landmarker_lite.task`;
+
+      try {
+        // Try Full Precision Model with GPU Delegate first
+        poseLandmarker = await PoseLandmarker.createFromOptions(vision, {
+          baseOptions: {
+            modelAssetPath: fullModelUrl,
+            delegate: 'GPU',
+          },
+          runningMode: 'IMAGE',
+          numPoses: 1, // Reduce to 1 for better performance and reliability
+          minPoseDetectionConfidence: 0.38,
+          minPosePresenceConfidence: 0.38,
+          minTrackingConfidence: 0.38,
+        });
+        break; // Success!
+      } catch (gpuErr) {
+        console.warn('GPU Full delegate failed, attempting CPU / Lite fallback:', gpuErr);
+        poseLandmarker = await PoseLandmarker.createFromOptions(vision, {
+          baseOptions: {
+            modelAssetPath: liteModelUrl,
+            delegate: 'CPU',
+          },
+          runningMode: 'IMAGE',
+          numPoses: 1,
+          minPoseDetectionConfidence: 0.35,
+          minPosePresenceConfidence: 0.35,
+          minTrackingConfidence: 0.35,
+        });
+        break; // Success with fallback!
+      }
+    } catch (err) {
+      console.warn(`MediaPipe initialization attempt ${retryCount + 1} failed:`, err);
+      retryCount++;
+      if (retryCount <= maxRetries) {
+        await new Promise(r => setTimeout(r, 1000)); // Wait 1s before retry
+      }
+    }
   }
+
+  isInitializing = false;
+  return poseLandmarker;
 }
 
 export interface PoseDetectionResult {
   landmarks: MediaPipeLandmark[];
+  allLandmarks?: MediaPipeLandmark[][];
+  worldLandmarks?: MediaPipeLandmark[];
   isRealMediaPipe: boolean;
 }
 
 /**
- * Detects pose landmarks from a video element at timestamp.
+ * Detects pose landmarks from a video element or canvas with shadow contrast normalization and 1-Euro smoothing.
  */
 export async function detectPoseForVideoFrame(
   videoElement: HTMLVideoElement | HTMLCanvasElement | null,
@@ -96,62 +162,41 @@ export async function detectPoseForVideoFrame(
   if (isReady && poseLandmarker && !isDetecting) {
     try {
       isDetecting = true;
-      let result;
-      
-      let sourceToDetect: HTMLVideoElement | HTMLCanvasElement = videoElement as any;
+      let sourceToDetect: CanvasImageSource = videoElement as any;
+      const width = (videoElement instanceof HTMLVideoElement ? videoElement.videoWidth : videoElement.width) || 640;
+      const height = (videoElement instanceof HTMLVideoElement ? videoElement.videoHeight : videoElement.height) || 480;
 
-      // NEW: Handle orientation mismatch (Portrait video reported as Landscape)
-      if (videoElement instanceof HTMLVideoElement) {
-        const clientRatio = videoElement.clientWidth / (videoElement.clientHeight || 1);
-        const intrinsicRatio = videoElement.videoWidth / (videoElement.videoHeight || 1);
-        
-        // Only normalize if metadata is landscape but visual container is portrait
-        let isRotated = intrinsicRatio > 1 && clientRatio < 1;
-        
-        // Supplemental evidence: if we have cached landmarks and they were portrait in a landscape frame
-        if (!isRotated && intrinsicRatio > 1 && cachedLandmarks && cachedLandmarks.length > 20) {
-          let minX = 1, maxX = 0, minY = 1, maxY = 0;
-          for (const p of cachedLandmarks) {
-            minX = Math.min(minX, p.x);
-            maxX = Math.max(maxX, p.x);
-            minY = Math.min(minY, p.y);
-            maxY = Math.max(maxY, p.y);
-          }
-          if ((maxY - minY) > (maxX - minX) * 1.2) {
-            isRotated = true;
-          }
-        }
-
-        if (isRotated) {
-          // Normalizing via temporary canvas to ensure MediaPipe sees the correctly oriented frame
-          const tempCanvas = document.createElement('canvas');
-          tempCanvas.width = videoElement.videoHeight;
-          tempCanvas.height = videoElement.videoWidth;
-          const tempCtx = tempCanvas.getContext('2d');
-          if (tempCtx) {
-            tempCtx.drawImage(videoElement, 0, 0, tempCanvas.width, tempCanvas.height);
-            sourceToDetect = tempCanvas;
-          }
-        }
+      // OPTIONAL: Enhance contrast for difficult lighting (backlit, deep shadows on turf)
+      // We apply this if the confidence was low in previous frames or for all frames to be safe.
+      // High-performance check: only enhance if we have no valid landmarks yet
+      if (cachedLandmarks.length === 0) {
+        sourceToDetect = enhanceShadowContrast(videoElement, width, height);
       }
 
+      // Reset smoother if timestamp jump is too large (new video or heavy seek)
+      if (Math.abs(timestampMs - lastVideoTimestamp) > 5000) {
+        liveSmoother.reset();
+      }
+      lastVideoTimestamp = timestampMs;
+
+      let result;
       if (typeof (poseLandmarker as any).detect === 'function') {
-        result = (poseLandmarker as any).detect(sourceToDetect);
+        result = (poseLandmarker as any).detect(sourceToDetect as ImageBitmap | HTMLVideoElement | HTMLCanvasElement);
       } else {
         lastVideoTimestamp = Math.max(lastVideoTimestamp + 16, Math.round(performance.now()));
-        result = poseLandmarker.detectForVideo(sourceToDetect, lastVideoTimestamp);
+        result = poseLandmarker.detectForVideo(sourceToDetect as ImageBitmap | HTMLVideoElement | HTMLCanvasElement, lastVideoTimestamp);
       }
       isDetecting = false;
 
       if (result && result.landmarks && result.landmarks.length > 0) {
         const rawLandmarks = result.landmarks[0] as MediaPipeLandmark[];
+        const rawWorldLandmarks = (result.worldLandmarks && result.worldLandmarks[0]) as MediaPipeLandmark[] | undefined;
 
-        // ANATOMICAL & SHADOW REJECTION FILTER:
-        // Ensure valid upright human body proportions (height > width, shoulders above hips, hips above ankles)
+        // ANATOMICAL & KINETIC SEQUENCE FILTER (fully supports vertical, bending, and horizontal diving/sliding in rugby, hockey, netball, cricket)
         let minY = 1, maxY = 0, minX = 1, maxX = 0;
         let validPointsCount = 0;
         for (const pt of rawLandmarks) {
-          if (pt && pt.visibility !== undefined && pt.visibility > 0.4) {
+          if (pt && (pt.visibility === undefined || pt.visibility > 0.25)) {
             minY = Math.min(minY, pt.y);
             maxY = Math.max(maxY, pt.y);
             minX = Math.min(minX, pt.x);
@@ -162,23 +207,26 @@ export async function detectPoseForVideoFrame(
 
         const bodyHeight = maxY - minY;
         const bodyWidth = maxX - minX;
+        // Accept both vertical and horizontal athletic actions (dives, sliding tackles, ground sweeps)
+        const isTooSmall = bodyHeight < 0.05 && bodyWidth < 0.05;
+        const hasEnoughLandmarks = validPointsCount >= 10;
 
-        // If body height is smaller than width (e.g. shadow on ground) or not enough points, reject!
-        const isShadowOrHorizontalArtifact = bodyHeight < bodyWidth * 0.8 || bodyHeight < 0.15;
-        const hasEnoughLandmarks = validPointsCount >= 15;
-
-        // Check vertical order (shoulders 11/12 vs hips 23/24 vs ankles 27/28)
         const leftShoulder = rawLandmarks[11];
         const rightShoulder = rawLandmarks[12];
         const leftHip = rawLandmarks[23];
         const rightHip = rawLandmarks[24];
         
+        const shouldersX = ((leftShoulder?.x || 0) + (rightShoulder?.x || 0)) / 2;
+        const hipsX = ((leftHip?.x || 0) + (rightHip?.x || 0)) / 2;
         const shouldersY = ((leftShoulder?.y || 0) + (rightShoulder?.y || 0)) / 2;
         const hipsY = ((leftHip?.y || 0) + (rightHip?.y || 0)) / 2;
-        const isUpright = shouldersY < hipsY; // In screen coordinates, smaller Y is higher up
+        
+        // Validate skeletal topology (shoulders and hips present) rather than strict vertical orientation
+        const hasValidTorso = leftShoulder && rightShoulder && leftHip && rightHip && 
+          (Math.abs(shouldersY - hipsY) > 0.03 || Math.abs(shouldersX - hipsX) > 0.03 || bodyWidth > 0.1 || bodyHeight > 0.1);
 
-        if (hasEnoughLandmarks && !isShadowOrHorizontalArtifact && isUpright) {
-          // ANATOMICAL SHIN CLAMP (Prevents ankles/feet from stretching down into floor shadows)
+        if (hasEnoughLandmarks && !isTooSmall && hasValidTorso) {
+          // ANATOMICAL SHIN & THIGH PROPORTION CLAMP
           const applyShinClamp = (hipIdx: number, kneeIdx: number, ankleIdx: number) => {
             const hip = rawLandmarks[hipIdx];
             const knee = rawLandmarks[kneeIdx];
@@ -186,9 +234,8 @@ export async function detectPoseForVideoFrame(
             if (hip && knee && ankle) {
               const femurLen = Math.sqrt(Math.pow(knee.x - hip.x, 2) + Math.pow(knee.y - hip.y, 2));
               const shinLen = Math.sqrt(Math.pow(ankle.x - knee.x, 2) + Math.pow(ankle.y - knee.y, 2));
-              const maxAllowedShin = femurLen * 1.5; // Anatomical maximum ratio
-              if (shinLen > maxAllowedShin && femurLen > 0.05) {
-                // Pull ankle upward along knee-ankle vector to max allowed length
+              const maxAllowedShin = Math.max(0.08, femurLen * 1.45);
+              if (shinLen > maxAllowedShin && femurLen > 0.04) {
                 const ratio = maxAllowedShin / shinLen;
                 ankle.x = knee.x + (ankle.x - knee.x) * ratio;
                 ankle.y = knee.y + (ankle.y - knee.y) * ratio;
@@ -199,73 +246,32 @@ export async function detectPoseForVideoFrame(
           applyShinClamp(23, 25, 27); // Left leg
           applyShinClamp(24, 26, 28); // Right leg
 
-          cachedLandmarks = rawLandmarks;
+          // Smooth with 1-Euro filter
+          const smoothedLandmarks = liveSmoother.smooth(rawLandmarks, timestampMs / 1000);
+          cachedLandmarks = smoothedLandmarks;
+          if (rawWorldLandmarks) {
+            cachedWorldLandmarks = rawWorldLandmarks;
+          }
+
           return {
             landmarks: cachedLandmarks,
+            allLandmarks: result.landmarks || [],
+            worldLandmarks: cachedWorldLandmarks,
             isRealMediaPipe: true,
           };
-        } else {
-          // Reject invalid pose (shadow or background person)
-          console.warn("Rejected non-human/shadow pose detection to prevent jitter/ground anchoring.");
         }
       }
     } catch (e: any) {
       isDetecting = false;
-      // Fall back to detectForVideo if detect throws in current mode
-      try {
-        lastVideoTimestamp = Math.max(lastVideoTimestamp + 16, Math.round(performance.now()));
-        const fallbackRes = poseLandmarker.detectForVideo(videoElement, lastVideoTimestamp);
-        if (fallbackRes && fallbackRes.landmarks && fallbackRes.landmarks.length > 0) {
-          const rawLandmarks = fallbackRes.landmarks[0] as MediaPipeLandmark[];
-          let minY = 1, maxY = 0, minX = 1, maxX = 0;
-          let validPoints = 0;
-          for (const pt of rawLandmarks) {
-            if (pt && pt.visibility !== undefined && pt.visibility > 0.4) {
-              minY = Math.min(minY, pt.y);
-              maxY = Math.max(maxY, pt.y);
-              minX = Math.min(minX, pt.x);
-              maxX = Math.max(maxX, pt.x);
-              validPoints++;
-            }
-          }
-          const bodyH = maxY - minY;
-          const bodyW = maxX - minX;
-          if (validPoints >= 15 && bodyH >= bodyW * 0.8 && bodyH >= 0.15) {
-            const applyShinClamp = (hipIdx: number, kneeIdx: number, ankleIdx: number) => {
-              const hip = rawLandmarks[hipIdx];
-              const knee = rawLandmarks[kneeIdx];
-              const ankle = rawLandmarks[ankleIdx];
-              if (hip && knee && ankle) {
-                const femurLen = Math.sqrt(Math.pow(knee.x - hip.x, 2) + Math.pow(knee.y - hip.y, 2));
-                const shinLen = Math.sqrt(Math.pow(ankle.x - knee.x, 2) + Math.pow(ankle.y - knee.y, 2));
-                const maxAllowedShin = femurLen * 1.5;
-                if (shinLen > maxAllowedShin && femurLen > 0.05) {
-                  const ratio = maxAllowedShin / shinLen;
-                  ankle.x = knee.x + (ankle.x - knee.x) * ratio;
-                  ankle.y = knee.y + (ankle.y - knee.y) * ratio;
-                }
-              }
-            };
-            applyShinClamp(23, 25, 27);
-            applyShinClamp(24, 26, 28);
-
-            cachedLandmarks = rawLandmarks;
-            return {
-              landmarks: cachedLandmarks,
-              isRealMediaPipe: true,
-            };
-          }
-        }
-      } catch (fbErr: any) {
-        // Silently catch timestamp note
-      }
+      console.warn("Pose detection frame note:", e?.message);
     }
   }
 
-  // Do not return unrelated stale cached landmarks for different frames
   return {
-    landmarks: [],
-    isRealMediaPipe: false,
+    landmarks: cachedLandmarks.length > 0 && allowCachedFallback ? cachedLandmarks : [],
+    allLandmarks: cachedLandmarks.length > 0 && allowCachedFallback ? [cachedLandmarks] : [],
+    worldLandmarks: cachedWorldLandmarks,
+    isRealMediaPipe: cachedLandmarks.length > 0,
   };
 }
 

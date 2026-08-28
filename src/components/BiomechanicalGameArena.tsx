@@ -47,7 +47,9 @@ export const BiomechanicalGameArena: React.FC<Props> = ({
 
   // --- MODE 1: POSE MATCHER STATE ---
   const sportId = sportRule.id || 'rugby';
-  
+  const techniques = sportRule.techniques && sportRule.techniques.length > 0 ? sportRule.techniques : [];
+  const [selectedTechId, setSelectedTechId] = useState<string>(techniques[0]?.id || 'default');
+
   // Custom joint controls based on sport
   const defaultJoints = {
     rugby: [
@@ -92,16 +94,54 @@ export const BiomechanicalGameArena: React.FC<Props> = ({
     ]
   };
 
-  const initialJoints = defaultJoints[sportId as keyof typeof defaultJoints] || defaultJoints.rugby;
-  const [joints, setJoints] = useState(initialJoints);
+  const getInitialJoints = () => {
+    const tech = sportRule.techniques?.find(t => t.id === selectedTechId) || sportRule.techniques?.[0];
+    if (tech && tech.jointRules && tech.jointRules.length > 0) {
+      return tech.jointRules.map(r => ({
+        id: r.id,
+        name: r.name,
+        min: 60,
+        max: 180,
+        idealMin: r.idealMin,
+        idealMax: r.idealMax,
+        current: Math.round((r.idealMin + r.idealMax) / 2),
+        unit: r.unit || '°',
+        cue: r.description || 'Maintain proper biomechanical alignment'
+      }));
+    }
+    return defaultJoints[sportId as keyof typeof defaultJoints] || defaultJoints.rugby;
+  };
+
+  const [joints, setJoints] = useState(getInitialJoints());
   const [poseMastered, setPoseMastered] = useState(false);
 
-  // Update joints whenever sportRule changes
+  // Update joints whenever sportRule or selectedTechId changes
   useEffect(() => {
-    const list = defaultJoints[sportId as keyof typeof defaultJoints] || defaultJoints.rugby;
-    setJoints(list);
+    const tech = sportRule.techniques?.find(t => t.id === selectedTechId) || sportRule.techniques?.[0];
+    if (tech && tech.jointRules && tech.jointRules.length > 0) {
+      setJoints(tech.jointRules.map(r => ({
+        id: r.id,
+        name: r.name,
+        min: 60,
+        max: 180,
+        idealMin: r.idealMin,
+        idealMax: r.idealMax,
+        current: Math.round((r.idealMin + r.idealMax) / 2),
+        unit: r.unit || '°',
+        cue: r.description || 'Maintain proper biomechanical alignment'
+      })));
+    } else {
+      const list = defaultJoints[sportId as keyof typeof defaultJoints] || defaultJoints.rugby;
+      setJoints(list);
+    }
     setPoseMastered(false);
-  }, [sportId]);
+  }, [sportId, selectedTechId, sportRule]);
+
+  useEffect(() => {
+    if (sportRule.techniques && sportRule.techniques.length > 0) {
+      setSelectedTechId(sportRule.techniques[0].id);
+    }
+  }, [sportRule]);
 
   const handleSliderChange = (id: string, val: number) => {
     setJoints(prev => prev.map(j => j.id === id ? { ...j, current: val } : j));
@@ -370,7 +410,7 @@ export const BiomechanicalGameArena: React.FC<Props> = ({
       </div>
 
       {/* GAME MODE NAVIGATION TABS */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-2.5 bg-zinc-950/50 p-1.5 rounded-2xl border border-zinc-800/60">
+      <div className="flex overflow-x-auto whitespace-nowrap custom-scrollbar pb-2 gap-2.5 bg-zinc-950/50 p-1.5 rounded-2xl border border-zinc-800/60 w-full max-w-full">
         {[
           { id: 'pose_matcher', label: 'Pose Matcher', icon: '🎯', color: 'from-blue-600 to-cyan-600' },
           { id: 'kinetic_puzzle', label: 'Kinetic Chain', icon: '⚡', color: 'from-amber-600 to-yellow-600' },
@@ -380,7 +420,7 @@ export const BiomechanicalGameArena: React.FC<Props> = ({
           <button
             key={tab.id}
             onClick={() => setGameMode(tab.id as any)}
-            className={`relative px-4 py-3 rounded-xl text-[11px] font-black uppercase tracking-widest flex items-center justify-center gap-2.5 transition-all group overflow-hidden ${
+            className={`relative px-4 py-3 rounded-xl text-[11px] font-black uppercase tracking-widest flex items-center justify-center gap-2.5 transition-all group overflow-hidden flex-shrink-0 ${
               gameMode === tab.id
                 ? 'text-white'
                 : 'text-zinc-500 hover:text-zinc-300'
@@ -416,13 +456,35 @@ export const BiomechanicalGameArena: React.FC<Props> = ({
               {/* SLIDERS COLUMN */}
               <div className="lg:col-span-7 flex flex-col gap-4">
                 <div className="bg-zinc-950/40 border border-zinc-800/80 p-5 rounded-3xl flex flex-col gap-5 backdrop-blur-sm shadow-xl">
-                  <div className="flex items-center justify-between border-b border-zinc-800 pb-3">
-                    <span className="text-xs font-black uppercase text-amber-400 flex items-center gap-2">
-                      <Activity className="w-4 h-4" /> Joint Angle Calibration
-                    </span>
-                    <span className="text-[10px] font-mono text-zinc-500 uppercase tracking-widest">
-                      Snap To Target
-                    </span>
+                  <div className="flex flex-col gap-3 border-b border-zinc-800 pb-3">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-black uppercase text-amber-400 flex items-center gap-2">
+                        <Activity className="w-4 h-4" /> Joint Angle Calibration ({sportRule.name})
+                      </span>
+                      <span className="text-[10px] font-mono text-zinc-500 uppercase tracking-widest">
+                        Snap To Target
+                      </span>
+                    </div>
+
+                    {/* MOVEMENT / TECHNIQUE SELECTOR */}
+                    {sportRule.techniques && sportRule.techniques.length > 0 && (
+                      <div className="flex items-center gap-2 overflow-x-auto no-scrollbar pt-1">
+                        <span className="text-[10px] font-bold uppercase text-zinc-400 whitespace-nowrap">Movement:</span>
+                        {sportRule.techniques.map((tech) => (
+                          <button
+                            key={tech.id}
+                            onClick={() => setSelectedTechId(tech.id)}
+                            className={`px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-wider transition-all whitespace-nowrap ${
+                              selectedTechId === tech.id
+                                ? 'bg-amber-500 text-zinc-950 shadow-md shadow-amber-500/20'
+                                : 'bg-zinc-900 border border-zinc-800 text-zinc-400 hover:text-white'
+                            }`}
+                          >
+                            {tech.name}
+                          </button>
+                        ))}
+                      </div>
+                    )}
                   </div>
 
                   <div className="space-y-4">
@@ -484,10 +546,10 @@ export const BiomechanicalGameArena: React.FC<Props> = ({
                       onClick={() => setJoints(prev => prev.map(j => ({ ...j, current: Math.round((j.idealMin + j.idealMax) / 2) })))}
                       className="flex-1 bg-white hover:bg-zinc-200 text-zinc-950 text-[11px] font-black uppercase tracking-widest py-3 rounded-2xl shadow-xl shadow-white/5 transition-all active:scale-95 flex items-center justify-center gap-2"
                     >
-                      <Sparkles className="w-4 h-4" /> Snap to Gold Standard
+                      <Activity className="w-4 h-4" /> Snap to Gold Standard
                     </button>
                     <button
-                      onClick={() => setJoints(initialJoints)}
+                      onClick={() => setJoints(getInitialJoints())}
                       className="p-3 bg-zinc-900 hover:bg-zinc-800 text-zinc-400 hover:text-white rounded-2xl border border-zinc-800 transition-all active:scale-95"
                     >
                       <RotateCcw className="w-5 h-5" />
@@ -568,7 +630,7 @@ export const BiomechanicalGameArena: React.FC<Props> = ({
 
                   <div className="bg-zinc-900/80 border border-zinc-800/80 p-4 rounded-2xl flex flex-col gap-2 mt-auto">
                     <span className="text-[10px] font-black text-amber-500 uppercase tracking-widest flex items-center gap-1.5">
-                      <Info className="w-4 h-4" /> AI Diagnostics
+                      <Info className="w-4 h-4" /> Biomechanical Diagnostics
                     </span>
                     <p className="text-[11px] text-zinc-400 leading-relaxed font-medium">
                       {matchPercentage === 100 
@@ -806,7 +868,7 @@ export const BiomechanicalGameArena: React.FC<Props> = ({
                         <div className="absolute inset-0 bg-gradient-to-t from-zinc-950 via-transparent to-transparent opacity-60" />
                         <div className="absolute bottom-3 left-3 right-3 flex items-center justify-between">
                           <span className="text-[10px] font-black text-white bg-red-600 px-2 py-1 rounded shadow-lg uppercase tracking-widest">Action Required</span>
-                          <span className="text-[9px] text-zinc-400 bg-black/80 px-2 py-1 rounded backdrop-blur-md border border-white/10 font-mono uppercase tracking-widest">Bio-AI Render</span>
+                          <span className="text-[9px] text-zinc-400 bg-black/80 px-2 py-1 rounded backdrop-blur-md border border-white/10 font-mono uppercase tracking-widest">Biometric Render</span>
                         </div>
                       </div>
                     </div>
