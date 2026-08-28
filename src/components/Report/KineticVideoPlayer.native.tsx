@@ -53,7 +53,7 @@ export const KineticVideoPlayer: React.FC<KineticVideoPlayerProps> = ({
   return (
     <View style={styles.container}>
       <Video
-        ref={videoRef}
+        ref={videoRef as any}
         source={{ uri: videoUrl }}
         rate={playbackRate}
         isMuted={true}
@@ -78,13 +78,14 @@ export const KineticVideoPlayer: React.FC<KineticVideoPlayerProps> = ({
             {/* We draw the skeleton using Skia Path for ultra-smooth 60fps rendering */}
             {/* In a real implementation, we iterate through sportRule.jointRules here */}
             {currentFrame.landmarks.map((lm, i) => (
-              <Circle
-                key={i}
-                cx={lm.x * SCREEN_WIDTH}
-                cy={lm.y * (SCREEN_WIDTH * 0.5625)} // Assuming 16:9
-                r={4}
-                color={lm.visibility && lm.visibility > 0.5 ? "#ef4444" : "#fbbf24"}
-              />
+              <Group key={i}>
+                <Circle
+                  cx={lm.x * SCREEN_WIDTH}
+                  cy={lm.y * (SCREEN_WIDTH * 0.5625)} // Assuming 16:9
+                  r={4}
+                  color={lm.visibility && lm.visibility > 0.5 ? "#ef4444" : "#fbbf24"}
+                />
+              </Group>
             ))}
           </Group>
         )}
