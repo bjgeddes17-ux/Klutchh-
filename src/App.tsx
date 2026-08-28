@@ -291,6 +291,9 @@ function App() {
           <BiometricDrillsLibrary 
             selectedSportId={selectedSportId}
             onSelectSport={handleSportChange}
+            onSelectDrillAsRule={() => {
+              setIsDrillsLibraryOpen(false);
+            }}
             onClose={() => setIsDrillsLibraryOpen(false)}
           />
         </div>
@@ -328,7 +331,10 @@ function App() {
       <PinPromptModal 
         isOpen={isPinPromptOpen}
         onClose={() => setIsPinPromptOpen(false)}
-        onSuccess={(user) => { setCurrentUser(user); setIsPinPromptOpen(false); }}
+        onSuccess={(report) => {
+          setSavedReports(prev => [report, ...prev]);
+          setIsPinPromptOpen(false);
+        }}
       />
 
       <footer className="border-t border-zinc-900 py-4 text-center text-xs text-zinc-500 font-medium">

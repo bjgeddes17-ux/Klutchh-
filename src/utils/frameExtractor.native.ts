@@ -1,9 +1,18 @@
 import * as VideoThumbnails from 'expo-video-thumbnails';
-import { ExtractedFrame } from './frameExtractor';
+
+export interface ExtractedFrame {
+  blob?: Blob;
+  imageBitmap?: any;
+  uri?: string; // For Native file paths
+  timestamp: number;
+  index: number;
+  hardwareGpuPipeline?: boolean;
+  microsecondTimestamp?: number;
+}
 
 // On Native, we use expo-video-thumbnails for high-performance extraction
 export async function clearFrameCache(): Promise<void> {
-  // Native cleanup logic if using FileSystem
+  // Native cleanup logic
 }
 
 export async function extractFramesPipelined(
@@ -11,7 +20,7 @@ export async function extractFramesPipelined(
   onFrame: (frame: ExtractedFrame) => Promise<void>,
   onProgress: (progress: number) => void,
   targetFps: number = 20,
-  targetHeight: number = 480,
+  _targetHeight: number = 480,
   _cropBox?: { x: number; y: number; width: number; height: number },
   startTime: number = 0,
   endTime?: number
@@ -19,16 +28,11 @@ export async function extractFramesPipelined(
   console.log('Native: Starting extraction via expo-video-thumbnails');
   
   try {
-    // Note: This is a simplified extraction loop for Native.
-    // In a production app, we would use a native module or ffmpeg-kit.
-    // Here we extract a few key frames to keep the AI responsive.
-    
     const interval = 1000 / targetFps;
     let currentTime = startTime * 1000;
-    const finalTime = (endTime || 10) * 1000; // Default to 10s if unknown
+    const finalTime = (endTime || 10) * 1000;
     let count = 0;
 
-    // Memory Guard: Scale down quality if extraction is heavy
     const thumbnailOptions = {
       quality: 0.6,
       time: 0,
@@ -41,7 +45,7 @@ export async function extractFramesPipelined(
       });
 
       await onFrame({
-        uri, // Use the new uri property
+        uri,
         index: count,
         timestamp: currentTime / 1000,
       });
@@ -64,5 +68,5 @@ export async function getFrame(_index: number): Promise<ExtractedFrame | null> {
 }
 
 export async function setFrame(_index: number, _frame: ExtractedFrame): Promise<void> {
-  // On Native, we typically store these as file URIs
+  // On Native, stored as file URIs
 }

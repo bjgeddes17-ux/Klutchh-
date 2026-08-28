@@ -344,6 +344,6 @@ export interface TrophyCard {
   coachingCue?: string;
   createdAt: string;
   capturedImage?: string;
-  sportAttributes?: { label: string; value: number; name?: string }[];
+  sportAttributes?: { label: string; value: number | string; name?: string }[];
 }
 

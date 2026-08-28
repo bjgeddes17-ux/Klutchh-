@@ -315,8 +315,8 @@ export const AnalysisReportPage: React.FC<AnalysisReportPageProps> = ({
   const toggleDrillStatus = (idx: number) => {
     setDrillProgress(prev => {
       const current = prev[idx] || 'pending';
-      const nextStatus = current === 'pending' ? 'completed' : current === 'completed' ? 'mastered' : 'pending';
-      const updated = { ...prev, [idx]: nextStatus };
+      const nextStatus: 'pending' | 'completed' | 'mastered' = current === 'pending' ? 'completed' : current === 'completed' ? 'mastered' : 'pending';
+      const updated: Record<number, 'pending' | 'completed' | 'mastered'> = { ...prev, [idx]: nextStatus };
       if (onUpdateDrillProgress) {
         onUpdateDrillProgress(updated);
       }
@@ -530,7 +530,15 @@ export const AnalysisReportPage: React.FC<AnalysisReportPageProps> = ({
                 kneeSafetyScore: jointArmor,
                 keyframeList: safeKeyframeList,
                 allFrames: allFrames,
-                report: aiReport || { overallGrade: 'A-', summaryTitle: sportRule.name + ' Analysis', keyStrengths: [], biomechanicInsights: [], coachEncouragement: '' },
+                report: aiReport || {
+                  overallGrade: 'A-',
+                  summaryTitle: sportRule.name + ' Analysis',
+                  keyStrengths: [],
+                  biomechanicInsights: [],
+                  injuryRiskAssessment: { level: 'low', findings: [], preventionDrills: [] },
+                  funCorrectiveDrills: [],
+                  coachEncouragement: ''
+                },
                 authorName: currentUser?.name || 'Coach',
                 coachNotes: coachNotes
               });
@@ -583,9 +591,9 @@ export const AnalysisReportPage: React.FC<AnalysisReportPageProps> = ({
             kineticFlow={kineticFlow}
           />
 
-          {aiReport?.proTipsAndCoolFacts && aiReport.proTipsAndCoolFacts.length > 0 && (
+          {(aiReport as any)?.proTipsAndCoolFacts && (aiReport as any).proTipsAndCoolFacts.length > 0 && (
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {aiReport.proTipsAndCoolFacts.map((card, cIdx) => (
+              {((aiReport as any).proTipsAndCoolFacts as any[]).map((card, cIdx) => (
                 <div key={cIdx} className="relative overflow-hidden rounded-2xl p-5 border border-zinc-800 bg-zinc-900 shadow-xl transition-all hover:scale-[1.02]">
                   <div className="flex items-start justify-between gap-3">
                     <div className="flex items-center gap-2.5">

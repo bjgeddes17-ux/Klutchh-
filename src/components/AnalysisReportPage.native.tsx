@@ -92,10 +92,10 @@ export const AnalysisReportPage: React.FC<AnalysisReportPageProps> = ({
         {/* Insight Cards */}
         <View style={styles.insightSection}>
            <Text style={styles.sectionTitle}>CORE INSIGHTS</Text>
-           {aiReport?.biomechanicInsights.map((insight, idx) => (
+           {aiReport?.biomechanicInsights?.map((insight: any, idx: number) => (
              <View key={idx} style={styles.insightCard}>
                 <View style={styles.insightIcon}><AlertCircle color="#ef4444" size={16} /></View>
-                <Text style={styles.insightText}>{insight.finding}</Text>
+                <Text style={styles.insightText}>{typeof insight === 'string' ? insight : insight?.finding || insight?.title || ''}</Text>
              </View>
            ))}
         </View>

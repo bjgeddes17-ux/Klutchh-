@@ -111,12 +111,14 @@ export const TrophyCardMaker: React.FC<TrophyCardMakerProps> = ({ report, curren
         
         list.unshift({
           timestamp: currentTime,
+          frameNumber: 0,
           detectedPhase: '📸 Custom Snapshot',
           landmarks: matchingAllFrame?.landmarks || [],
           angles: matchingAllFrame?.angles || {},
           ruleResults: matchingAllFrame?.ruleResults || {},
           symmetryScore: matchingAllFrame?.symmetryScore || report.symmetryScore,
-          kneeSafetyScore: matchingAllFrame?.kneeSafetyScore || report.kneeSafetyScore
+          kneeSafetyScore: matchingAllFrame?.kneeSafetyScore || report.kneeSafetyScore,
+          activeLevel: 'grassroots'
         });
       }
     }
@@ -375,7 +377,7 @@ export const TrophyCardMaker: React.FC<TrophyCardMakerProps> = ({ report, curren
       landmarks: activeFrame.landmarks,
       ruleResults: activeFrame.ruleResults,
       calculatedAngles: activeFrame.angles,
-      coachingCue: report.report.injuryRiskAssessment.explanation || 'Maintain dynamic stability and complete complete action sequence.',
+      coachingCue: (report.report.injuryRiskAssessment as any)?.explanation || report.report.injuryRiskAssessment?.findings?.[0] || 'Maintain dynamic stability and complete action sequence.',
       createdAt: new Date().toISOString(),
       capturedImage,
       sportAttributes: savedSportAttributes
@@ -482,12 +484,12 @@ export const TrophyCardMaker: React.FC<TrophyCardMakerProps> = ({ report, curren
           { label: 'PAS', value: isTitan ? outOf10(sft) : sft, name: 'Throwing Safety' },
           { label: 'PHY', value: isTitan ? outOf10(exp) : exp, name: 'Core Stamina' }
         ];
-      case 'basketball':
+      case 'soccer':
         return [
-          { label: 'SPD', value: isTitan ? outOf10(spd) : spd, name: 'Speed' },
+          { label: 'SPD', value: isTitan ? outOf10(spd) : spd, name: 'Sprint Velocity' },
           { label: 'DRI', value: isTitan ? outOf10(sym) : sym, name: 'Dribbling Flow' },
-          { label: 'SHT', value: isTitan ? outOf10(base) : base, name: 'Shooting Alignment' },
-          { label: 'DEF', value: isTitan ? outOf10(sft) : sft, name: 'Defense Joint Armor' },
+          { label: 'SHT', value: isTitan ? outOf10(base) : base, name: 'Striking Alignment' },
+          { label: 'DEF', value: isTitan ? outOf10(sft) : sft, name: 'Tackle Joint Armor' },
           { label: 'PAS', value: isTitan ? outOf10(base) : base, name: 'Passing Accuracy' },
           { label: 'JMP', value: isTitan ? outOf10(exp) : exp, name: 'Vertical Jump' }
         ];
@@ -821,7 +823,7 @@ export const TrophyCardMaker: React.FC<TrophyCardMakerProps> = ({ report, curren
                       {currentViewCard ? currentViewCard.athleteName : athleteName}
                     </h3>
                   </div>
-                  <span className="text-[9px] font-mono text-zinc-400 uppercase tracking-widest">{report.sportId === 'rugby' ? 'TCK' : report.sportId === 'swim' ? 'SWM' : 'ATH'} // GEN-3</span>
+                  <span className="text-[9px] font-mono text-zinc-400 uppercase tracking-widest">{report.sportId === 'rugby' ? 'TCK' : report.sportId === 'soccer' ? 'SOC' : 'ATH'} // GEN-3</span>
                 </div>
 
                 {/* FIFA Middle Area: Left Rating, Right Volumetric Skeleton */}
@@ -833,7 +835,7 @@ export const TrophyCardMaker: React.FC<TrophyCardMakerProps> = ({ report, curren
                       {baseScore}
                     </span>
                     <span className="text-[11px] font-black uppercase text-white tracking-widest mt-1 block">
-                      {report.sportId === 'rugby' ? 'TCK' : report.sportId === 'swim' ? 'SWM' : 'ATH'}
+                      {report.sportId === 'rugby' ? 'TCK' : report.sportId === 'soccer' ? 'SOC' : 'ATH'}
                     </span>
                     
                     <div className="w-8 h-px bg-white/10 my-2" />
@@ -927,7 +929,7 @@ export const TrophyCardMaker: React.FC<TrophyCardMakerProps> = ({ report, curren
                   <div className="bg-zinc-900/50 p-3 rounded-xl border border-zinc-800 flex flex-col gap-1">
                     <h4 className="text-[9px] font-mono text-zinc-400 uppercase tracking-wider">Coaching Advice</h4>
                     <p className="text-[11px] text-zinc-300 leading-normal italic font-medium mt-1">
-                      &quot;{currentViewCard ? currentViewCard.coachingCue : (report.report.injuryRiskAssessment.explanation || 'Maintain dynamic knee stability and engage core musculature.')}&quot;
+                      &quot;{currentViewCard ? currentViewCard.coachingCue : ((report.report.injuryRiskAssessment as any)?.explanation || report.report.injuryRiskAssessment?.findings?.[0] || 'Maintain dynamic knee stability and engage core musculature.')}&quot;
                     </p>
                   </div>
 

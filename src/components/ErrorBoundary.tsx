@@ -1,4 +1,4 @@
-import React, { Component, ErrorInfo, ReactNode } from 'react';
+import React, { ErrorInfo, ReactNode } from 'react';
 import { AlertTriangle, RefreshCw, Home } from 'lucide-react';
 
 interface Props {
@@ -11,11 +11,14 @@ interface State {
   error: Error | null;
 }
 
-export class ErrorBoundary extends Component<Props, State> {
-  public state: State = {
-    hasError: false,
-    error: null,
-  };
+export class ErrorBoundary extends React.Component<Props, State> {
+  constructor(props: Props) {
+    super(props);
+    this.state = {
+      hasError: false,
+      error: null,
+    };
+  }
 
   public static getDerivedStateFromError(error: Error): State {
     return { hasError: true, error };
@@ -63,7 +66,7 @@ export class ErrorBoundary extends Component<Props, State> {
             <div className="grid grid-cols-1 w-full gap-3">
               <button
                 onClick={this.handleReset}
-                className="flex items-center justify-center gap-2 bg-red-600 hover:bg-red-500 text-white font-black py-4 rounded-2xl uppercase italic tracking-wider transition-all shadow-lg shadow-red-600/20 group"
+                className="flex items-center justify-center gap-2 bg-red-600 hover:bg-red-500 text-white font-black py-4 rounded-2xl uppercase italic tracking-wider transition-all shadow-lg shadow-red-600/20 group cursor-pointer"
               >
                 <RefreshCw className="w-4 h-4 group-hover:rotate-180 transition-transform duration-500" />
                 Restart Engine
@@ -71,7 +74,7 @@ export class ErrorBoundary extends Component<Props, State> {
               
               <button
                 onClick={this.handleGoHome}
-                className="flex items-center justify-center gap-2 bg-zinc-800 hover:bg-zinc-700 text-zinc-300 font-black py-4 rounded-2xl uppercase italic tracking-wider transition-all"
+                className="flex items-center justify-center gap-2 bg-zinc-800 hover:bg-zinc-700 text-zinc-300 font-black py-4 rounded-2xl uppercase italic tracking-wider transition-all cursor-pointer"
               >
                 <Home className="w-4 h-4" />
                 Back to Dashboard

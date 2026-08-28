@@ -22,8 +22,6 @@ interface MagicProcessingScreenProps {
   onSwitchSport?: (sportId: SportId) => void;
 }
 
-import { motion, AnimatePresence } from 'motion/react';
-
 export const MagicProcessingScreen: React.FC<MagicProcessingScreenProps> = ({
   sportRule,
   videoUrl,

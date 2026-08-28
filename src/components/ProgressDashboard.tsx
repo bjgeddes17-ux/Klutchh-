@@ -645,8 +645,8 @@ export const ProgressDashboard: React.FC<ProgressDashboardProps> = ({
                         key={idx}
                         onClick={() => {
                           if (onUpdateDrillProgress) {
-                            const nextStatus = status === 'pending' ? 'completed' : status === 'completed' ? 'mastered' : 'pending';
-                            const newDp = { ...dp, [idx]: nextStatus };
+                            const nextStatus: 'pending' | 'completed' | 'mastered' = status === 'pending' ? 'completed' : status === 'completed' ? 'mastered' : 'pending';
+                            const newDp: Record<number, 'pending' | 'completed' | 'mastered'> = { ...dp, [idx]: nextStatus };
                             onUpdateDrillProgress(report.id, newDp);
                           }
                         }}
