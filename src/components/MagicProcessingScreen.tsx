@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { reloadApp } from '../utils/platform';
 import { Scan, CheckCircle2, AlertTriangle, ArrowRight, RefreshCw, UploadCloud, ShieldAlert } from 'lucide-react';
 import { SportRule, SkillLevel, AthleteCategory, AnalysisResult, SportId } from '../types';
 import { analyzeVideoBiometrics, generateFallbackAnalysisResult } from '../utils/videoAnalyzer';
@@ -191,7 +192,7 @@ export const MagicProcessingScreen: React.FC<MagicProcessingScreenProps> = ({
         <button
           onClick={() => {
               // Store progress/selections in localStorage before reload
-              window.location.reload();
+              reloadApp();
           }}
           className="px-6 py-3 bg-gradient-to-r from-amber-600 to-amber-500 hover:from-amber-500 hover:to-amber-400 text-white font-black text-xs uppercase tracking-wider rounded-xl shadow-xl flex items-center gap-2 transform hover:scale-105 transition-all"
         >
@@ -259,7 +260,7 @@ export const MagicProcessingScreen: React.FC<MagicProcessingScreenProps> = ({
               if (onCancel) {
                 onCancel();
               } else {
-                window.location.reload();
+                reloadApp();
               }
             }}
             className="px-6 py-3 bg-gradient-to-r from-red-600 to-amber-500 hover:from-red-500 hover:to-amber-400 text-white font-black text-xs uppercase tracking-wider rounded-xl shadow-xl flex items-center gap-2 transform hover:scale-105 transition-all"

@@ -56,5 +56,34 @@
     "tsx": "^4.21.0",
     "typescript": "~5.8.2",
     "vite": "^6.2.3"
+  },
+  "expo": {
+    "install": {
+      "exclude": [
+        "expo-av",
+        "@mediapipe/tasks-vision",
+        "mp4box"
+      ]
+    },
+    "doctor": {
+      "reactNativeDirectoryCheck": {
+        "exclude": [
+          "expo-av",
+          "@mediapipe/tasks-vision",
+          "mp4box",
+          "motion",
+          "lucide-react",
+          "idb-keyval",
+          "firebase",
+          "express",
+          "dotenv",
+          "d3",
+          "canvas-confetti",
+          "vite",
+          "@vitejs/plugin-react",
+          "@tailwindcss/vite"
+        ]
+      }
+    }
   }
 }

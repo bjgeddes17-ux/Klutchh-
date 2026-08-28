@@ -1,3 +1,4 @@
+import { getBaseUrl } from './platform';
 import { SavedReport } from '../types';
 
 /**
@@ -121,7 +122,7 @@ export function generateZeroKnowledgeShareUrl(options: SharePayloadOptions): str
   const ciphered = pin && pin.trim() ? applyPinCipher(jsonStr, pin) : jsonStr;
   const encoded = toBase64Url(ciphered);
 
-  const baseUrl = window.location.origin + window.location.pathname;
+  const baseUrl = getBaseUrl();
   return `${baseUrl}#report=${encoded}&locked=${compactPayload.isLocked ? '1' : '0'}`;
 }
 

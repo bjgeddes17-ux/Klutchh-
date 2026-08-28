@@ -10,6 +10,11 @@ import { generateDeterministicBiomechanicalReport } from './biomechanicsEngine';
 
 // Device Capability Detector
 export function detectCapableDevice(): boolean {
+  // On Native/Android, we assume modern hardware capabilities
+  if (typeof navigator === 'undefined' || typeof window === 'undefined') {
+    return true;
+  }
+
   // Check for device memory if available
   const memory = (navigator as any).deviceMemory;
   if (memory !== undefined && memory < 4) return false; // Less than 4GB RAM is weak

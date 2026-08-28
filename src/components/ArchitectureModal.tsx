@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { copyToClipboard } from '../utils/platform';
 import {
   X,
   Cpu,
@@ -56,8 +57,8 @@ npx cap add android
 npx cap open ios
 npx cap open android`;
 
-  const copyToClipboard = (text: string, setCopied: (v: boolean) => void) => {
-    navigator.clipboard.writeText(text);
+  const handleCopy = (text: string, setCopied: (v: boolean) => void) => {
+    copyToClipboard(text);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
   };
@@ -156,7 +157,7 @@ npx cap open android`;
               Capacitor Native Configuration (<code className="font-mono text-yellow-400">capacitor.config.json</code>)
             </h3>
             <button
-              onClick={() => copyToClipboard(capacitorConfig, setCopiedConfig)}
+              onClick={() => handleCopy(capacitorConfig, setCopiedConfig)}
               className="text-xs font-bold bg-zinc-800 hover:bg-zinc-700 px-3 py-1 rounded-lg text-zinc-300 flex items-center gap-1.5 transition-all"
             >
               {copiedConfig ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
@@ -177,7 +178,7 @@ npx cap open android`;
               Capacitor CLI Wrap Commands
             </h3>
             <button
-              onClick={() => copyToClipboard(capacitorCmds, setCopiedCmds)}
+              onClick={() => handleCopy(capacitorCmds, setCopiedCmds)}
               className="text-xs font-bold bg-zinc-800 hover:bg-zinc-700 px-3 py-1 rounded-lg text-zinc-300 flex items-center gap-1.5 transition-all"
             >
               {copiedCmds ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
