@@ -1,7 +1,7 @@
 {
   "expo": {
     "name": "Klutchh AI",
-    "slug": "klutchh-ai",
+    "slug": "byron",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./src/assets/icon.png",
