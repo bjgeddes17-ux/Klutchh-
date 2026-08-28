@@ -18,7 +18,7 @@
   "dependencies": {
     "@google/genai": "^2.4.0",
     "@mediapipe/tasks-vision": "^1.0.1",
-    "@shopify/react-native-skia": "^1.5.0",
+    "@shopify/react-native-skia": "1.5.0",
     "@tailwindcss/vite": "^4.1.14",
     "@types/canvas-confetti": "^1.9.0",
     "@types/d3": "^7.4.3",
