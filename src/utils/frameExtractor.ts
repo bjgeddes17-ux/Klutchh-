@@ -12,6 +12,7 @@ export class DecoderError extends Error {
 export interface ExtractedFrame {
   blob?: Blob;
   imageBitmap?: ImageBitmap;
+  uri?: string; // For Native file paths
   timestamp: number;
   index: number;
   hardwareGpuPipeline?: boolean;

@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { motion, AnimatePresence } from 'motion/react';
 import { reloadApp } from '../utils/platform';
 import { Scan, CheckCircle2, AlertTriangle, ArrowRight, RefreshCw, UploadCloud, ShieldAlert } from 'lucide-react';
 import { SportRule, SkillLevel, AthleteCategory, AnalysisResult, SportId } from '../types';
@@ -20,6 +21,8 @@ interface MagicProcessingScreenProps {
   onCancel?: () => void;
   onSwitchSport?: (sportId: SportId) => void;
 }
+
+import { motion, AnimatePresence } from 'motion/react';
 
 export const MagicProcessingScreen: React.FC<MagicProcessingScreenProps> = ({
   sportRule,
@@ -44,6 +47,29 @@ export const MagicProcessingScreen: React.FC<MagicProcessingScreenProps> = ({
   const [invalidResult, setInvalidResult] = useState<AnalysisResult | null>(null);
   const [invalidError, setInvalidError] = useState<string | null>(null);
   const [retryCount, setRetryCount] = useState(0);
+  const [lastProgressTime, setLastProgressTime] = useState(Date.now());
+  const [isStuck, setIsStuck] = useState(false);
+
+  // Watchdog timer to detect if analysis has hung
+  useEffect(() => {
+    if (status !== 'processing') return;
+    
+    const interval = setInterval(() => {
+      const timeSinceLastUpdate = Date.now() - lastProgressTime;
+      if (timeSinceLastUpdate > 45000 && progress < 100) { // 45 seconds without update
+        console.warn('Analysis heartbeat lost. System may be stuck.');
+        setIsStuck(true);
+      }
+    }, 5000);
+
+    return () => clearInterval(interval);
+  }, [status, lastProgressTime, progress]);
+
+  const updateProgress = (p: number) => {
+    setProgress(p);
+    setLastProgressTime(Date.now());
+    setIsStuck(false);
+  };
 
   const STEPS = [
     { id: 0, label: 'Initializing Klutchh Engine...', sub: 'Warming up pose detection & camera buffers...' },
@@ -102,7 +128,7 @@ export const MagicProcessingScreen: React.FC<MagicProcessingScreenProps> = ({
         calibratedFps, 
         retryCount === 0 ? useOptionBPipeline : false, // Disable WebCodecs on retry
         (p) => {
-          if (isMounted) setProgress(p);
+          if (isMounted) updateProgress(p);
         },
         targetAthleteAnchor as 'auto' | 'left' | 'center' | 'right',
         cropBox,
@@ -369,6 +395,31 @@ export const MagicProcessingScreen: React.FC<MagicProcessingScreenProps> = ({
           );
         })}
       </div>
+
+      {/* Stuck Recovery UI */}
+      <AnimatePresence>
+        {isStuck && (
+          <motion.div 
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="mt-6 w-full max-w-lg bg-amber-500/10 border border-amber-500/30 rounded-2xl p-4 flex flex-col items-center gap-3"
+          >
+            <div className="flex items-center gap-2 text-amber-500 font-bold text-xs uppercase tracking-wider animate-pulse">
+              <AlertTriangle className="w-4 h-4" />
+              Heavy Video Processing Detected
+            </div>
+            <p className="text-[10px] text-zinc-400 text-center leading-relaxed">
+              Your device is working hard to analyze this clip. If progress doesn't move in the next 30 seconds, you can try a high-speed fallback.
+            </p>
+            <button
+              onClick={() => setRetryCount(prev => prev + 1)}
+              className="px-4 py-2 bg-amber-500 text-zinc-950 text-[10px] font-black uppercase tracking-widest rounded-lg hover:bg-amber-400 transition-colors"
+            >
+              Switch to High-Speed Mode
+            </button>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 };

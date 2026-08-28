@@ -10,6 +10,7 @@ import { AnalysisReportPage } from './components/AnalysisReportPage';
 import ProgressDashboard from './components/ProgressDashboard';
 import { BiometricDrillsLibrary } from './components/BiometricDrillsLibrary';
 import { DrillItem } from './data/drillLibrary';
+import { ErrorBoundary } from './components/ErrorBoundary';
 import { Play, FileText, Bookmark, ShieldAlert, AlertCircle } from 'lucide-react';
 import { set, get, del } from 'idb-keyval';
 import { autoPurgeExpiredLocalVideos, saveLocalVideoWithTTL, getLocalVideo } from './utils/privacyStorage';
@@ -22,7 +23,15 @@ import { resetPoseCache } from './utils/mediapipePose';
 import { clearFrameCache } from './utils/frameExtractor';
 import { calculateKlutchhScore } from './utils/klutchhAnalysis';
 
-export default function App() {
+export default function AppWrapper() {
+  return (
+    <ErrorBoundary>
+      <App />
+    </ErrorBoundary>
+  );
+}
+
+function App() {
   const [selectedSportId, setSelectedSportId] = useState<SportId>('rugby');
   const [athleteCategory, setAthleteCategory] = useState<AthleteCategory>('middle_school');
   const [skillLevel, setSkillLevel] = useState<SkillLevel>('grassroots');

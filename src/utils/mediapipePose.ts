@@ -73,7 +73,7 @@ export async function initializePoseLandmarker(): Promise<PoseLandmarker | null>
   
   if (isInitializing) {
     let attempts = 0;
-    while (isInitializing && attempts < 100) {
+    while (isInitializing && attempts < 50) { // Reduced attempts to 5s max
       await new Promise((r) => setTimeout(r, 100));
       attempts++;
     }
@@ -86,9 +86,16 @@ export async function initializePoseLandmarker(): Promise<PoseLandmarker | null>
 
   while (retryCount <= maxRetries) {
     try {
-      const vision = await FilesetResolver.forVisionTasks(
+      // Timeout promise for CDN fetch
+      const timeoutPromise = new Promise((_, reject) => 
+        setTimeout(() => reject(new Error('CDN Timeout')), 8000)
+      );
+
+      const visionPromise = FilesetResolver.forVisionTasks(
         'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/wasm'
       );
+
+      const vision = await Promise.race([visionPromise, timeoutPromise]) as any;
 
       const fullModelUrl = `https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_full/float16/1/pose_landmarker_full.task`;
       const liteModelUrl = `https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_lite/float16/1/pose_landmarker_lite.task`;
@@ -101,7 +108,7 @@ export async function initializePoseLandmarker(): Promise<PoseLandmarker | null>
             delegate: 'GPU',
           },
           runningMode: 'IMAGE',
-          numPoses: 1, // Reduce to 1 for better performance and reliability
+          numPoses: 1, 
           minPoseDetectionConfidence: 0.38,
           minPosePresenceConfidence: 0.38,
           minTrackingConfidence: 0.38,
@@ -123,15 +130,18 @@ export async function initializePoseLandmarker(): Promise<PoseLandmarker | null>
         break; // Success with fallback!
       }
     } catch (err) {
-      console.warn(`MediaPipe initialization attempt ${retryCount + 1} failed:`, err);
+      console.error(`MediaPipe initialization attempt ${retryCount + 1} failed:`, err);
       retryCount++;
       if (retryCount <= maxRetries) {
-        await new Promise(r => setTimeout(r, 1000)); // Wait 1s before retry
+        await new Promise(r => setTimeout(r, 1500)); // Increased wait
       }
     }
   }
 
   isInitializing = false;
+  if (!poseLandmarker) {
+    console.error('CRITICAL: MediaPipe failed to initialize after retries. AI analysis will use heuristic fallback.');
+  }
   return poseLandmarker;
 }
 

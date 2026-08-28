@@ -29,6 +29,7 @@
     "expo": "~52.0.0",
     "expo-av": "~15.0.1",
     "expo-status-bar": "~2.0.1",
+    "expo-video-thumbnails": "^57.0.1",
     "express": "^4.21.2",
     "firebase": "^12.17.1",
     "idb-keyval": "^6.3.0",

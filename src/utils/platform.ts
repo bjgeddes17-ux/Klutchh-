@@ -1,32 +1,32 @@
-import { Platform } from 'react-native';
+// platform.ts (Web Implementation)
+// This file is used on the Web to avoid importing react-native and crashing Vite.
 
-export const isWeb = Platform.OS === 'web';
-export const isNative = !isWeb;
-export const isAndroid = Platform.OS === 'android';
-export const isIOS = Platform.OS === 'ios';
+export const isWeb = true;
+export const isNative = false;
+export const isAndroid = false;
+export const isIOS = false;
 
 export function reloadApp() {
-  if (isWeb && typeof window !== 'undefined') {
+  if (typeof window !== 'undefined') {
     window.location.reload();
-  } else {
-    console.log('App reload requested on Native - No-op');
   }
 }
 
 export function getBaseUrl() {
-  if (isWeb && typeof window !== 'undefined') {
+  if (typeof window !== 'undefined') {
     return window.location.origin + window.location.pathname;
   }
-  return 'klutchh://app';
+  return '/';
 }
 
 export async function copyToClipboard(text: string) {
-  if (isWeb && typeof navigator !== 'undefined') {
-    await navigator.clipboard.writeText(text);
-    return true;
+  if (typeof navigator !== 'undefined' && navigator.clipboard) {
+    try {
+      await navigator.clipboard.writeText(text);
+      return true;
+    } catch (err) {
+      console.error('Failed to copy text: ', err);
+    }
   }
-  // Native clipboard requires expo-clipboard, which might not be installed.
-  // For now, we stub it to prevent crashes.
-  console.log('Clipboard copy requested on Native:', text);
   return false;
 }

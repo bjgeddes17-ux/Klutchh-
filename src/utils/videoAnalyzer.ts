@@ -79,16 +79,42 @@ export async function analyzeVideoBiometrics(
         let landmarks: MediaPipeLandmark[] = [];
         let allLandmarks: MediaPipeLandmark[][] = [];
         
-        // Main thread detection with shadow contrast normalization
-        const frameTsMs = Math.round(frameData.timestamp * 1000);
-        const tempCanvas = document.createElement('canvas');
-        const tempCtx = tempCanvas.getContext('2d');
-        const img = frameData.imageBitmap || (frameData.blob ? await createImageBitmap(frameData.blob) : null);
+        // Universal Frame Loading (Safe for Safari, Chrome, and Native)
+        let img: TexImageSource | null = null;
+        if (frameData.imageBitmap) {
+          img = frameData.imageBitmap;
+        } else if (frameData.blob) {
+          try {
+            if (typeof createImageBitmap !== 'undefined') {
+              img = await createImageBitmap(frameData.blob);
+            } else {
+              // Fallback for Safari/Legacy: Use a temporary Image element
+              img = await new Promise((resolve, reject) => {
+                const url = URL.createObjectURL(frameData.blob!);
+                const image = new Image();
+                image.onload = () => {
+                  URL.revokeObjectURL(url);
+                  resolve(image);
+                };
+                image.onerror = reject;
+                image.src = url;
+              });
+            }
+          } catch (e) {
+            console.warn('Frame conversion failed:', e);
+          }
+        }
         
-        if (img) {
-          tempCanvas.width = img.width;
-          tempCanvas.height = img.height;
-          tempCtx?.drawImage(img, 0, 0);
+        if (img && typeof document !== 'undefined') {
+          const frameTsMs = Math.round(frameData.timestamp * 1000);
+          const tempCanvas = document.createElement('canvas');
+          const tempCtx = tempCanvas.getContext('2d');
+          
+          // @ts-ignore - img is validated
+          tempCanvas.width = img.width || (img as any).videoWidth;
+          // @ts-ignore
+          tempCanvas.height = img.height || (img as any).videoHeight;
+          tempCtx?.drawImage(img as any, 0, 0);
           
           try {
             const poseResult = await detectPoseForVideoFrame(tempCanvas, frameTsMs, false);
@@ -97,8 +123,10 @@ export async function analyzeVideoBiometrics(
           } catch (poseErr) {
             console.warn("Frame pose detection error (skipping):", poseErr);
           }
+        }
           
-          if (!frameData.imageBitmap && img instanceof ImageBitmap) img.close();
+        if (img && typeof ImageBitmap !== 'undefined' && img instanceof ImageBitmap) {
+          img.close();
         }
 
         if (allLandmarks && allLandmarks.length > 0) {
