@@ -42,6 +42,17 @@ jobs:
       - name: 📦 Install Node Dependencies
         run: npm install --legacy-peer-deps
 
+      - name: 📦 Pre-bundle React Native Assets
+        run: |
+          mkdir -p android/app/src/main/assets
+          npx react-native bundle \
+            --platform android \
+            --dev false \
+            --entry-file index.js \
+            --bundle-output android/app/src/main/assets/index.android.bundle \
+            --assets-dest android/app/src/main/res/ \
+            --config metro.config.cjs
+
       - name: ⚙️ Make Gradlew Executable
         run: chmod +x android/gradlew
 
@@ -52,7 +63,7 @@ jobs:
           ANDROID_NDK_HOME: /usr/local/lib/android/sdk/ndk/26.1.10909125
         run: |
           cd android
-          ./gradlew assembleDebug --no-daemon --stacktrace
+          ./gradlew assembleDebug --no-daemon --stacktrace -PreactNativeDevServerPort=8081 -PbundleInDebug=false
 
       - name: 🚀 Upload Installable Debug APK
         uses: actions/upload-artifact@v4
