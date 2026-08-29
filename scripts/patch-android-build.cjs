@@ -15,51 +15,32 @@ function patchExpoModulesCorePlugin() {
   for (const pluginPath of pluginPaths) {
     if (fs.existsSync(pluginPath)) {
       let content = fs.readFileSync(pluginPath, 'utf8');
-      if (content.includes('from components.release') && !content.includes('components.findByName("release")')) {
-        console.log(`[Patch] Patching ExpoModulesCorePlugin at: ${pluginPath}`);
-        content = content.replace(
-          /ext\.useExpoPublishing\s*=\s*\{[\s\S]*?project\.afterEvaluate\s*\{[\s\S]*?publications\s*\{[\s\S]*?release\(MavenPublication\)\s*\{[\s\S]*?from\s+components\.release[\s\S]*?\}\s*\}\s*repositories\s*\{[\s\S]*?\}\s*\}\s*\}/,
-          `ext.useExpoPublishing = {
-  if (!project.plugins.hasPlugin('maven-publish')) {
-    apply plugin: 'maven-publish'
-  }
-
-  try {
-    project.android {
-      publishing {
-        singleVariant("release") {
-          withSourcesJar()
+      const startIdx = content.indexOf('ext.useExpoPublishing = {');
+      const endIdx = content.indexOf('ext.useCoreDependencies = {');
+      
+      if (startIdx !== -1 && endIdx !== -1) {
+        const replacement = `ext.useExpoPublishing = {\n  // No-op to avoid AGP 8+ DefaultSoftwareComponentContainer release publishing errors during APK compilation\n}\n\n`;
+        const updated = content.substring(0, startIdx) + replacement + content.substring(endIdx);
+        if (updated !== content) {
+          fs.writeFileSync(pluginPath, updated, 'utf8');
+          console.log(`[Patch] Successfully patched ExpoModulesCorePlugin at: ${pluginPath}`);
+        } else {
+          console.log(`[Patch] ExpoModulesCorePlugin already clean at: ${pluginPath}`);
         }
       }
     }
-  } catch (Exception ignored) {}
-
-  project.afterEvaluate {
-    try {
-      def releaseComponent = project.components.findByName("release")
-      if (releaseComponent != null) {
-        publishing {
-          publications {
-            release(MavenPublication) {
-              from releaseComponent
-            }
-          }
-          repositories {
-            maven {
-              url = mavenLocal().url
-            }
-          }
-        }
-      }
-    } catch (Exception ignored) {}
   }
-}`
-        );
-        fs.writeFileSync(pluginPath, content, 'utf8');
-        console.log(`[Patch] Successfully patched ${pluginPath}`);
-      } else {
-        console.log(`[Patch] ExpoModulesCorePlugin already patched or up-to-date at ${pluginPath}`);
-      }
+}
+
+function patchAndroidBuildGradle() {
+  const buildGradlePath = path.join(rootDir, 'android/build.gradle');
+  if (fs.existsSync(buildGradlePath)) {
+    let content = fs.readFileSync(buildGradlePath, 'utf8');
+    if (!content.includes('compileSdkVersion rootProject.ext.compileSdkVersion')) {
+      const subprojectsBlock = `\nsubprojects {\n    afterEvaluate { project ->\n        if (project.hasProperty("android")) {\n            android {\n                compileSdkVersion rootProject.ext.compileSdkVersion\n                buildToolsVersion rootProject.ext.buildToolsVersion\n            }\n        }\n    }\n}\n`;
+      content += subprojectsBlock;
+      fs.writeFileSync(buildGradlePath, content, 'utf8');
+      console.log(`[Patch] Added subprojects compileSdkVersion fallback to android/build.gradle`);
     }
   }
 }
@@ -88,5 +69,6 @@ function patchAndroidGradleProperties() {
 
 console.log('[Klutchh Android Patch] Running pre/post build patches...');
 patchExpoModulesCorePlugin();
+patchAndroidBuildGradle();
 patchAndroidGradleProperties();
 console.log('[Klutchh Android Patch] Complete.');
