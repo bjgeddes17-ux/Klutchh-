@@ -60,6 +60,10 @@ jobs:
         run: |
           npx expo prebuild --platform android --clean
 
+      - name: 🩹 Apply Android Gradle & AGP Compatibility Patches
+        run: |
+          node scripts/patch-android-build.cjs
+
       - name: 🔑 Configure Android Signing Keystore
         run: |
           if [ ! -f "android/app/debug.keystore" ]; then
