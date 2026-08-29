@@ -9,7 +9,6 @@ import {
   Drill
 } from '../types';
 import { KineticVideoPlayer } from './Report/KineticVideoPlayer';
-import { ExecutiveDashboard } from './Report/ExecutiveDashboard';
 import { CoachingInsightPanel } from './Report/CoachingInsightPanel';
 import { TimelineScrubber } from './Report/TimelineScrubber';
 import { ensureMinimumKeyframes } from '../utils/videoAnalyzer';
@@ -51,8 +50,11 @@ import {
   Trophy,
   AlertCircle,
   BookOpen,
-  Upload
+  Upload,
+  Dumbbell,
+  ExternalLink
 } from 'lucide-react';
+import { COMPREHENSIVE_DRILL_LIBRARY } from '../data/drillLibrary';
 import { get } from 'idb-keyval';
 import { calculateAngle, checkJointVisibilityOcclusion } from '../utils/geometry';
 import { calculateKlutchhScore } from '../utils/klutchhAnalysis';
@@ -62,6 +64,7 @@ import { KineticVelocityWave } from './KineticVelocityWave';
 import { TrophyCardMaker } from './TrophyCardMaker';
 import { BiomechanicalGameArena } from './BiomechanicalGameArena';
 import { SaveToAthleteModal } from './SaveToAthleteModal';
+import { GhostCorrectionVisualizer } from './GhostCorrectionVisualizer';
 import { motion } from 'motion/react';
 
 import monsterWalkImg from '../assets/images/monster_walk_drill_1786821620557.jpg';
@@ -115,6 +118,7 @@ interface AnalysisReportPageProps {
   onBack: () => void;
   onVideoSelected?: (url: string, file?: File) => void;
   onSaveReport?: (report: SavedReport) => void;
+  onOpenDrillsLibrary?: () => void;
   initialCoachNotes?: string;
   activeReportId?: string | null;
   videoFile?: File | null;
@@ -142,6 +146,7 @@ export const AnalysisReportPage: React.FC<AnalysisReportPageProps> = ({
   onBack,
   onVideoSelected,
   onSaveReport,
+  onOpenDrillsLibrary,
   initialCoachNotes = '',
   activeReportId,
   videoFile,
@@ -232,8 +237,8 @@ export const AnalysisReportPage: React.FC<AnalysisReportPageProps> = ({
   const drillSectionRef = useRef<HTMLDivElement>(null);
 
   const safeKeyframeList = useMemo(() => {
-    return ensureMinimumKeyframes(keyframeList || [], [], sportRule, 'grassroots', calibratedFps, 6);
-  }, [keyframeList, sportRule, calibratedFps]);
+    return ensureMinimumKeyframes(keyframeList || [], allFrames || [], sportRule, 'grassroots', calibratedFps, 6);
+  }, [keyframeList, allFrames, sportRule, calibratedFps]);
 
   const hasAnyOcclusion = useMemo(() => {
     const framesToCheck = allFrames && allFrames.length > 0 ? allFrames : keyframeList;
@@ -562,6 +567,7 @@ export const AnalysisReportPage: React.FC<AnalysisReportPageProps> = ({
           isDataReady={isDataReady}
           viewMode={viewMode}
           onTogglePlay={togglePlay}
+          onError={setVideoError}
         />
         <div className="absolute inset-x-0 bottom-0 z-30">
           <TimelineScrubber
@@ -581,16 +587,6 @@ export const AnalysisReportPage: React.FC<AnalysisReportPageProps> = ({
       </div>
 
       <div className="flex flex-col gap-6 mt-2 max-w-5xl mx-auto w-full">
-          <ExecutiveDashboard
-            aiReport={aiReport}
-            sportRule={sportRule}
-            titanRating={titanRating}
-            explosivePower={explosivePower}
-            jointArmor={jointArmor}
-            precision={precision}
-            kineticFlow={kineticFlow}
-          />
-
           {(aiReport as any)?.proTipsAndCoolFacts && (aiReport as any).proTipsAndCoolFacts.length > 0 && (
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               {((aiReport as any).proTipsAndCoolFacts as any[]).map((card, cIdx) => (
@@ -610,28 +606,44 @@ export const AnalysisReportPage: React.FC<AnalysisReportPageProps> = ({
             </div>
           )}
 
-          <div className="flex items-center gap-2 overflow-x-auto border-b border-zinc-800 pb-3">
-            {[
-              { id: 'overview', label: '📊 Report' },
-              { id: 'sequence', label: '🧬 Kinetic' },
-              { id: 'game', label: '🎮 Arena' },
-              { id: 'drills', label: '⚡ Drills' },
-              { id: 'joint_audit', label: '🔍 Audit' },
-              { id: 'notes', label: '📝 Notes' }
-            ].map((tab) => (
-              <button
-                key={tab.id}
-                onClick={() => setActiveTab(tab.id as any)}
-                className={`px-4 py-2 rounded-xl text-xs font-black uppercase transition-all whitespace-nowrap ${activeTab === tab.id ? 'bg-red-600 text-white' : 'bg-zinc-900 border border-zinc-800 text-zinc-400 hover:text-white'}`}
-              >
-                {tab.label}
-              </button>
-            ))}
+          {/* Section Tab Switcher */}
+          <div className="flex items-center gap-2 border-b border-zinc-800 pb-3">
+            <button
+              onClick={() => setActiveTab('overview')}
+              className={`px-4 py-2 rounded-xl text-xs font-black uppercase transition-all cursor-pointer ${
+                activeTab === 'overview' ? 'bg-red-600 text-white shadow-lg' : 'bg-zinc-900 border border-zinc-800 text-zinc-400 hover:text-white'
+              }`}
+            >
+              🎯 Top 3 Corrections
+            </button>
+            <button
+              onClick={() => setActiveTab('sequence')}
+              className={`px-4 py-2 rounded-xl text-xs font-black uppercase transition-all cursor-pointer ${
+                activeTab === 'sequence' ? 'bg-red-600 text-white shadow-lg' : 'bg-zinc-900 border border-zinc-800 text-zinc-400 hover:text-white'
+              }`}
+            >
+              🧬 Kinetic Waves & Actions
+            </button>
           </div>
 
+          {activeTab === 'overview' && (
+            <GhostCorrectionVisualizer
+              keyframeList={safeKeyframeList}
+              allFrames={allFrames}
+              sportRule={sportRule}
+              onSeekTimestamp={handleSeek}
+              videoUrl={videoUrl}
+            />
+          )}
+
           {activeTab === 'sequence' && (
-            <div className="flex flex-col gap-4 animate-fadeIn">
-              <KineticVelocityWave allFrames={allFrames} kineticSequence={kineticSequence as any} currentTime={currentTime} onSeek={handleSeek} />
+            <div className="flex flex-col gap-6 animate-fadeIn">
+              <KineticVelocityWave
+                allFrames={allFrames}
+                kineticSequence={kineticSequence as any}
+                currentTime={currentTime}
+                onSeek={handleSeek}
+              />
               <SequenceVerificationMatrix
                 sequenceComparison={localSequenceComparison}
                 kineticSequence={kineticSequence}
@@ -646,74 +658,6 @@ export const AnalysisReportPage: React.FC<AnalysisReportPageProps> = ({
                 onSeekVideo={handleSeek}
                 onSelectKeyframe={(frame) => handleSeek(frame.timestamp)}
               />
-            </div>
-          )}
-
-          {activeTab === 'overview' && aiReport && (
-            <div className="animate-fadeIn">
-              <CoachingInsightPanel report={aiReport} />
-            </div>
-          )}
-
-          {activeTab === 'joint_audit' && (
-            <div className="bg-zinc-900 border border-zinc-800 rounded-3xl p-6 flex flex-col gap-6 animate-fadeIn">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div className="flex flex-col gap-3">
-                  <h3 className="text-[10px] font-black uppercase text-emerald-500 tracking-widest">Mastery Highlights</h3>
-                  {sportRule.jointRules.filter(r => (averageAngles[r.id] || 0) >= r.idealMin && (averageAngles[r.id] || 0) <= r.idealMax).slice(0, 5).map(rule => (
-                    <div key={rule.id} className="bg-zinc-950 border border-emerald-900/40 p-3.5 rounded-xl flex items-center justify-between">
-                      <h4 className="text-[11px] font-black text-white">{rule.name}</h4>
-                      <span className="text-xs font-black text-emerald-400 font-mono">{averageAngles[rule.id]}°</span>
-                    </div>
-                  ))}
-                </div>
-                <div className="flex flex-col gap-3">
-                  <h3 className="text-[10px] font-black uppercase text-red-500 tracking-widest">Optimization Priorities</h3>
-                  {sportRule.jointRules.filter(r => !((averageAngles[r.id] || 0) >= r.idealMin && (averageAngles[r.id] || 0) <= r.idealMax)).slice(0, 5).map((rule, idx) => (
-                    <div key={rule.id} onClick={() => handleTapFault(rule.name, idx)} className="bg-zinc-950 border border-red-900/40 p-3.5 rounded-xl flex items-center justify-between cursor-pointer hover:border-amber-400 transition-all">
-                      <h4 className="text-[11px] font-black text-white">{rule.name}</h4>
-                      <span className="text-xs font-black text-red-400 font-mono">{averageAngles[rule.id]}°</span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            </div>
-          )}
-
-          {activeTab === 'drills' && (
-            <div ref={drillSectionRef} className="bg-zinc-900 border border-zinc-800 rounded-2xl p-5 flex flex-col gap-4 animate-fadeIn">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                {(aiReport?.funCorrectiveDrills || sportRule.drills || []).map((drill, dIdx) => (
-                  <div key={dIdx} className="bg-zinc-950/40 border border-zinc-800 rounded-2xl p-4 flex flex-col gap-4 group hover:border-amber-500/50 transition-all">
-                    <div className="flex items-start gap-4">
-                      <div className="w-24 aspect-square rounded-xl bg-zinc-900 border border-zinc-800 overflow-hidden shrink-0 relative">
-                         <img src={[monsterWalkImg, spineHingeImg, trophyPoseImg, chestOverBallImg][dIdx % 4]} className="w-full h-full object-cover" alt={drill.name} referrerPolicy="no-referrer" />
-                      </div>
-                      <div className="flex flex-col gap-1">
-                        <span className="text-[9px] font-black uppercase text-amber-500">{drill.targetJoint || 'Focus'}</span>
-                        <h4 className="text-sm font-black text-white">{drill.name}</h4>
-                        <p className="text-[11px] text-zinc-400 line-clamp-2">{drill.description}</p>
-                      </div>
-                    </div>
-                    <div className="flex items-center justify-between mt-auto pt-3 border-t border-zinc-800/60">
-                      <span className="text-[10px] font-mono text-amber-400">{drill.reps || '3 sets x 10'}</span>
-                      <button onClick={() => toggleDrillStatus(dIdx)} className={`px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest ${drillProgress[dIdx] === 'mastered' ? 'bg-emerald-600 text-white' : 'bg-zinc-800 text-zinc-400 hover:text-white'}`}>
-                        {drillProgress[dIdx] === 'mastered' ? 'Mastered' : 'Done'}
-                      </button>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {activeTab === 'game' && (
-            <BiomechanicalGameArena sportRule={sportRule} keyframeList={safeKeyframeList} viewMode={viewMode} onApplyDrill={() => setActiveTab('drills')} />
-          )}
-
-          {activeTab === 'notes' && (
-            <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-5 flex flex-col gap-4 shadow-xl">
-              <textarea rows={5} value={coachNotes} onChange={(e) => setCoachNotes(e.target.value)} placeholder="Add customized coach observations..." className="w-full bg-zinc-950 border border-zinc-800 rounded-xl p-3 text-xs text-white" />
             </div>
           )}
       </div>

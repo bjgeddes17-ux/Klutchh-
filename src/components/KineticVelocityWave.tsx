@@ -1,6 +1,7 @@
 import React, { useRef, useEffect, useMemo, useState } from 'react';
 import * as d3 from 'd3';
 import { FrameAnalysis } from '../types';
+import { Zap, Activity, AlertTriangle, TrendingUp, ShieldAlert, CheckCircle2 } from 'lucide-react';
 
 interface KineticSequenceStep {
   name: string;
@@ -32,6 +33,7 @@ export const KineticVelocityWave: React.FC<KineticVelocityWaveProps> = ({
   const svgRef = useRef<SVGSVGElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const [width, setWidth] = useState(0);
+  const [hoveredData, setHoveredData] = useState<{ timestamp: number; value: number; phase?: string } | null>(null);
 
   // Handle Resize
   useEffect(() => {
@@ -52,7 +54,6 @@ export const KineticVelocityWave: React.FC<KineticVelocityWaveProps> = ({
     if (!allFrames || allFrames.length === 0) return [];
 
     return allFrames.map(f => {
-      // Sum up all velocities to get a "total movement energy" value
       const totalVelocity = f.velocity 
         ? Object.values(f.velocity).reduce((acc: number, v: number) => acc + Math.abs(v), 0)
         : 0;
@@ -60,31 +61,60 @@ export const KineticVelocityWave: React.FC<KineticVelocityWaveProps> = ({
       return {
         timestamp: f.timestamp,
         value: totalVelocity,
+        phase: f.detectedPhase,
         frame: f
       };
     }).sort((a, b) => a.timestamp - b.timestamp);
   }, [allFrames]);
 
+  const peakVelocity = useMemo(() => {
+    if (chartData.length === 0) return 0;
+    return Math.max(...chartData.map(d => d.value));
+  }, [chartData]);
+
+  const energyLeaksCount = useMemo(() => {
+    let leaks = 0;
+    for (let i = 1; i < chartData.length - 1; i++) {
+      if (chartData[i].value < chartData[i - 1].value * 0.7 && chartData[i].value < chartData[i + 1].value * 0.8) {
+        leaks++;
+      }
+    }
+    return leaks;
+  }, [chartData]);
+
   useEffect(() => {
     if (!svgRef.current || !containerRef.current || chartData.length === 0 || width === 0) return;
 
-    // Clear previous SVG content
     const svg = d3.select(svgRef.current);
     svg.selectAll("*").remove();
 
-    const height = 120;
-    const margin = { top: 20, right: 20, bottom: 20, left: 20 };
+    const height = 140;
+    const margin = { top: 25, right: 20, bottom: 25, left: 30 };
 
     const x = d3.scaleLinear()
       .domain([0, d3.max(chartData as any[], (d: any) => d.timestamp) || 1])
       .range([margin.left, width - margin.right]);
 
     const y = d3.scaleLinear()
-      .domain([0, d3.max(chartData as any[], (d: any) => d.value) || 1])
+      .domain([0, (d3.max(chartData as any[], (d: any) => d.value) || 1) * 1.1])
       .range([height - margin.bottom, margin.top]);
 
-    // Create the gradient for the wave
-    const gradientId = "velocity-gradient";
+    // Grid lines
+    const yTicks = y.ticks(4);
+    svg.selectAll("g.grid-line")
+      .data(yTicks)
+      .enter()
+      .append("line")
+      .attr("x1", margin.left)
+      .attr("x2", width - margin.right)
+      .attr("y1", d => y(d))
+      .attr("y2", d => y(d))
+      .attr("stroke", "#27272a")
+      .attr("stroke-dasharray", "3,3")
+      .attr("opacity", 0.5);
+
+    // Gradient
+    const gradientId = "velocity-gradient-advanced";
     const defs = svg.append("defs");
     const gradient = defs.append("linearGradient")
       .attr("id", gradientId)
@@ -92,96 +122,117 @@ export const KineticVelocityWave: React.FC<KineticVelocityWaveProps> = ({
       .attr("x1", 0).attr("y1", height)
       .attr("x2", 0).attr("y2", 0);
 
-    gradient.append("stop").attr("offset", "0%").attr("stop-color", "#18181b"); // zinc-900
-    gradient.append("stop").attr("offset", "40%").attr("stop-color", "#0ea5e9"); // sky-500
-    gradient.append("stop").attr("offset", "75%").attr("stop-color", "#8b5cf6"); // violet-500
+    gradient.append("stop").attr("offset", "0%").attr("stop-color", "#09090b");
+    gradient.append("stop").attr("offset", "50%").attr("stop-color", "#0284c7"); // sky-600
     gradient.append("stop").attr("offset", "100%").attr("stop-color", "#f43f5e"); // rose-500
 
-    // Area generator
+    // Area
     const area = d3.area<any>()
       .x(d => x(d.timestamp))
       .y0(y(0))
       .y1(d => y(d.value))
       .curve(d3.curveBasis);
 
-    // Append the area path
     svg.append("path")
       .datum(chartData)
       .attr("fill", `url(#${gradientId})`)
-      .attr("fill-opacity", 0.5)
+      .attr("fill-opacity", 0.45)
       .attr("d", area);
 
-    // Line generator
+    // Line
     const line = d3.line<any>()
       .x(d => x(d.timestamp))
       .y(d => y(d.value))
       .curve(d3.curveBasis);
 
-    // Append the stroke path
     svg.append("path")
       .datum(chartData)
       .attr("fill", "none")
-      .attr("stroke", "white")
-      .attr("stroke-width", 2)
-      .attr("stroke-opacity", 0.4)
+      .attr("stroke", "#38bdf8")
+      .attr("stroke-width", 2.5)
       .attr("d", line);
 
-    // Add Keyframes from kineticSequence
+    // Energy Leak Callouts
+    for (let i = 1; i < chartData.length - 1; i++) {
+      const prev = chartData[i - 1].value;
+      const curr = chartData[i].value;
+      const next = chartData[i + 1].value;
+
+      if (curr < prev * 0.7 && curr < next * 0.8 && curr > 0) {
+        const dropX = x(chartData[i].timestamp);
+        const dropY = y(curr);
+
+        svg.append("circle")
+          .attr("cx", dropX)
+          .attr("cy", dropY)
+          .attr("r", 5)
+          .attr("fill", "#ef4444")
+          .attr("stroke", "#ffffff")
+          .attr("stroke-width", 2);
+
+        svg.append("text")
+          .attr("x", dropX)
+          .attr("y", dropY - 10)
+          .attr("text-anchor", "middle")
+          .attr("fill", "#ef4444")
+          .attr("font-size", "9px")
+          .attr("font-weight", "900")
+          .text("⚠️ ENERGY LEAK");
+      }
+    }
+
+    // Keyframe sequence markers
     if (kineticSequence?.steps) {
-      kineticSequence.steps.forEach((step, idx) => {
+      kineticSequence.steps.forEach((step) => {
         const stepX = x(step.timestamp);
         
-        // Vertical line for keyframe
         svg.append("line")
           .attr("x1", stepX)
           .attr("x2", stepX)
           .attr("y1", margin.top)
           .attr("y2", height - margin.bottom)
-          .attr("stroke", step.status === 'optimal' ? '#10b981' : step.status === 'warning' ? '#f59e0b' : '#ef4444')
+          .attr("stroke", step.status === 'optimal' ? '#10b981' : '#f59e0b')
           .attr("stroke-width", 2)
-          .attr("stroke-dasharray", "4,2")
-          .attr("opacity", 0.8);
+          .attr("stroke-dasharray", "4,4")
+          .attr("opacity", 0.9);
 
-        // Circle marker
         svg.append("circle")
           .attr("cx", stepX)
-          .attr("cy", margin.top - 5)
-          .attr("r", 5)
-          .attr("fill", step.status === 'optimal' ? '#10b981' : step.status === 'warning' ? '#f59e0b' : '#ef4444')
-          .attr("class", "cursor-pointer transition-all hover:scale-125")
+          .attr("cy", margin.top - 6)
+          .attr("r", 6)
+          .attr("fill", step.status === 'optimal' ? '#10b981' : '#f59e0b')
+          .attr("class", "cursor-pointer")
           .on("click", () => onSeek?.(step.timestamp));
-
-        // Label
-        if (width > 300) {
-           svg.append("text")
-            .attr("x", stepX)
-            .attr("y", margin.top - 12)
-            .attr("text-anchor", "middle")
-            .attr("fill", "white")
-            .attr("font-size", "9px")
-            .attr("font-weight", "900")
-            .attr("class", "uppercase tracking-tighter")
-            .text(step.name.split(' ')[0]);
-        }
       });
     }
 
     // Playback scrubber line
     svg.append("line")
-      .attr("class", "scrubber-line")
       .attr("x1", x(currentTime))
       .attr("x2", x(currentTime))
       .attr("y1", 0)
       .attr("y2", height)
-      .attr("stroke", "#fbbf24") // amber-400
-      .attr("stroke-width", 2)
+      .attr("stroke", "#fbbf24")
+      .attr("stroke-width", 2.5)
       .style("pointer-events", "none");
 
-    // Interaction overlay
+    // Interactive overlay for seeking and tooltip
     svg.append("rect")
       .attr("width", width)
       .attr("height", height)
       .attr("fill", "transparent")
+      .on("mousemove", (event) => {
+        const [mouseX] = d3.pointer(event);
+        const t = x.invert(mouseX);
+        // Find closest point
+        const closest = chartData.reduce((prev, curr) => 
+          Math.abs(curr.timestamp - t) < Math.abs(prev.timestamp - t) ? curr : prev
+        );
+        if (closest) {
+          setHoveredData(closest);
+        }
+      })
+      .on("mouseleave", () => setHoveredData(null))
       .on("click", (event) => {
         const [mouseX] = d3.pointer(event);
         const clickedTime = x.invert(mouseX);
@@ -191,37 +242,99 @@ export const KineticVelocityWave: React.FC<KineticVelocityWaveProps> = ({
   }, [chartData, kineticSequence, currentTime, width, onSeek]);
 
   return (
-    <div ref={containerRef} className="w-full bg-zinc-950 border border-zinc-800 rounded-2xl overflow-hidden shadow-2xl p-3 relative group">
-      <div className="flex items-center justify-between px-1 mb-2">
+    <div ref={containerRef} className="w-full bg-zinc-950 border border-zinc-800 rounded-3xl p-5 shadow-2xl relative overflow-hidden flex flex-col gap-4">
+      
+      {/* Header telemetry */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-zinc-800 pb-3">
+        <div className="flex items-center gap-2.5">
+          <div className="w-3 h-3 rounded-full bg-sky-500 animate-ping" />
+          <div>
+            <h3 className="text-sm font-black text-white uppercase tracking-wider flex items-center gap-2">
+              Kinetic Velocity & Energy Transfer Waveform
+            </h3>
+            <p className="text-[10px] text-zinc-400 font-mono">
+              Proximal-to-distal sequencing, force acceleration peaks, and energy leak diagnostics
+            </p>
+          </div>
+        </div>
+
         <div className="flex items-center gap-2">
-          <div className="w-2.5 h-2.5 rounded-full bg-rose-500 shadow-[0_0_8px_rgba(244,63,94,0.6)] animate-pulse" />
-          <div className="flex flex-col">
-            <span className="text-[10px] font-black uppercase text-white tracking-widest leading-none">Kinetic Velocity Waveform</span>
-            <span className="text-[7px] font-mono text-zinc-500 uppercase mt-0.5 tracking-tighter">Proximal-to-Distal Energy Transfer Pattern</span>
+          <div className="bg-zinc-900 px-3 py-1.5 rounded-xl border border-zinc-800 text-right">
+            <div className="text-[9px] text-zinc-500 font-bold uppercase">Peak Velocity</div>
+            <div className="text-xs font-mono font-black text-sky-400">{Math.round(peakVelocity)} deg/s</div>
           </div>
-        </div>
-        <div className="flex items-center gap-3">
-          <div className="flex items-center gap-1">
-            <span className="w-1.5 h-1.5 rounded-full bg-sky-500" />
-            <span className="text-[8px] font-mono text-zinc-500 uppercase">Load</span>
+          <div className="bg-zinc-900 px-3 py-1.5 rounded-xl border border-zinc-800 text-right">
+            <div className="text-[9px] text-zinc-500 font-bold uppercase">Energy Leaks</div>
+            <div className={`text-xs font-mono font-black ${energyLeaksCount > 0 ? 'text-rose-400' : 'text-emerald-400'}`}>
+              {energyLeaksCount} Flagged
+            </div>
           </div>
-          <div className="flex items-center gap-1">
-            <span className="w-1.5 h-1.5 rounded-full bg-rose-500" />
-            <span className="text-[8px] font-mono text-zinc-500 uppercase">Explosion</span>
+          <div className="bg-zinc-900 px-3 py-1.5 rounded-xl border border-zinc-800 text-right">
+            <div className="text-[9px] text-zinc-500 font-bold uppercase">Sequence Efficiency</div>
+            <div className="text-xs font-mono font-black text-emerald-450">
+              {kineticSequence?.sequenceEfficiency ?? 88}%
+            </div>
           </div>
         </div>
       </div>
-      
-      <svg 
-        ref={svgRef} 
-        width="100%" 
-        height="120" 
-        className="cursor-crosshair block overflow-visible"
-      />
-      
-      <div className="absolute bottom-2 right-4 pointer-events-none opacity-20 group-hover:opacity-40 transition-opacity">
-        <span className="text-[40px] font-black text-white italic tracking-tighter leading-none select-none">D3.JS</span>
+
+      {/* Interactive Waveform SVG */}
+      <div className="relative w-full bg-zinc-900/40 rounded-2xl p-2 border border-zinc-800/80">
+        <svg 
+          ref={svgRef} 
+          width="100%" 
+          height="140" 
+          className="cursor-crosshair block overflow-visible"
+        />
+
+        {hoveredData && (
+          <div className="absolute top-3 right-3 bg-zinc-950/95 border border-cyan-500/50 px-3 py-1.5 rounded-xl backdrop-blur-md shadow-xl text-xs font-mono pointer-events-none flex items-center gap-3">
+            <div>
+              <span className="text-zinc-500">Time:</span> <strong className="text-white">{hoveredData.timestamp.toFixed(2)}s</strong>
+            </div>
+            <div>
+              <span className="text-zinc-500">Velocity:</span> <strong className="text-cyan-400">{Math.round(hoveredData.value)} deg/s</strong>
+            </div>
+            {hoveredData.phase && (
+              <div>
+                <span className="text-zinc-500">Phase:</span> <strong className="text-amber-400">{hoveredData.phase}</strong>
+              </div>
+            )}
+          </div>
+        )}
       </div>
+
+      {/* Kinetic Firing Order & Sequence Steps Info Bar */}
+      {kineticSequence?.steps && kineticSequence.steps.length > 0 && (
+        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-2.5 mt-1">
+          {kineticSequence.steps.map((step, idx) => (
+            <button
+              key={idx}
+              onClick={() => onSeek?.(step.timestamp)}
+              className={`p-3 rounded-2xl border text-left transition-all flex flex-col justify-between gap-1.5 cursor-pointer ${
+                step.status === 'optimal'
+                  ? 'bg-emerald-950/20 border-emerald-500/40 hover:border-emerald-500'
+                  : step.status === 'warning'
+                  ? 'bg-amber-950/20 border-amber-500/40 hover:border-amber-500'
+                  : 'bg-rose-950/20 border-rose-500/40 hover:border-rose-500'
+              }`}
+            >
+              <div className="flex items-center justify-between">
+                <span className="text-[10px] font-black uppercase text-zinc-400 font-mono">Step #{idx + 1}</span>
+                <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
+                  step.status === 'optimal' ? 'bg-emerald-900/50 text-emerald-300' : 'bg-amber-900/50 text-amber-300'
+                }`}>
+                  {step.timestamp.toFixed(2)}s
+                </span>
+              </div>
+              <div className="text-xs font-black text-white uppercase tracking-tight">
+                {step.name}
+              </div>
+            </button>
+          ))}
+        </div>
+      )}
+
     </div>
   );
 };

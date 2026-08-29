@@ -232,7 +232,6 @@ function App() {
             onOpenAuth={() => setIsPinPromptOpen(true)}
             targetAthleteAnchor={targetAthleteAnchor}
             onSelectAthleteAnchor={setTargetAthleteAnchor}
-            onOpenDrillsLibrary={() => setIsDrillsLibraryOpen(true)}
           />
         )}
 
@@ -267,6 +266,7 @@ function App() {
             videoFile={customVideoFile}
             onSaveReport={(report) => setSavedReports(prev => [report, ...prev])}
             onBack={handleBackToWorkspace}
+            onOpenDrillsLibrary={() => setIsDrillsLibraryOpen(true)}
             startTime={currentStartTime}
             endTime={currentEndTime}
             cropBox={currentCropBox}
@@ -291,7 +291,16 @@ function App() {
           <BiometricDrillsLibrary 
             selectedSportId={selectedSportId}
             onSelectSport={handleSportChange}
-            onSelectDrillAsRule={() => {
+            onSelectDrillAsRule={(drill) => {
+              if (drill.sportId) {
+                handleSportChange(drill.sportId);
+              }
+              if (drill.techniqueId) {
+                setSelectedTechniqueId(drill.techniqueId);
+              }
+              if (drill.phase) {
+                setSelectedMovementPhase(drill.phase);
+              }
               setIsDrillsLibraryOpen(false);
             }}
             onClose={() => setIsDrillsLibraryOpen(false)}

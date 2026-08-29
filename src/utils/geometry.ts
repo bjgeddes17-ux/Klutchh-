@@ -496,3 +496,33 @@ export function checkJointVisibilityOcclusion(landmarks: MediaPipeLandmark[] | u
   return { hasOcclusion: occluded.length > 0, occludedLimbs: occluded };
 }
 
+/**
+ * Ensures landmarks are properly normalized to [0, 1] relative coordinate space.
+ * Prevents giant skeleton rendering errors if raw pixel coordinates are received.
+ */
+export function normalizeLandmarks(landmarks: MediaPipeLandmark[]): MediaPipeLandmark[] {
+  if (!landmarks || landmarks.length === 0) return [];
+  let maxX = 1;
+  let maxY = 1;
+  landmarks.forEach(pt => {
+    if (pt) {
+      if (Math.abs(pt.x) > maxX) maxX = Math.abs(pt.x);
+      if (Math.abs(pt.y) > maxY) maxY = Math.abs(pt.y);
+    }
+  });
+
+  const isPixelSpace = maxX > 1.5 || maxY > 1.5;
+  const scaleX = isPixelSpace ? maxX : 1;
+  const scaleY = isPixelSpace ? maxY : 1;
+
+  return landmarks.map(pt => {
+    if (!pt) return pt;
+    return {
+      ...pt,
+      x: Math.max(0, Math.min(1, pt.x / scaleX)),
+      y: Math.max(0, Math.min(1, pt.y / scaleY))
+    };
+  });
+}
+
+

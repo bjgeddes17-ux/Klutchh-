@@ -7,13 +7,15 @@ interface KeyframeTimelineProps {
   sportRule: SportRule;
   onRemoveKeyframe: (index: number) => void;
   onClearKeyframes: () => void;
+  onSeekTimestamp?: (timestamp: number) => void;
 }
 
 export const KeyframeTimeline: React.FC<KeyframeTimelineProps> = ({
   keyframeList,
   sportRule,
   onRemoveKeyframe,
-  onClearKeyframes
+  onClearKeyframes,
+  onSeekTimestamp
 }) => {
   if (keyframeList.length === 0) {
     return (
@@ -52,12 +54,17 @@ export const KeyframeTimeline: React.FC<KeyframeTimelineProps> = ({
         {keyframeList.map((frame, idx) => (
           <div
             key={idx}
-            className="bg-zinc-900 border border-zinc-800 p-3.5 rounded-xl flex flex-col justify-between gap-3 relative group hover:border-zinc-700 transition-all"
+            onClick={() => onSeekTimestamp?.(frame.timestamp)}
+            className="bg-zinc-900 border border-zinc-800 p-3.5 rounded-xl flex flex-col justify-between gap-3 relative group hover:border-amber-500/50 hover:bg-zinc-850 cursor-pointer transition-all"
+            title={`Click to jump to ${frame.timestamp}s`}
           >
             {/* Delete button on hover */}
             <button
-              onClick={() => onRemoveKeyframe(idx)}
-              className="absolute top-2 right-2 p-1 text-zinc-500 hover:text-red-400 rounded-md hover:bg-zinc-800 transition-all"
+              onClick={(e) => {
+                e.stopPropagation();
+                onRemoveKeyframe(idx);
+              }}
+              className="absolute top-2 right-2 p-1 text-zinc-500 hover:text-red-400 rounded-md hover:bg-zinc-800 transition-all z-10"
               title="Remove Keyframe"
             >
               <Trash2 className="w-3.5 h-3.5" />

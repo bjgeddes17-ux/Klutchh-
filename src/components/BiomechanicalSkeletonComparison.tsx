@@ -1,7 +1,7 @@
 import React, { useState, useMemo } from 'react';
 import { FrameAnalysis, SportRule } from '../types';
 import { User, Activity, Minimize, Maximize } from 'lucide-react';
-import { POSE_CONNECTIONS } from '../utils/geometry';
+import { POSE_CONNECTIONS, normalizeLandmarks } from '../utils/geometry';
 
 interface Props {
   keyframeList: FrameAnalysis[];
@@ -17,9 +17,11 @@ export const BiomechanicalSkeletonComparison: React.FC<Props> = ({ keyframeList,
   const renderSkeleton = (isOptimal: boolean) => {
     if (!keyframe || !keyframe.landmarks) return null;
 
+    const landmarks = normalizeLandmarks(keyframe.landmarks);
+
     // To sync them up better, we'll use the hip midpoint as the anchor for both
-    const hipL = keyframe.landmarks[23];
-    const hipR = keyframe.landmarks[24];
+    const hipL = landmarks[23];
+    const hipR = landmarks[24];
     if (!hipL || !hipR) return null;
     
     const hipMidX = (hipL.x + hipR.x) / 2;
@@ -28,8 +30,8 @@ export const BiomechanicalSkeletonComparison: React.FC<Props> = ({ keyframeList,
     return (
       <svg viewBox="0 0 1 1" className="w-full h-full overflow-visible drop-shadow-xl">
         {POSE_CONNECTIONS.map((conn, i) => {
-          const p1 = keyframe.landmarks![conn.points[0]];
-          const p2 = keyframe.landmarks![conn.points[1]];
+          const p1 = landmarks[conn.points[0]];
+          const p2 = landmarks[conn.points[1]];
           
           if (!p1 || !p2) return null;
 
@@ -89,7 +91,7 @@ export const BiomechanicalSkeletonComparison: React.FC<Props> = ({ keyframeList,
         
         {/* Draw joints */}
         {[11, 12, 13, 14, 15, 16, 23, 24, 25, 26, 27, 28].map(idx => {
-          const p = keyframe.landmarks![idx];
+          const p = landmarks[idx];
           if (!p) return null;
           
           let x = p.x; let y = p.y;

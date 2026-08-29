@@ -1,8 +1,8 @@
 import React, { useRef, useState, useMemo } from 'react';
-import { View, StyleSheet, Dimensions, Platform } from 'react-native';
+import { View, StyleSheet, Dimensions, LayoutChangeEvent } from 'react-native';
 import { Video, ResizeMode } from 'expo-av';
-import { Canvas, Path, Circle, Group, Paint, Blur } from '@shopify/react-native-skia';
-import { SportRule, FrameAnalysis, MediaPipeLandmark } from '../../types';
+import { Canvas, Line, Circle, vec } from '@shopify/react-native-skia';
+import { SportRule, FrameAnalysis } from '../../types';
 
 interface KineticVideoPlayerProps {
   videoUrl: string;
@@ -17,7 +17,18 @@ interface KineticVideoPlayerProps {
   viewMode?: 'student' | 'coach';
 }
 
-const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
+const POSE_CONNECTIONS: [number, number][] = [
+  // Head / Neck
+  [0, 11], [0, 12],
+  // Shoulders & Torso
+  [11, 12], [11, 23], [12, 24], [23, 24],
+  // Arms
+  [11, 13], [13, 15],
+  [12, 14], [14, 16],
+  // Legs
+  [23, 25], [25, 27], [27, 29], [29, 31],
+  [24, 26], [26, 28], [28, 30], [30, 32],
+];
 
 export const KineticVideoPlayer: React.FC<KineticVideoPlayerProps> = ({
   videoUrl,
@@ -31,8 +42,16 @@ export const KineticVideoPlayer: React.FC<KineticVideoPlayerProps> = ({
   isDataReady,
 }) => {
   const videoRef = useRef<Video>(null);
-  
-  // Native logic to find the current frame (Binary Search)
+  const [containerSize, setContainerSize] = useState<{ width: number; height: number }>({ width: 340, height: 220 });
+
+  const handleLayout = (e: LayoutChangeEvent) => {
+    const { width, height } = e.nativeEvent.layout;
+    if (width > 0 && height > 0) {
+      setContainerSize({ width, height });
+    }
+  };
+
+  // Binary search for exact current frame
   const currentFrame = useMemo(() => {
     if (!sortedFrames.length) return null;
     let low = 0;
@@ -50,9 +69,12 @@ export const KineticVideoPlayer: React.FC<KineticVideoPlayerProps> = ({
     return sortedFrames[idx];
   }, [sortedFrames, currentTime]);
 
+  const { width, height } = containerSize;
+
   return (
-    <View style={styles.container}>
+    <View style={styles.container} onLayout={handleLayout}>
       <Video
+        ref={videoRef}
         source={{ uri: videoUrl }}
         rate={playbackRate}
         isMuted={true}
@@ -70,23 +92,43 @@ export const KineticVideoPlayer: React.FC<KineticVideoPlayerProps> = ({
         style={styles.video}
       />
 
-      {/* NATIVE SKIA CANVAS: This is the "Flawless" part */}
+      {/* Hardware-Accelerated Native Skia Skeleton */}
       <Canvas style={styles.canvas}>
         {currentFrame?.landmarks && (
-          <Group>
-            {/* We draw the skeleton using Skia Path for ultra-smooth 60fps rendering */}
-            {/* In a real implementation, we iterate through sportRule.jointRules here */}
-            {currentFrame.landmarks.map((lm, i) => (
-              <Circle
-                // @ts-ignore
-                key={i}
-                cx={lm.x * SCREEN_WIDTH}
-                cy={lm.y * (SCREEN_WIDTH * 0.5625)} // Assuming 16:9
-                r={4}
-                color={lm.visibility && lm.visibility > 0.5 ? "#ef4444" : "#fbbf24"}
-              />
-            ))}
-          </Group>
+          <>
+            {/* Skeletal Bones */}
+            {POSE_CONNECTIONS.map(([i1, i2], connIdx) => {
+              const p1 = currentFrame.landmarks[i1];
+              const p2 = currentFrame.landmarks[i2];
+              if (!p1 || !p2 || (p1.visibility && p1.visibility < 0.3) || (p2.visibility && p2.visibility < 0.3)) {
+                return null;
+              }
+              return (
+                <Line
+                  key={`bone-${connIdx}`}
+                  p1={vec(p1.x * width, p1.y * height)}
+                  p2={vec(p2.x * width, p2.y * height)}
+                  color="rgba(239, 68, 68, 0.85)"
+                  strokeWidth={3}
+                />
+              );
+            })}
+
+            {/* Joints */}
+            {currentFrame.landmarks.map((lm, i) => {
+              if (lm.visibility && lm.visibility < 0.3) return null;
+              const isHighlight = i === 11 || i === 12 || i === 23 || i === 24 || i === 25 || i === 26;
+              return (
+                <Circle
+                  key={`joint-${i}`}
+                  cx={lm.x * width}
+                  cy={lm.y * height}
+                  r={isHighlight ? 5 : 3.5}
+                  color={isHighlight ? "#ef4444" : "#ffffff"}
+                />
+              );
+            })}
+          </>
         )}
       </Canvas>
     </View>
@@ -99,6 +141,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#000',
     borderRadius: 24,
     overflow: 'hidden',
+    position: 'relative',
   },
   video: {
     ...StyleSheet.absoluteFillObject,

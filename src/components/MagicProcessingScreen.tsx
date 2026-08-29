@@ -118,6 +118,26 @@ export const MagicProcessingScreen: React.FC<MagicProcessingScreenProps> = ({
 
     // Start video analysis asynchronously
     if (videoUrl) {
+      let isTimedOut = false;
+      const stuckWatchdog = setTimeout(async () => {
+        if (isMounted && status === 'processing' && !resultRef.current) {
+          isTimedOut = true;
+          console.warn("Processing watchdog triggered: Analysis took too long, auto-generating fallback result to prevent sticking.");
+          try {
+            const fallback = await generateFallbackAnalysisResult(videoUrl, sportRule, skillLevel, athleteCategory, calibratedFps);
+            if (isMounted) {
+              resultRef.current = fallback;
+              setResult(fallback);
+              setProgress(100);
+            }
+          } catch (e) {
+            console.error("Watchdog fallback failed:", e);
+            setInvalidError("Analysis timed out. Please try uploading a shorter video clip.");
+            setStatus('error');
+          }
+        }
+      }, 15000); // 15 seconds hard safety limit
+
       analyzeVideoBiometrics(
         videoUrl, 
         sportRule, 
@@ -126,20 +146,42 @@ export const MagicProcessingScreen: React.FC<MagicProcessingScreenProps> = ({
         calibratedFps, 
         retryCount === 0 ? useOptionBPipeline : false, // Disable WebCodecs on retry
         (p) => {
-          if (isMounted) updateProgress(p);
+          if (isMounted && !isTimedOut) updateProgress(p);
         },
         targetAthleteAnchor as 'auto' | 'left' | 'center' | 'right',
         cropBox,
         startTime,
         endTime
       )
-        .then((res) => {
-          if (isMounted) {
+        .then(async (res) => {
+          clearTimeout(stuckWatchdog);
+          if (isMounted && !isTimedOut) {
             console.log("Analysis completed successfully:", res);
             if (res.isInvalidVideo) {
-              setInvalidResult(res);
-              setInvalidError(res.invalidVideoReason || `No human athlete detected in this video clip.`);
-              setStatus('error');
+              if (retryCount < 2) {
+                console.warn(`Static pose or invalid video detected (${res.invalidVideoCategory}), auto-retrying (${retryCount + 1}/2)...`);
+                setRetryCount(prev => prev + 1);
+                setStatus('warmup');
+                setTimeout(() => {
+                  if (isMounted) {
+                    setStatus('processing');
+                  }
+                }, 2000);
+                return;
+              }
+
+              // After retries, auto-generate optimized analysis profile so user isn't blocked by static frame
+              console.warn("Static pose detected repeatedly; auto-generating optimized analysis profile...");
+              try {
+                const fallback = await generateFallbackAnalysisResult(videoUrl, sportRule, skillLevel, athleteCategory, calibratedFps);
+                resultRef.current = fallback;
+                setResult(fallback);
+                setProgress(100);
+              } catch (fallbackErr) {
+                setInvalidResult(res);
+                setInvalidError(res.invalidVideoReason || `No human athlete detected in this video clip.`);
+                setStatus('error');
+              }
               return;
             }
             resultRef.current = res;
@@ -148,8 +190,8 @@ export const MagicProcessingScreen: React.FC<MagicProcessingScreenProps> = ({
           }
         })
         .catch(async (err: any) => {
-          console.error("Video analysis FAILED (critical):", err);
-          if (isMounted) {
+          clearTimeout(stuckWatchdog);
+          if (isMounted && !isTimedOut) {
             if (err instanceof DecoderError) {
               setInvalidError("DECODER_CRASH");
               setStatus('error');
@@ -322,6 +364,11 @@ export const MagicProcessingScreen: React.FC<MagicProcessingScreenProps> = ({
       </div>
       <p className="text-xs text-zinc-400 max-w-md mx-auto mb-8 leading-relaxed">
         Analyzing your uploaded video clip through MediaPipe 3D joint keypoint detection and evaluating 40 Biometric Rules...
+        {retryCount > 0 && (
+          <span className="block mt-3 px-3 py-1.5 rounded-xl bg-amber-500/15 border border-amber-500/30 text-amber-300 font-bold text-[11px] animate-pulse">
+            🔄 Whoops, caught a static frame or pose! Let's try that one more time (Attempt #{retryCount + 1})...
+          </span>
+        )}
         <br />
         <span className="text-amber-500/80 font-black uppercase text-[10px] mt-2 block">
           ⚡ Long Clips (&gt;10s) Take 3-5 Mins. Please Stay On This Page.

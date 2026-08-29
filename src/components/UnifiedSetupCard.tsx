@@ -1,7 +1,7 @@
 import React, { useRef, useState } from 'react';
 import { SPORTS_RULES } from '../data/sportsRules';
 import { SportId, UserAccount } from '../types';
-import { Upload, AlertCircle, CheckCircle2, Trophy, Activity, Target, Lock, FolderOpen, Dumbbell } from 'lucide-react';
+import { Upload, AlertCircle, CheckCircle2, Trophy, Activity, Target, Lock, FolderOpen } from 'lucide-react';
 import { motion } from 'motion/react';
 import eliteHeroImage from '../assets/images/klutchh_elite_hero_1786393193958.jpg';
 
@@ -21,7 +21,6 @@ interface UnifiedSetupCardProps {
   onImportReport?: (data: any) => void;
   targetAthleteAnchor?: 'auto' | 'left' | 'center' | 'right';
   onSelectAthleteAnchor?: (anchor: 'auto' | 'left' | 'center' | 'right') => void;
-  onOpenDrillsLibrary?: () => void;
 }
 
 export const UnifiedSetupCard: React.FC<UnifiedSetupCardProps> = ({
@@ -40,7 +39,6 @@ export const UnifiedSetupCard: React.FC<UnifiedSetupCardProps> = ({
   onImportReport,
   targetAthleteAnchor = 'auto',
   onSelectAthleteAnchor,
-  onOpenDrillsLibrary,
 }) => {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [fileName, setFileName] = useState<string | null>(null);
@@ -274,30 +272,6 @@ export const UnifiedSetupCard: React.FC<UnifiedSetupCardProps> = ({
               );
             })}
           </div>
-
-          {onOpenDrillsLibrary && (
-            <button
-              onClick={onOpenDrillsLibrary}
-              className="mt-1 w-full bg-gradient-to-r from-amber-500/10 via-yellow-500/10 to-red-500/10 hover:from-amber-500/20 hover:to-red-500/20 border border-amber-500/30 hover:border-amber-400 p-3.5 rounded-xl flex items-center justify-between transition-all group cursor-pointer"
-            >
-              <div className="flex items-center gap-3">
-                <div className="w-8 h-8 rounded-lg bg-amber-400/20 text-amber-400 border border-amber-400/40 flex items-center justify-center shrink-0 group-hover:scale-110 transition-transform">
-                  <Dumbbell className="w-4 h-4" />
-                </div>
-                <div className="text-left">
-                  <h4 className="text-xs font-black text-white uppercase tracking-wider">
-                    Browse Biometric Drills & Movement Rules Library
-                  </h4>
-                  <p className="text-[11px] text-zinc-400 font-medium">
-                    Select elite coaching drills with photo guides to set custom movement rules for your analysis.
-                  </p>
-                </div>
-              </div>
-              <span className="text-xs font-black text-amber-400 uppercase tracking-wider shrink-0 flex items-center gap-1 group-hover:translate-x-1 transition-transform">
-                Explore →
-              </span>
-            </button>
-          )}
         </div>
 
         {/* STEP 1.7: MULTI-PERSON GRID SELECTOR */}

@@ -16,6 +16,7 @@ interface KineticVideoPlayerProps {
   isDataReady: boolean;
   viewMode?: 'student' | 'coach';
   onTogglePlay?: () => void;
+  onError?: (error: boolean) => void;
 }
 
 export const KineticVideoPlayer: React.FC<KineticVideoPlayerProps> = ({
@@ -30,7 +31,8 @@ export const KineticVideoPlayer: React.FC<KineticVideoPlayerProps> = ({
   playbackRate = 1,
   isDataReady,
   viewMode = 'coach',
-  onTogglePlay
+  onTogglePlay,
+  onError
 }) => {
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -238,9 +240,13 @@ export const KineticVideoPlayer: React.FC<KineticVideoPlayerProps> = ({
         playsInline
         muted
         preload="auto"
-        className="hidden"
+        crossOrigin="anonymous"
+        className="absolute inset-0 w-full h-full opacity-0 pointer-events-none"
         onDurationChange={(e) => onDurationChange?.(e.currentTarget.duration)}
-        onError={() => setVideoError(true)}
+        onError={() => {
+          setVideoError(true);
+          onError?.(true);
+        }}
       />
       <canvas
         ref={canvasRef}
