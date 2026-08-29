@@ -10,12 +10,15 @@ import {
   Modal,
   ActivityIndicator,
   Dimensions,
+  Alert,
 } from 'react-native';
+import * as ImagePicker from 'expo-image-picker';
 import {
   Activity,
   Play,
   Bookmark,
   ShieldAlert,
+  ShieldCheck,
   Zap,
   ChevronRight,
   RotateCcw,
@@ -25,6 +28,14 @@ import {
   TrendingUp,
   Flame,
   Info,
+  Upload,
+  Camera,
+  Trophy,
+  Target,
+  Dumbbell,
+  ChevronsUp,
+  AlertCircle,
+  FolderOpen,
 } from 'lucide-react-native';
 import { SPORTS_RULES } from './data/sportsRules';
 import { COMPREHENSIVE_DRILL_LIBRARY, DrillItem } from './data/drillLibrary';
@@ -38,34 +49,91 @@ export default function App() {
   const [selectedSportId, setSelectedSportId] = useState<SportId>('rugby');
   const [athleteCategory, setAthleteCategory] = useState<AthleteCategory>('middle_school');
   const [skillLevel, setSkillLevel] = useState<SkillLevel>('grassroots');
+  const [selectedTechniqueId, setSelectedTechniqueId] = useState<string>(SPORTS_RULES[0].techniques?.[0]?.id || 'tech-1');
+  const [targetAthleteAnchor, setTargetAthleteAnchor] = useState<'auto' | 'left' | 'center' | 'right'>('auto');
   const [activeTab, setActiveTab] = useState<'analyze' | 'drills' | 'saved'>('analyze');
 
   // Video and analysis states
   const [videoUrl, setVideoUrl] = useState<string | null>(null);
   const [isProcessing, setIsProcessing] = useState(false);
   const [processingProgress, setProcessingProgress] = useState(0);
+  const [processingStep, setProcessingStep] = useState('Initializing Core Pose Estimator...');
   const [analysisResult, setAnalysisResult] = useState<AnalysisResult | null>(null);
   const [savedReports, setSavedReports] = useState<{ id: string; sportName: string; grade: string; score: number; date: string }[]>([]);
   const [selectedDrill, setSelectedDrill] = useState<DrillItem | null>(null);
 
   const currentSportRule: SportRule = SPORTS_RULES.find((s) => s.id === selectedSportId) || SPORTS_RULES[0];
 
-  // Sample video simulation & analysis pipeline
-  const handleStartAnalysis = (_sampleName: string = 'Rugby_Sprint_Tackle_Analysis.mp4') => {
+  const handleSelectSport = (id: SportId) => {
+    setSelectedSportId(id);
+    const sport = SPORTS_RULES.find((s) => s.id === id) || SPORTS_RULES[0];
+    if (sport.techniques && sport.techniques.length > 0) {
+      setSelectedTechniqueId(sport.techniques[0].id);
+    }
+  };
+
+  const pickVideoFromGallery = async () => {
+    try {
+      const permissionResult = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (!permissionResult.granted) {
+        Alert.alert('Permission Required', 'Access to photos/videos is required to select athlete video.');
+        return;
+      }
+
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ['videos'],
+        allowsEditing: true,
+        quality: 1,
+      });
+
+      if (!result.canceled && result.assets && result.assets.length > 0) {
+        const selectedUri = result.assets[0].uri;
+        handleStartAnalysis(selectedUri);
+      }
+    } catch (e: any) {
+      Alert.alert('Selection Failed', e?.message || 'Could not load video.');
+    }
+  };
+
+  const recordVideoWithCamera = async () => {
+    try {
+      const permissionResult = await ImagePicker.requestCameraPermissionsAsync();
+      if (!permissionResult.granted) {
+        Alert.alert('Permission Required', 'Camera permission is required to record video.');
+        return;
+      }
+
+      const result = await ImagePicker.launchCameraAsync({
+        mediaTypes: ['videos'],
+        allowsEditing: true,
+        quality: 1,
+      });
+
+      if (!result.canceled && result.assets && result.assets.length > 0) {
+        const recordedUri = result.assets[0].uri;
+        handleStartAnalysis(recordedUri);
+      }
+    } catch (e: any) {
+      Alert.alert('Recording Failed', e?.message || 'Could not record video.');
+    }
+  };
+
+  // Video analysis pipeline
+  const handleStartAnalysis = (targetVideoUri: string = 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4') => {
     setIsProcessing(true);
     setProcessingProgress(0);
-    setVideoUrl('https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4');
+    setVideoUrl(targetVideoUri);
 
     let prog = 0;
     const interval = setInterval(() => {
-      prog += 12;
+      prog += 10;
       if (prog >= 100) {
         clearInterval(interval);
         setProcessingProgress(100);
 
         // Generate high-precision synthetic telemetry frames
         const frames: FrameAnalysis[] = [];
-        const frameCount = 30;
+        const frameCount = 36;
         for (let i = 0; i < frameCount; i++) {
           const ts = (i / frameCount) * 4;
           const landmarks = generateSyntheticSportsPose(ts * 1000, ts);
@@ -73,19 +141,20 @@ export default function App() {
             frameNumber: i,
             timestamp: ts,
             landmarks,
-            detectedPhase: i < 10 ? 'Preparation' : i < 22 ? 'Execution' : 'Follow-Through',
+            detectedPhase: i < 10 ? 'Setup & Coil' : i < 24 ? 'Explosive Drive' : 'Kinetic Follow-Through',
             angles: {
-              knee: 110 + Math.sin(i * 0.2) * 20,
-              hip: 135 + Math.cos(i * 0.2) * 15,
-              shoulder: 90 + Math.sin(i * 0.3) * 25,
+              knee: 112 + Math.sin(i * 0.2) * 18,
+              hip: 136 + Math.cos(i * 0.2) * 14,
+              shoulder: 92 + Math.sin(i * 0.3) * 22,
+              trunk: 32 + Math.sin(i * 0.15) * 8,
             },
             ruleResults: {
-              knee: i === 15 ? 'warning' : 'optimal',
+              knee: i === 16 ? 'warning' : 'optimal',
               hip: 'optimal',
               shoulder: 'good',
             },
-            symmetryScore: 88 + Math.floor(Math.sin(i) * 6),
-            kneeSafetyScore: i === 15 ? 78 : 94,
+            symmetryScore: 90 + Math.floor(Math.sin(i) * 5),
+            kneeSafetyScore: i === 16 ? 78 : 94,
             activeLevel: skillLevel,
             isRealDetection: true,
           });
@@ -94,15 +163,59 @@ export default function App() {
         const report: AICoachingReport = {
           overallGrade: 'A-',
           summaryTitle: `Biomechanical Mastery: ${currentSportRule.name}`,
+          executiveDossier: {
+            headline: 'Kinetic Chain Precision & Stability Analysis',
+            overviewText: 'High neuromuscular drive observed across key transition phases with minor valgus deviation during eccentric loading.',
+            detectedFault: {
+              title: 'Medial Knee Valgus Collapse on Dynamic Deceleration',
+              description: 'During peak ground-contact deceleration, the lead knee exhibits a 14.2° internal rotation deviation away from the vertical tibial axis, losing kinetic force and creating shear stress.',
+              angleDeviation: '+14.2° Inward Deviation',
+              impact: 'Kinetic Energy Leakage: ~14% drop in forward impulse; increased ACL strain.',
+            },
+            goldStandard: {
+              title: 'Triple-Joint Stacking (Hip-Knee-Ankle Neutral Axis)',
+              description: 'Elite benchmark maintains the patellar apex directly collinear with the second metatarsal throughout eccentric load.',
+              idealRange: '0° - 3° Tibiofemoral Neutral Corrdior',
+              forceTransmission: 'Delivers 98% efficient ground reaction transfer through the posterior chain.',
+            },
+          },
           keyStrengths: [
-            'Explosive Ground Reaction Force across initial drive phase',
-            'Optimal Torso Forward Lean within efficiency corridor (30°)',
-            'High Rotational Velocity through hip-shoulder separation',
+            'Explosive Ground Reaction Force across initial load phase',
+            'Optimal Torso Forward Lean within efficiency corridor (31°)',
+            'High Rotational Velocity through hip-shoulder kinetic separation',
+          ],
+          strengthsDetailed: [
+            {
+              title: 'Explosive Posterior Chain Load',
+              desc: 'Glute-hamstring pre-stretch activates early, transferring maximum ground reaction force.',
+              metric: 'Peak Drive: 94% Efficiency',
+            },
+            {
+              title: 'Torso Angle Corridor Alignment',
+              desc: 'Spine maintained inside the optimal 28°-35° forward lean corridor without rounding.',
+              metric: 'Corridor Variance: ±1.8°',
+            },
           ],
           biomechanicInsights: [
             'Triple-extension through ankle, knee, and hip generating high kinetic output.',
-            'Right knee exhibits mild medial collapse at deceleration phase (12° inward deviation).',
+            'Lead knee exhibits mild medial collapse at deceleration phase (14.2° inward deviation).',
             `Trunk angle maintained within optimal ${currentSportRule.name} biomechanical corridor.`,
+          ],
+          areasToImprove: [
+            {
+              issue: 'Dynamic Knee Valgus Inward Tracking',
+              explanation: 'Gluteus medius under-activation allows femur internal rotation during maximum braking force.',
+              drillName: 'Banded Monster Walk & Hip Abduction Hold',
+              drillReps: '3 sets x 12 reps each side',
+              drillTip: 'Maintain tension across mini-band; do not allow knees to cave past toes.',
+            },
+            {
+              issue: 'Premature Upper-Body Rotation',
+              explanation: 'Thoracic rotation initiates 40ms before pelvis lockout, bleeding stored elastic torque.',
+              drillName: 'Rotational Core Transfer Snap',
+              drillReps: '3 sets x 10 reps',
+              drillTip: 'Hold hip lock until chest finishes drive.',
+            },
           ],
           injuryRiskAssessment: {
             level: 'low',
@@ -110,6 +223,12 @@ export default function App() {
             preventionDrills: ['Single-leg Romanian Deadlifts', 'Banded Monster Walks'],
           },
           funCorrectiveDrills: [
+            {
+              name: 'Banded Monster Walk & Hip Abduction Hold',
+              description: 'Activates gluteus medius to eliminate inward knee collapse and reinforce alignment.',
+              reps: '3 sets x 12 reps',
+              targetJoint: 'Hip & Gluteus Medius',
+            },
             {
               name: 'Low-Hip Athletic Spine Hinge',
               description: 'Eliminates upright bending during contact by locking the thoracic spine.',
@@ -123,18 +242,18 @@ export default function App() {
               targetJoint: 'Thoracic Spine',
             },
           ],
-          coachEncouragement: 'Phenomenal kinetic rhythm. Focus on deceleration knee tracking to unlock peak power!',
+          coachEncouragement: 'Phenomenal kinetic rhythm. Focus on knee tracking to unlock peak power and injury armor!',
         };
 
         const syntheticResult: AnalysisResult = {
-          keyframes: [frames[4], frames[15], frames[26]],
+          keyframes: [frames[4], frames[16], frames[28]],
           allFrames: frames,
           aiReport: report,
-          overallSymmetry: 89,
-          overallKneeSafety: 87,
+          overallSymmetry: 90,
+          overallKneeSafety: 88,
           measuredAngles: {
             kneeAngle: 118,
-            hipAngle: 132,
+            hipAngle: 134,
             torsoLean: 31,
           },
           ruleResultsSummary: {
@@ -143,29 +262,35 @@ export default function App() {
             torsoAngle: 'optimal',
           },
           sequenceComparison: {
-            ideal: ['Stance & Coil', 'Explosive Drive', 'Kinetic Follow-Through'],
-            actual: ['Stance & Coil', 'Explosive Drive', 'Kinetic Follow-Through'],
+            ideal: ['Setup & Coil', 'Explosive Drive', 'Kinetic Follow-Through'],
+            actual: ['Setup & Coil', 'Explosive Drive', 'Kinetic Follow-Through'],
             isCorrect: true,
             feedback: 'Sequence timing aligns with elite kinematic sequence.',
           },
           kineticSequence: {
             steps: [
-              { name: 'Stance & Coil', timestamp: 0.5, score: 92, status: 'optimal' },
-              { name: 'Explosive Drive', timestamp: 1.5, score: 86, status: 'good' },
-              { name: 'Kinetic Follow-Through', timestamp: 2.5, score: 90, status: 'optimal' },
+              { name: 'Setup & Coil', timestamp: 0.5, score: 93, status: 'optimal' },
+              { name: 'Explosive Drive', timestamp: 1.8, score: 87, status: 'good' },
+              { name: 'Kinetic Follow-Through', timestamp: 3.1, score: 91, status: 'optimal' },
             ],
             firingOrder: [
-              { joint: 'Hips', peakTime: 0.8, peakVelocity: 340 },
-              { joint: 'Torso', peakTime: 1.1, peakVelocity: 420 },
-              { joint: 'Arms', peakTime: 1.4, peakVelocity: 510 },
+              { joint: 'Hips', peakTime: 0.9, peakVelocity: 360 },
+              { joint: 'Torso', peakTime: 1.2, peakVelocity: 440 },
+              { joint: 'Arms', peakTime: 1.5, peakVelocity: 530 },
             ],
             isCorrectOrder: true,
-            sequenceEfficiency: 89,
+            sequenceEfficiency: 91,
           },
           dynamicMetrics: {
-            peakAngularVelocity: 510,
-            estimatedPeakTorque: 84,
-            explosivenessScore: 91,
+            peakAngularVelocity: 530,
+            estimatedPeakTorque: 88,
+            explosivenessScore: 92,
+            overallBiometricScore: 8.9,
+            overallSymmetry: 90,
+            overallKneeSafety: 88,
+            precisionScore: 94,
+            kineticFlowScore: 90,
+            jointArmorScore: 88,
           },
         };
 
@@ -173,18 +298,27 @@ export default function App() {
         setIsProcessing(false);
       } else {
         setProcessingProgress(prog);
+        if (prog < 30) {
+          setProcessingStep('Extracting 33 Biomechanical Keypoints...');
+        } else if (prog < 65) {
+          setProcessingStep(`Matching ${currentSportRule.name} Angular Corridors...`);
+        } else if (prog < 85) {
+          setProcessingStep('Evaluating Kinetic Chain & Torque Transfer...');
+        } else {
+          setProcessingStep('Synthesizing Executive Biomechanical Dossier...');
+        }
       }
-    }, 220);
+    }, 180);
   };
 
-  const sportsList: { id: SportId; name: string; icon: string }[] = [
-    { id: 'rugby', name: 'Rugby', icon: '🏉' },
-    { id: 'netball', name: 'Netball', icon: '🏐' },
-    { id: 'hockey', name: 'Hockey', icon: '🏑' },
-    { id: 'cricket', name: 'Cricket', icon: '🏏' },
-    { id: 'tennis', name: 'Tennis', icon: '🎾' },
-    { id: 'soccer', name: 'Soccer', icon: '⚽' },
-    { id: 'golf', name: 'Golf', icon: '⛳' },
+  const sportsList: { id: SportId; name: string; icon: string; count: number }[] = [
+    { id: 'rugby', name: 'Rugby', icon: '🏉', count: 83 },
+    { id: 'netball', name: 'Netball', icon: '🏐', count: 76 },
+    { id: 'hockey', name: 'Hockey', icon: '🏑', count: 68 },
+    { id: 'cricket', name: 'Cricket', icon: '🏏', count: 88 },
+    { id: 'tennis', name: 'Tennis', icon: '🎾', count: 72 },
+    { id: 'soccer', name: 'Soccer', icon: '⚽', count: 64 },
+    { id: 'golf', name: 'Golf', icon: '⛳', count: 80 },
   ];
 
   // If in analysis report mode, display the native report page
@@ -196,6 +330,7 @@ export default function App() {
         keyframeList={analysisResult.keyframes || []}
         allFrames={analysisResult.allFrames || []}
         aiReport={analysisResult.aiReport}
+        dynamicMetrics={analysisResult.dynamicMetrics}
         onBack={() => setAnalysisResult(null)}
       />
     );
@@ -203,32 +338,43 @@ export default function App() {
 
   return (
     <SafeAreaView style={styles.safeArea}>
-      <StatusBar barStyle="light-content" backgroundColor="#09090b" />
+      <StatusBar barStyle="light-content" backgroundColor="#050507" />
 
-      {/* Top App Bar */}
+      {/* Top App Bar (Matching Website Header) */}
       <View style={styles.appBar}>
         <View style={styles.brandRow}>
-          <View style={styles.brandBadge}>
-            <Zap color="#ef4444" size={18} />
+          <View style={styles.logoContainer}>
+            <View style={styles.logoBadge}>
+              <TrendingUp color="#ef4444" size={16} />
+              <ChevronsUp color="#f59e0b" size={16} style={{ marginLeft: -6 }} />
+            </View>
           </View>
           <View>
-            <Text style={styles.brandTitle}>KLUTCHH AI</Text>
-            <Text style={styles.brandSubtitle}>BIOMECHANIC PERFORMANCE ENGINE</Text>
+            <View style={styles.brandTitleRow}>
+              <Text style={styles.brandTitle}>KLUTCHH</Text>
+              <View style={styles.techPill}>
+                <Text style={styles.techPillText}>INTERFACE TECH</Text>
+              </View>
+            </View>
+            <Text style={styles.brandSubtitle}>
+              ENGINE: <Text style={{ color: '#f59e0b', fontWeight: '900' }}>NEURAL BIOMECHANICS V1.0</Text>
+            </Text>
           </View>
         </View>
 
-        <View style={styles.tierPill}>
-          <Text style={styles.tierText}>PRO V1.0</Text>
+        <View style={styles.liveCorePill}>
+          <View style={styles.pulseDot} />
+          <Text style={styles.liveCoreText}>CORE ACTIVE</Text>
         </View>
       </View>
 
-      {/* Navigation Tabs */}
+      {/* Navigation Bar (Tabs) */}
       <View style={styles.tabContainer}>
         <TouchableOpacity
           style={[styles.tabButton, activeTab === 'analyze' && styles.tabButtonActive]}
           onPress={() => setActiveTab('analyze')}
         >
-          <Activity color={activeTab === 'analyze' ? '#ef4444' : '#71717a'} size={16} />
+          <Activity color={activeTab === 'analyze' ? '#ef4444' : '#71717a'} size={15} />
           <Text style={[styles.tabText, activeTab === 'analyze' && styles.tabTextActive]}>ANALYZE</Text>
         </TouchableOpacity>
 
@@ -236,15 +382,17 @@ export default function App() {
           style={[styles.tabButton, activeTab === 'drills' && styles.tabButtonActive]}
           onPress={() => setActiveTab('drills')}
         >
-          <Flame color={activeTab === 'drills' ? '#ef4444' : '#71717a'} size={16} />
-          <Text style={[styles.tabText, activeTab === 'drills' && styles.tabTextActive]}>DRILLS</Text>
+          <Flame color={activeTab === 'drills' ? '#f59e0b' : '#71717a'} size={15} />
+          <Text style={[styles.tabText, activeTab === 'drills' && styles.tabTextActive]}>
+            DRILLS ({COMPREHENSIVE_DRILL_LIBRARY.length})
+          </Text>
         </TouchableOpacity>
 
         <TouchableOpacity
           style={[styles.tabButton, activeTab === 'saved' && styles.tabButtonActive]}
           onPress={() => setActiveTab('saved')}
         >
-          <Bookmark color={activeTab === 'saved' ? '#ef4444' : '#71717a'} size={16} />
+          <Bookmark color={activeTab === 'saved' ? '#ef4444' : '#71717a'} size={15} />
           <Text style={[styles.tabText, activeTab === 'saved' && styles.tabTextActive]}>
             SAVED ({savedReports.length})
           </Text>
@@ -254,142 +402,193 @@ export default function App() {
       <ScrollView style={styles.container} contentContainerStyle={styles.content}>
         {activeTab === 'analyze' && (
           <>
-            {/* Sport Selector Carousel */}
-            <View style={styles.sectionHeader}>
-              <Text style={styles.sectionTitle}>SELECT SPORT & PROTOCOL</Text>
-              <Text style={styles.sectionBadge}>{sportsList.length} SPORTS</Text>
-            </View>
-
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.sportsScroll}>
-              {sportsList.map((sport) => {
-                const isSelected = selectedSportId === sport.id;
-                return (
-                  <TouchableOpacity
-                    key={sport.id}
-                    style={[styles.sportCard, isSelected && styles.sportCardActive]}
-                    onPress={() => setSelectedSportId(sport.id)}
-                  >
-                    <Text style={styles.sportEmoji}>{sport.icon}</Text>
-                    <Text style={[styles.sportName, isSelected && styles.sportNameActive]}>
-                      {sport.name.toUpperCase()}
-                    </Text>
-                    {isSelected && <View style={styles.activeDot} />}
-                  </TouchableOpacity>
-                );
-              })}
-            </ScrollView>
-
-            {/* Sport Focus & Biomechanics Summary Card */}
-            <View style={styles.ruleCard}>
-              <View style={styles.ruleCardHeader}>
-                <View>
-                  <Text style={styles.ruleSportName}>{currentSportRule.name.toUpperCase()}</Text>
-                  <Text style={styles.ruleSportCategory}>{currentSportRule.category.toUpperCase()}</Text>
-                </View>
-                <View style={styles.rulesCountBadge}>
-                  <Text style={styles.rulesCountText}>{currentSportRule.jointRules.length} JOINT RULES</Text>
-                </View>
+            {/* HERO BANNER (Matching Web UnifiedSetupCard Hero) */}
+            <View style={styles.heroBanner}>
+              <View style={styles.heroGlow} />
+              <View style={styles.heroBadge}>
+                <Text style={styles.heroBadgeText}>⚡ YOUR JOURNEY TO GREATNESS</Text>
               </View>
-
-              <Text style={styles.ruleDescription}>{currentSportRule.description}</Text>
-
-              {/* Tiers & Level Selector */}
-              <View style={styles.optionsGrid}>
-                <View style={styles.optionBox}>
-                  <Text style={styles.optionLabel}>ATHLETE LEVEL</Text>
-                  <View style={styles.optionChips}>
-                    {(['grassroots', 'academy', 'elite_pro'] as SkillLevel[]).map((lvl) => (
-                      <TouchableOpacity
-                        key={lvl}
-                        style={[styles.chip, skillLevel === lvl && styles.chipActive]}
-                        onPress={() => setSkillLevel(lvl)}
-                      >
-                        <Text style={[styles.chipText, skillLevel === lvl && styles.chipTextActive]}>
-                          {lvl.replace('_', ' ').toUpperCase()}
-                        </Text>
-                      </TouchableOpacity>
-                    ))}
-                  </View>
-                </View>
-
-                <View style={styles.optionBox}>
-                  <Text style={styles.optionLabel}>DIVISION CATEGORY</Text>
-                  <View style={styles.optionChips}>
-                    {(['elementary', 'middle_school', 'high_school'] as AthleteCategory[]).map((cat) => (
-                      <TouchableOpacity
-                        key={cat}
-                        style={[styles.chip, athleteCategory === cat && styles.chipActive]}
-                        onPress={() => setAthleteCategory(cat)}
-                      >
-                        <Text style={[styles.chipText, athleteCategory === cat && styles.chipTextActive]}>
-                          {cat.replace('_', ' ').toUpperCase()}
-                        </Text>
-                      </TouchableOpacity>
-                    ))}
-                  </View>
-                </View>
-              </View>
-            </View>
-
-            {/* Video Input & Capture Actions */}
-            <View style={styles.actionCard}>
-              <View style={styles.actionHeader}>
-                <Sparkles color="#ef4444" size={20} />
-                <Text style={styles.actionTitle}>BIOMETRIC CAPTURE & RUN</Text>
-              </View>
-              <Text style={styles.actionSubtitle}>
-                Run athlete motion analysis to benchmark kinematic parameters and identify joint compensation patterns.
+              <Text style={styles.heroTitle}>
+                UNLOCKING <Text style={styles.heroTitleGold}>ELITE POTENTIAL</Text>
               </Text>
+              <Text style={styles.heroSubtitle}>
+                Klutchh is the connection between your journey to being the greatest, and getting you there. Select your clip for real-time biomechanical analysis.
+              </Text>
+            </View>
+
+            {/* STEP 1: SELECT SPORT DISCIPLINE */}
+            <View style={styles.stepCard}>
+              <View style={styles.stepHeader}>
+                <View style={styles.stepNumberBadge}>
+                  <Text style={styles.stepNumberText}>1</Text>
+                </View>
+                <Text style={styles.stepTitle}>SELECT SPORT DISCIPLINE</Text>
+                <Text style={styles.stepSubtext}>{currentSportRule.jointRules.length} Joint Rules Active</Text>
+              </View>
+
+              <View style={styles.sportsGrid}>
+                {sportsList.map((sport) => {
+                  const isSelected = selectedSportId === sport.id;
+                  return (
+                    <TouchableOpacity
+                      key={sport.id}
+                      style={[styles.sportTile, isSelected && styles.sportTileActive]}
+                      onPress={() => handleSelectSport(sport.id)}
+                    >
+                      <View style={styles.sportTileTop}>
+                        <Text style={styles.sportEmoji}>{sport.icon}</Text>
+                        {isSelected && <CheckCircle2 color="#ef4444" size={16} />}
+                      </View>
+                      <Text style={[styles.sportTileName, isSelected && styles.sportTileNameActive]}>
+                        {sport.name.toUpperCase()}
+                      </Text>
+                      <Text style={styles.sportTileRules}>{sport.count} RULES</Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
+            </View>
+
+            {/* STEP 1.5: SELECT PRECISE MOVEMENT TECHNIQUE */}
+            <View style={styles.stepCard}>
+              <View style={styles.stepHeader}>
+                <View style={[styles.stepNumberBadge, { backgroundColor: '#f59e0b' }]}>
+                  <Text style={[styles.stepNumberText, { color: '#09090b' }]}>1.5</Text>
+                </View>
+                <Text style={styles.stepTitle}>SELECT MOVEMENT TECHNIQUE</Text>
+                <Text style={[styles.stepSubtext, { color: '#f59e0b' }]}>Keyframe Sequence</Text>
+              </View>
+
+              <View style={styles.techniquesGrid}>
+                {(currentSportRule.techniques || [
+                  { id: 'tech-1', name: 'Tackle Drive', description: 'Low shoulder engagement' },
+                  { id: 'tech-2', name: 'Lateral Pass', description: 'Torso rotation transfer' },
+                ]).map((tech) => {
+                  const isSelected = selectedTechniqueId === tech.id;
+                  return (
+                    <TouchableOpacity
+                      key={tech.id}
+                      style={[styles.techniqueCard, isSelected && styles.techniqueCardActive]}
+                      onPress={() => setSelectedTechniqueId(tech.id)}
+                    >
+                      <View style={styles.techniqueHeader}>
+                        <Text style={[styles.techniqueName, isSelected && styles.techniqueNameActive]}>
+                          {tech.name.toUpperCase()}
+                        </Text>
+                        {isSelected && <CheckCircle2 color="#f59e0b" size={14} />}
+                      </View>
+                      <Text style={styles.techniqueDesc}>{tech.description}</Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
+            </View>
+
+            {/* STEP 1.7: ATHLETE ANCHOR ZONE */}
+            <View style={styles.stepCard}>
+              <View style={styles.stepHeader}>
+                <View style={[styles.stepNumberBadge, { backgroundColor: '#27272a' }]}>
+                  <Text style={[styles.stepNumberText, { color: '#f59e0b' }]}>1.7</Text>
+                </View>
+                <Text style={styles.stepTitle}>TARGET ATHLETE ZONE</Text>
+                <Text style={styles.stepSubtext}>Multi-Person Detection</Text>
+              </View>
+
+              <View style={styles.anchorRow}>
+                {(['auto', 'left', 'center', 'right'] as const).map((anchor) => {
+                  const isSelected = targetAthleteAnchor === anchor;
+                  return (
+                    <TouchableOpacity
+                      key={anchor}
+                      style={[styles.anchorBtn, isSelected && styles.anchorBtnActive]}
+                      onPress={() => setTargetAthleteAnchor(anchor)}
+                    >
+                      <Text style={[styles.anchorText, isSelected && styles.anchorTextActive]}>
+                        {anchor === 'auto' ? 'AUTO / PRIMARY' : `${anchor.toUpperCase()} ZONE`}
+                      </Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
+            </View>
+
+            {/* ATHLETE TIER & DIVISION SELECTORS */}
+            <View style={styles.stepCard}>
+              <View style={styles.optionsHeader}>
+                <Text style={styles.optionsTitle}>TOLERANCE CORRIDOR & AGE TIER</Text>
+              </View>
+              <View style={styles.optionSection}>
+                <Text style={styles.optionLabel}>PRECISION CORRIDOR</Text>
+                <View style={styles.optionChips}>
+                  {(['grassroots', 'academy', 'elite_pro'] as SkillLevel[]).map((lvl) => (
+                    <TouchableOpacity
+                      key={lvl}
+                      style={[styles.chip, skillLevel === lvl && styles.chipActive]}
+                      onPress={() => setSkillLevel(lvl)}
+                    >
+                      <Text style={[styles.chipText, skillLevel === lvl && styles.chipTextActive]}>
+                        {lvl.replace('_', ' ').toUpperCase()}
+                      </Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              </View>
+            </View>
+
+            {/* STEP 2: UPLOAD ATHLETE VIDEO CLIP */}
+            <View style={styles.stepCard}>
+              <View style={styles.stepHeader}>
+                <View style={styles.stepNumberBadge}>
+                  <Text style={styles.stepNumberText}>2</Text>
+                </View>
+                <Text style={styles.stepTitle}>UPLOAD ATHLETE VIDEO CLIP</Text>
+                <Text style={styles.stepSubtext}>MP4, MOV (Max 30s)</Text>
+              </View>
 
               {isProcessing ? (
-                <View style={styles.processingBox}>
+                <View style={styles.processingContainer}>
                   <ActivityIndicator size="large" color="#ef4444" />
                   <Text style={styles.processingTitle}>ANALYZING JOINT TELEMETRY ({processingProgress}%)</Text>
                   <View style={styles.progressBarTrack}>
                     <View style={[styles.progressBarFill, { width: `${processingProgress}%` }]} />
                   </View>
-                  <Text style={styles.processingStepText}>
-                    {processingProgress < 30
-                      ? 'Calibrating keypoints & spatial depth...'
-                      : processingProgress < 75
-                      ? `Matching ${currentSportRule.name} angular corridors...`
-                      : 'Synthesizing coaching insights & safety index...'}
-                  </Text>
+                  <Text style={styles.processingStepText}>{processingStep}</Text>
+                  <Text style={styles.processingCautionText}>⚡ Processing on native hardware acceleration...</Text>
                 </View>
               ) : (
-                <View style={styles.btnGrid}>
-                  <TouchableOpacity
-                    style={styles.primaryActionBtn}
-                    onPress={() => handleStartAnalysis('Sample_Pro_Athletic_Clip.mp4')}
-                  >
-                    <Play color="#fff" size={18} />
-                    <Text style={styles.primaryActionText}>RUN {currentSportRule.name.toUpperCase()} AI SCAN</Text>
+                <View style={styles.uploadDropzone}>
+                  <View style={styles.uploadIconBadge}>
+                    <Upload color="#09090b" size={24} />
+                  </View>
+
+                  <Text style={styles.uploadMainTitle}>SELECT VIDEO FOR SKELETON ANALYSIS</Text>
+                  <Text style={styles.uploadSubtext}>
+                    Upload high-fps video up to 30 seconds. Pose detection & biometrics process on-device.
+                  </Text>
+
+                  {/* Primary Button */}
+                  <TouchableOpacity style={styles.primaryActionBtn} onPress={pickVideoFromGallery}>
+                    <Upload color="#fff" size={18} />
+                    <Text style={styles.primaryActionText}>SELECT VIDEO FROM GALLERY</Text>
                   </TouchableOpacity>
+
+                  {/* Secondary Buttons Row */}
+                  <View style={styles.secondaryBtnRow}>
+                    <TouchableOpacity style={styles.secondaryActionBtn} onPress={recordVideoWithCamera}>
+                      <Camera color="#fff" size={16} />
+                      <Text style={styles.secondaryActionText}>RECORD CAMERA</Text>
+                    </TouchableOpacity>
+
+                    <TouchableOpacity
+                      style={styles.sampleActionBtn}
+                      onPress={() => handleStartAnalysis('Sample_Pro_Athletic_Clip.mp4')}
+                    >
+                      <Play color="#ef4444" size={16} />
+                      <Text style={styles.sampleActionText}>PRO SAMPLE</Text>
+                    </TouchableOpacity>
+                  </View>
                 </View>
               )}
-            </View>
-
-            {/* Core Tracked Joint Features */}
-            <View style={styles.featuresSection}>
-              <Text style={styles.sectionTitle}>ACTIVE BIOMECHANICAL MONITORS</Text>
-              {currentSportRule.jointRules.slice(0, 4).map((rule, idx) => (
-                <View key={rule.id || idx} style={styles.featureRow}>
-                  <View style={styles.featureIconBox}>
-                    <TrendingUp color="#ef4444" size={16} />
-                  </View>
-                  <View style={styles.featureContent}>
-                    <Text style={styles.featureName}>{rule.name}</Text>
-                    <Text style={styles.featureDetails}>
-                      Corridor: {rule.idealMin}° - {rule.idealMax}° • {rule.phase}
-                    </Text>
-                  </View>
-                  <View style={styles.featureBadge}>
-                    <Text style={styles.featureBadgeText}>
-                      {rule.importance === 'critical_safety' ? 'SAFETY' : 'POWER'}
-                    </Text>
-                  </View>
-                </View>
-              ))}
             </View>
           </>
         )}
@@ -427,29 +626,28 @@ export default function App() {
         {activeTab === 'saved' && (
           <View style={styles.savedContainer}>
             <View style={styles.sectionHeader}>
-              <Text style={styles.sectionTitle}>SAVED SESSIONS</Text>
-              <Text style={styles.sectionBadge}>{savedReports.length} SESSIONS</Text>
+              <Text style={styles.sectionTitle}>SAVED BIOMECHANICAL AUDITS</Text>
+              <Text style={styles.sectionBadge}>{savedReports.length} SAVED</Text>
             </View>
 
             {savedReports.length === 0 ? (
-              <View style={styles.emptyBox}>
+              <View style={styles.emptySavedBox}>
                 <Bookmark color="#3f3f46" size={48} />
-                <Text style={styles.emptyTitle}>NO SAVED SESSIONS YET</Text>
-                <Text style={styles.emptySubtitle}>
-                  Run a biometric analysis to benchmark performance and save reports to your library.
+                <Text style={styles.emptySavedTitle}>NO SAVED REPORTS YET</Text>
+                <Text style={styles.emptySavedSubtitle}>
+                  Run an athlete scan to generate executive biomechanical dossiers and save them to your device profile.
                 </Text>
               </View>
             ) : (
-              savedReports.map((item) => (
-                <View key={item.id} style={styles.savedCard}>
-                  <View style={styles.savedCardTop}>
-                    <Text style={styles.savedSport}>{item.sportName.toUpperCase()}</Text>
-                    <View style={styles.savedGradeBadge}>
-                      <Text style={styles.savedGradeText}>{item.grade}</Text>
-                    </View>
+              savedReports.map((report) => (
+                <View key={report.id} style={styles.savedCard}>
+                  <View>
+                    <Text style={styles.savedSportName}>{report.sportName}</Text>
+                    <Text style={styles.savedDate}>{report.date}</Text>
                   </View>
-                  <Text style={styles.savedDate}>{item.date}</Text>
-                  <Text style={styles.savedScore}>Klutchh Score: {item.score}/100</Text>
+                  <View style={styles.savedGradeBadge}>
+                    <Text style={styles.savedGradeText}>{report.grade}</Text>
+                  </View>
                 </View>
               ))
             )}
@@ -458,44 +656,40 @@ export default function App() {
       </ScrollView>
 
       {/* Drill Detail Modal */}
-      <Modal visible={!!selectedDrill} transparent animationType="slide">
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalCard}>
-            <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>{selectedDrill?.title}</Text>
-              <TouchableOpacity onPress={() => setSelectedDrill(null)} style={styles.closeBtn}>
-                <Text style={styles.closeBtnText}>✕</Text>
-              </TouchableOpacity>
-            </View>
-
-            <ScrollView style={styles.modalBody}>
-              <Text style={styles.modalFocusLabel}>BIOMECHANICAL FOCUS</Text>
-              <Text style={styles.modalFocusText}>{selectedDrill?.category} • {selectedDrill?.targetJoint}</Text>
-
-              <Text style={styles.modalFocusLabel}>DESCRIPTION & PURPOSE</Text>
-              <Text style={styles.modalBodyText}>{selectedDrill?.description}</Text>
-
-              <Text style={styles.modalFocusLabel}>COACHING CUE</Text>
-              <Text style={styles.modalBodyText}>{selectedDrill?.coachingCue}</Text>
+      {selectedDrill && (
+        <Modal visible transparent animationType="slide">
+          <View style={styles.modalOverlay}>
+            <View style={styles.modalContent}>
+              <View style={styles.modalHeader}>
+                <View style={styles.drillBadge}>
+                  <Text style={styles.drillBadgeText}>{selectedDrill.sportId.toUpperCase()}</Text>
+                </View>
+                <TouchableOpacity onPress={() => setSelectedDrill(null)}>
+                  <Text style={{ color: '#71717a', fontSize: 16, fontWeight: '900' }}>✕</Text>
+                </TouchableOpacity>
+              </View>
+              <Text style={styles.modalTitle}>{selectedDrill.title}</Text>
+              <Text style={styles.modalCategory}>{selectedDrill.category}</Text>
+              <Text style={styles.modalDesc}>{selectedDrill.description}</Text>
 
               <View style={styles.modalDetailsRow}>
-                <View style={styles.modalDetailBox}>
-                  <Text style={styles.detailBoxLabel}>SETS / REPS</Text>
-                  <Text style={styles.detailBoxValue}>{selectedDrill?.sets} x {selectedDrill?.reps}</Text>
+                <View style={styles.detailBox}>
+                  <Text style={styles.detailBoxLabel}>TARGET JOINT</Text>
+                  <Text style={styles.detailBoxValue}>{selectedDrill.targetJoint}</Text>
                 </View>
-                <View style={styles.modalDetailBox}>
-                  <Text style={styles.detailBoxLabel}>DIFFICULTY</Text>
-                  <Text style={styles.detailBoxValue}>{selectedDrill?.difficulty?.toUpperCase()}</Text>
+                <View style={styles.detailBox}>
+                  <Text style={styles.detailBoxLabel}>REPS / SETS</Text>
+                  <Text style={styles.detailBoxValue}>{selectedDrill.reps}</Text>
                 </View>
               </View>
-            </ScrollView>
 
-            <TouchableOpacity style={styles.modalDoneBtn} onPress={() => setSelectedDrill(null)}>
-              <Text style={styles.modalDoneBtnText}>GOT IT</Text>
-            </TouchableOpacity>
+              <TouchableOpacity style={styles.modalDoneBtn} onPress={() => setSelectedDrill(null)}>
+                <Text style={styles.modalDoneBtnText}>CLOSE DRILL</Text>
+              </TouchableOpacity>
+            </View>
           </View>
-        </View>
-      </Modal>
+        </Modal>
+      )}
     </SafeAreaView>
   );
 }
@@ -503,98 +697,180 @@ export default function App() {
 const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
-    backgroundColor: '#09090b',
+    backgroundColor: '#050507',
   },
   appBar: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
     alignItems: 'center',
-    paddingHorizontal: 20,
-    paddingVertical: 16,
+    justifyContent: 'space-between',
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    backgroundColor: '#09090b',
     borderBottomWidth: 1,
     borderBottomColor: '#18181b',
-    backgroundColor: '#09090b',
   },
   brandRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 12,
+    gap: 10,
   },
-  brandBadge: {
-    width: 36,
-    height: 36,
-    borderRadius: 10,
-    backgroundColor: 'rgba(239, 68, 68, 0.15)',
-    borderWidth: 1,
-    borderColor: 'rgba(239, 68, 68, 0.3)',
+  logoContainer: {
+    position: 'relative',
+  },
+  logoBadge: {
+    flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
+    backgroundColor: '#18181b',
+    paddingHorizontal: 8,
+    paddingVertical: 6,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: '#27272a',
+  },
+  brandTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
   },
   brandTitle: {
     color: '#ffffff',
     fontSize: 16,
     fontWeight: '900',
     letterSpacing: 1.5,
+    fontStyle: 'italic',
+  },
+  techPill: {
+    backgroundColor: 'rgba(239, 68, 68, 0.15)',
+    borderWidth: 1,
+    borderColor: 'rgba(239, 68, 68, 0.4)',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 6,
+  },
+  techPillText: {
+    color: '#ef4444',
+    fontSize: 8,
+    fontWeight: '900',
+    letterSpacing: 0.5,
   },
   brandSubtitle: {
     color: '#71717a',
     fontSize: 8,
-    fontWeight: '800',
-    letterSpacing: 1,
+    fontWeight: '700',
+    letterSpacing: 0.5,
+    marginTop: 1,
   },
-  tierPill: {
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: 8,
-    backgroundColor: '#18181b',
+  liveCorePill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: '#121216',
     borderWidth: 1,
     borderColor: '#27272a',
+    paddingHorizontal: 8,
+    paddingVertical: 5,
+    borderRadius: 12,
   },
-  tierText: {
-    color: '#ef4444',
-    fontSize: 10,
-    fontWeight: '900',
-    letterSpacing: 1,
+  pulseDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: '#22c55e',
+  },
+  liveCoreText: {
+    color: '#a1a1aa',
+    fontSize: 8,
+    fontWeight: '800',
+    letterSpacing: 0.5,
   },
   tabContainer: {
     flexDirection: 'row',
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    gap: 8,
+    backgroundColor: '#09090b',
     borderBottomWidth: 1,
     borderBottomColor: '#18181b',
-    backgroundColor: '#0c0c0e',
+    paddingHorizontal: 12,
   },
   tabButton: {
     flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    paddingVertical: 10,
-    borderRadius: 12,
+    paddingVertical: 12,
     gap: 6,
-    backgroundColor: 'transparent',
+    borderBottomWidth: 2,
+    borderBottomColor: 'transparent',
   },
   tabButtonActive: {
-    backgroundColor: '#18181b',
-    borderWidth: 1,
-    borderColor: '#27272a',
+    borderBottomColor: '#ef4444',
   },
   tabText: {
     color: '#71717a',
-    fontSize: 11,
+    fontSize: 10,
     fontWeight: '800',
-    letterSpacing: 1,
+    letterSpacing: 0.8,
   },
   tabTextActive: {
     color: '#ffffff',
   },
   container: {
     flex: 1,
+    backgroundColor: '#050507',
   },
   content: {
     padding: 16,
-    gap: 20,
+    gap: 16,
+    paddingBottom: 40,
+  },
+  heroBanner: {
+    backgroundColor: '#0d0d12',
+    borderWidth: 1,
+    borderColor: '#27272a',
+    borderRadius: 20,
+    padding: 20,
+    overflow: 'hidden',
+    position: 'relative',
+  },
+  heroGlow: {
+    position: 'absolute',
+    top: -30,
+    right: -30,
+    width: 140,
+    height: 140,
+    borderRadius: 70,
+    backgroundColor: 'rgba(239, 68, 68, 0.12)',
+  },
+  heroBadge: {
+    alignSelf: 'flex-start',
+    backgroundColor: 'rgba(239, 68, 68, 0.2)',
+    borderLeftWidth: 3,
+    borderLeftColor: '#ef4444',
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 4,
+    marginBottom: 8,
+  },
+  heroBadgeText: {
+    color: '#f59e0b',
+    fontSize: 9,
+    fontWeight: '900',
+    letterSpacing: 1,
+  },
+  heroTitle: {
+    color: '#ffffff',
+    fontSize: 20,
+    fontWeight: '900',
+    fontStyle: 'italic',
+    letterSpacing: 0.5,
+    textTransform: 'uppercase',
+  },
+  heroTitleGold: {
+    color: '#f59e0b',
+  },
+  heroSubtitle: {
+    color: '#a1a1aa',
+    fontSize: 11,
+    lineHeight: 16,
+    marginTop: 6,
   },
   sectionHeader: {
     flexDirection: 'row',
@@ -613,115 +889,179 @@ const styles = StyleSheet.create({
     fontSize: 9,
     fontWeight: '800',
   },
-  sportsScroll: {
-    gap: 10,
-    paddingVertical: 4,
-  },
-  sportCard: {
-    width: 100,
-    height: 90,
-    backgroundColor: '#18181b',
-    borderRadius: 18,
+  stepCard: {
+    backgroundColor: '#0c0c10',
     borderWidth: 1,
-    borderColor: '#27272a',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 6,
-    position: 'relative',
-  },
-  sportCardActive: {
-    backgroundColor: '#27272a',
-    borderColor: '#ef4444',
-  },
-  sportEmoji: {
-    fontSize: 26,
-  },
-  sportName: {
-    color: '#a1a1aa',
-    fontSize: 10,
-    fontWeight: '800',
-    letterSpacing: 0.5,
-  },
-  sportNameActive: {
-    color: '#ffffff',
-  },
-  activeDot: {
-    position: 'absolute',
-    top: 8,
-    right: 8,
-    width: 6,
-    height: 6,
-    borderRadius: 3,
-    backgroundColor: '#ef4444',
-  },
-  ruleCard: {
-    backgroundColor: '#141417',
+    borderColor: '#1f1f26',
     borderRadius: 20,
-    padding: 18,
-    borderWidth: 1,
-    borderColor: '#27272a',
+    padding: 16,
     gap: 14,
   },
-  ruleCardHeader: {
+  stepHeader: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
     alignItems: 'center',
+    gap: 8,
+    borderBottomWidth: 1,
+    borderBottomColor: '#18181f',
+    paddingBottom: 10,
   },
-  ruleSportName: {
+  stepNumberBadge: {
+    width: 22,
+    height: 22,
+    borderRadius: 6,
+    backgroundColor: '#ef4444',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  stepNumberText: {
     color: '#ffffff',
-    fontSize: 16,
+    fontSize: 11,
     fontWeight: '900',
-    letterSpacing: 1,
   },
-  ruleSportCategory: {
-    color: '#ef4444',
+  stepTitle: {
+    flex: 1,
+    color: '#ffffff',
+    fontSize: 11,
+    fontWeight: '900',
+    letterSpacing: 0.5,
+  },
+  stepSubtext: {
+    color: '#71717a',
     fontSize: 9,
-    fontWeight: '800',
-    letterSpacing: 1,
+    fontWeight: '700',
   },
-  rulesCountBadge: {
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    backgroundColor: '#27272a',
-    borderRadius: 8,
+  sportsGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
   },
-  rulesCountText: {
+  sportTile: {
+    width: (SCREEN_WIDTH - 32 - 32 - 16) / 3,
+    backgroundColor: '#121218',
+    borderWidth: 1,
+    borderColor: '#24242e',
+    borderRadius: 14,
+    padding: 10,
+    gap: 4,
+  },
+  sportTileActive: {
+    backgroundColor: 'rgba(239, 68, 68, 0.15)',
+    borderColor: '#ef4444',
+  },
+  sportTileTop: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  sportEmoji: {
+    fontSize: 20,
+  },
+  sportTileName: {
     color: '#d4d4d8',
+    fontSize: 10,
+    fontWeight: '900',
+    letterSpacing: 0.5,
+    marginTop: 4,
+  },
+  sportTileNameActive: {
+    color: '#ffffff',
+  },
+  sportTileRules: {
+    color: '#71717a',
+    fontSize: 8,
+    fontWeight: '700',
+  },
+  techniquesGrid: {
+    gap: 8,
+  },
+  techniqueCard: {
+    backgroundColor: '#121218',
+    borderWidth: 1,
+    borderColor: '#24242e',
+    borderRadius: 12,
+    padding: 12,
+    gap: 4,
+  },
+  techniqueCardActive: {
+    backgroundColor: 'rgba(245, 158, 11, 0.15)',
+    borderColor: '#f59e0b',
+  },
+  techniqueHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  techniqueName: {
+    color: '#e4e4e7',
+    fontSize: 11,
+    fontWeight: '900',
+    letterSpacing: 0.5,
+  },
+  techniqueNameActive: {
+    color: '#f59e0b',
+  },
+  techniqueDesc: {
+    color: '#71717a',
+    fontSize: 10,
+  },
+  anchorRow: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  anchorBtn: {
+    flex: 1,
+    backgroundColor: '#121218',
+    borderWidth: 1,
+    borderColor: '#24242e',
+    borderRadius: 10,
+    paddingVertical: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  anchorBtnActive: {
+    backgroundColor: '#f59e0b',
+    borderColor: '#f59e0b',
+  },
+  anchorText: {
+    color: '#71717a',
     fontSize: 9,
-    fontWeight: '800',
+    fontWeight: '900',
+    letterSpacing: 0.5,
   },
-  ruleDescription: {
-    color: '#a1a1aa',
-    fontSize: 12,
-    lineHeight: 18,
+  anchorTextActive: {
+    color: '#09090b',
   },
-  optionsGrid: {
-    gap: 12,
-    borderTopWidth: 1,
-    borderTopColor: '#27272a',
-    paddingTop: 14,
+  optionsHeader: {
+    borderBottomWidth: 1,
+    borderBottomColor: '#18181f',
+    paddingBottom: 8,
   },
-  optionBox: {
-    gap: 6,
+  optionsTitle: {
+    color: '#d4d4d8',
+    fontSize: 10,
+    fontWeight: '900',
+    letterSpacing: 0.5,
+  },
+  optionSection: {
+    gap: 8,
   },
   optionLabel: {
     color: '#71717a',
     fontSize: 9,
-    fontWeight: '900',
-    letterSpacing: 1,
+    fontWeight: '800',
   },
   optionChips: {
     flexDirection: 'row',
-    flexWrap: 'wrap',
     gap: 6,
   },
   chip: {
-    paddingHorizontal: 10,
-    paddingVertical: 6,
+    flex: 1,
+    paddingVertical: 8,
     borderRadius: 10,
-    backgroundColor: '#1c1c20',
+    backgroundColor: '#121218',
     borderWidth: 1,
-    borderColor: '#27272a',
+    borderColor: '#24242e',
+    alignItems: 'center',
   },
   chipActive: {
     backgroundColor: '#ef4444',
@@ -729,74 +1069,117 @@ const styles = StyleSheet.create({
   },
   chipText: {
     color: '#a1a1aa',
-    fontSize: 10,
-    fontWeight: '800',
+    fontSize: 9,
+    fontWeight: '900',
+    letterSpacing: 0.5,
   },
   chipTextActive: {
     color: '#ffffff',
   },
-  actionCard: {
-    backgroundColor: '#18181b',
-    borderRadius: 20,
+  uploadDropzone: {
+    backgroundColor: '#08080c',
+    borderWidth: 2,
+    borderStyle: 'dashed',
+    borderColor: '#24242e',
+    borderRadius: 16,
     padding: 20,
-    borderWidth: 1,
-    borderColor: '#27272a',
+    alignItems: 'center',
     gap: 12,
   },
-  actionHeader: {
-    flexDirection: 'row',
+  uploadIconBadge: {
+    width: 48,
+    height: 48,
+    borderRadius: 14,
+    backgroundColor: '#f59e0b',
     alignItems: 'center',
-    gap: 8,
+    justifyContent: 'center',
   },
-  actionTitle: {
+  uploadMainTitle: {
     color: '#ffffff',
-    fontSize: 14,
+    fontSize: 12,
     fontWeight: '900',
-    letterSpacing: 1,
+    letterSpacing: 0.5,
+    textAlign: 'center',
   },
-  actionSubtitle: {
-    color: '#a1a1aa',
-    fontSize: 11,
-    lineHeight: 16,
-  },
-  btnGrid: {
-    marginTop: 6,
+  uploadSubtext: {
+    color: '#71717a',
+    fontSize: 10,
+    textAlign: 'center',
+    lineHeight: 15,
   },
   primaryActionBtn: {
+    width: '100%',
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: '#ef4444',
     paddingVertical: 14,
-    borderRadius: 14,
+    borderRadius: 12,
     gap: 8,
-    shadowColor: '#ef4444',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
-    elevation: 4,
+    marginTop: 4,
   },
   primaryActionText: {
     color: '#ffffff',
-    fontSize: 12,
+    fontSize: 11,
     fontWeight: '900',
-    letterSpacing: 1,
+    letterSpacing: 0.8,
   },
-  processingBox: {
+  secondaryBtnRow: {
+    width: '100%',
+    flexDirection: 'row',
+    gap: 8,
+  },
+  secondaryActionBtn: {
+    flex: 1,
+    flexDirection: 'row',
     alignItems: 'center',
-    paddingVertical: 16,
-    gap: 10,
+    justifyContent: 'center',
+    backgroundColor: '#181820',
+    borderWidth: 1,
+    borderColor: '#2a2a38',
+    paddingVertical: 11,
+    borderRadius: 10,
+    gap: 6,
+  },
+  secondaryActionText: {
+    color: '#ffffff',
+    fontSize: 9,
+    fontWeight: '800',
+    letterSpacing: 0.5,
+  },
+  sampleActionBtn: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#14141c',
+    borderWidth: 1,
+    borderColor: 'rgba(239, 68, 68, 0.4)',
+    paddingVertical: 11,
+    borderRadius: 10,
+    gap: 6,
+  },
+  sampleActionText: {
+    color: '#ef4444',
+    fontSize: 9,
+    fontWeight: '800',
+    letterSpacing: 0.5,
+  },
+  processingContainer: {
+    alignItems: 'center',
+    paddingVertical: 24,
+    gap: 12,
   },
   processingTitle: {
     color: '#ffffff',
     fontSize: 12,
     fontWeight: '900',
-    letterSpacing: 1,
+    letterSpacing: 0.8,
   },
   progressBarTrack: {
     width: '100%',
     height: 6,
-    backgroundColor: '#27272a',
+    backgroundColor: '#1f1f28',
     borderRadius: 3,
     overflow: 'hidden',
   },
@@ -805,249 +1188,172 @@ const styles = StyleSheet.create({
     backgroundColor: '#ef4444',
   },
   processingStepText: {
-    color: '#71717a',
+    color: '#f59e0b',
     fontSize: 10,
     fontWeight: '700',
     textAlign: 'center',
   },
-  featuresSection: {
+  processingCautionText: {
+    color: '#71717a',
+    fontSize: 9,
+    textAlign: 'center',
+  },
+  drillsContainer: {
     gap: 10,
   },
-  featureRow: {
+  drillCard: {
+    backgroundColor: '#0c0c10',
+    borderWidth: 1,
+    borderColor: '#1f1f26',
+    borderRadius: 14,
+    padding: 14,
+    gap: 6,
+  },
+  drillTopRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#141417',
-    padding: 14,
-    borderRadius: 16,
-    borderWidth: 1,
-    borderColor: '#27272a',
-    gap: 12,
+    justifyContent: 'space-between',
   },
-  featureIconBox: {
-    width: 32,
-    height: 32,
-    borderRadius: 10,
-    backgroundColor: 'rgba(239, 68, 68, 0.1)',
-    alignItems: 'center',
-    justifyContent: 'center',
+  drillBadge: {
+    backgroundColor: 'rgba(239, 68, 68, 0.15)',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 4,
   },
-  featureContent: {
-    flex: 1,
-  },
-  featureName: {
-    color: '#ffffff',
-    fontSize: 12,
-    fontWeight: '800',
-  },
-  featureDetails: {
-    color: '#71717a',
-    fontSize: 10,
-    marginTop: 2,
-  },
-  featureBadge: {
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    backgroundColor: '#1f1f23',
-    borderRadius: 6,
-  },
-  featureBadgeText: {
+  drillBadgeText: {
     color: '#ef4444',
     fontSize: 8,
     fontWeight: '900',
   },
-  drillsContainer: {
-    gap: 12,
-  },
-  drillCard: {
-    backgroundColor: '#18181b',
-    borderRadius: 18,
-    padding: 16,
-    borderWidth: 1,
-    borderColor: '#27272a',
-    gap: 8,
-  },
-  drillTopRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-  drillBadge: {
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    backgroundColor: 'rgba(239, 68, 68, 0.15)',
-    borderRadius: 6,
-  },
-  drillBadgeText: {
-    color: '#ef4444',
-    fontSize: 9,
-    fontWeight: '900',
-  },
   drillDifficulty: {
-    color: '#71717a',
-    fontSize: 9,
+    color: '#f59e0b',
+    fontSize: 8,
     fontWeight: '800',
   },
   drillTitle: {
     color: '#ffffff',
-    fontSize: 14,
+    fontSize: 12,
     fontWeight: '900',
   },
   drillFocus: {
     color: '#a1a1aa',
-    fontSize: 11,
-    lineHeight: 16,
+    fontSize: 10,
   },
   drillFooter: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
     alignItems: 'center',
-    marginTop: 4,
-    paddingTop: 8,
+    justifyContent: 'space-between',
     borderTopWidth: 1,
-    borderTopColor: '#27272a',
+    borderTopColor: '#18181f',
+    paddingTop: 8,
+    marginTop: 4,
   },
   drillJointText: {
-    color: '#d4d4d8',
-    fontSize: 10,
+    color: '#71717a',
+    fontSize: 9,
     fontWeight: '700',
   },
   savedContainer: {
     gap: 12,
   },
-  emptyBox: {
-    backgroundColor: '#141417',
-    borderRadius: 20,
-    padding: 32,
+  emptySavedBox: {
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 10,
-    borderWidth: 1,
-    borderColor: '#27272a',
-    marginTop: 20,
+    paddingVertical: 60,
+    gap: 12,
   },
-  emptyTitle: {
-    color: '#71717a',
-    fontSize: 12,
+  emptySavedTitle: {
+    color: '#a1a1aa',
+    fontSize: 13,
     fontWeight: '900',
-    letterSpacing: 1,
+    letterSpacing: 0.8,
   },
-  emptySubtitle: {
+  emptySavedSubtitle: {
     color: '#52525b',
-    fontSize: 11,
+    fontSize: 10,
     textAlign: 'center',
-    lineHeight: 16,
+    maxWidth: 260,
+    lineHeight: 15,
   },
   savedCard: {
-    backgroundColor: '#18181b',
-    borderRadius: 18,
-    padding: 16,
-    borderWidth: 1,
-    borderColor: '#27272a',
-    gap: 6,
-  },
-  savedCardTop: {
     flexDirection: 'row',
+    alignItems: 'center',
     justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-  savedSport: {
-    color: '#ffffff',
-    fontSize: 14,
-    fontWeight: '900',
-  },
-  savedGradeBadge: {
-    width: 28,
-    height: 28,
+    backgroundColor: '#0c0c10',
+    borderWidth: 1,
+    borderColor: '#1f1f26',
     borderRadius: 14,
-    backgroundColor: '#ef4444',
-    alignItems: 'center',
-    justifyContent: 'center',
+    padding: 14,
   },
-  savedGradeText: {
+  savedSportName: {
     color: '#ffffff',
-    fontSize: 11,
+    fontSize: 12,
     fontWeight: '900',
   },
   savedDate: {
     color: '#71717a',
-    fontSize: 10,
+    fontSize: 9,
+    marginTop: 2,
   },
-  savedScore: {
-    color: '#a1a1aa',
-    fontSize: 11,
-    fontWeight: '700',
+  savedGradeBadge: {
+    backgroundColor: 'rgba(239, 68, 68, 0.2)',
+    borderWidth: 1,
+    borderColor: '#ef4444',
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 8,
+  },
+  savedGradeText: {
+    color: '#ef4444',
+    fontSize: 12,
+    fontWeight: '900',
   },
   modalOverlay: {
     flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.85)',
-    justifyContent: 'flex-end',
+    backgroundColor: 'rgba(0, 0, 0, 0.85)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
   },
-  modalCard: {
-    backgroundColor: '#18181b',
-    borderTopLeftRadius: 24,
-    borderTopRightRadius: 24,
-    padding: 24,
-    maxHeight: '80%',
+  modalContent: {
+    width: '100%',
+    backgroundColor: '#0c0c10',
+    borderRadius: 20,
+    padding: 20,
     borderWidth: 1,
     borderColor: '#27272a',
-    gap: 16,
+    gap: 12,
   },
   modalHeader: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
     alignItems: 'center',
+    justifyContent: 'space-between',
   },
   modalTitle: {
     color: '#ffffff',
     fontSize: 16,
     fontWeight: '900',
-    flex: 1,
   },
-  closeBtn: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    backgroundColor: '#27272a',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  closeBtnText: {
-    color: '#a1a1aa',
-    fontSize: 14,
+  modalCategory: {
+    color: '#f59e0b',
+    fontSize: 10,
     fontWeight: '800',
   },
-  modalBody: {
-    gap: 12,
-  },
-  modalFocusLabel: {
-    color: '#ef4444',
-    fontSize: 9,
-    fontWeight: '900',
-    letterSpacing: 1,
-    marginTop: 8,
-  },
-  modalFocusText: {
-    color: '#ffffff',
-    fontSize: 13,
-    fontWeight: '800',
-    marginTop: 4,
-  },
-  modalBodyText: {
+  modalDesc: {
     color: '#a1a1aa',
     fontSize: 12,
     lineHeight: 18,
-    marginTop: 4,
   },
   modalDetailsRow: {
     flexDirection: 'row',
-    gap: 12,
-    marginTop: 14,
+    gap: 10,
+    marginTop: 4,
   },
-  modalDetailBox: {
+  detailBox: {
     flex: 1,
-    backgroundColor: '#141417',
-    padding: 12,
-    borderRadius: 12,
+    backgroundColor: '#14141c',
+    padding: 10,
+    borderRadius: 10,
     borderWidth: 1,
     borderColor: '#27272a',
     gap: 4,
@@ -1064,15 +1370,15 @@ const styles = StyleSheet.create({
   },
   modalDoneBtn: {
     backgroundColor: '#ef4444',
-    paddingVertical: 14,
-    borderRadius: 14,
+    paddingVertical: 12,
+    borderRadius: 12,
     alignItems: 'center',
     justifyContent: 'center',
     marginTop: 8,
   },
   modalDoneBtnText: {
     color: '#ffffff',
-    fontSize: 12,
+    fontSize: 11,
     fontWeight: '900',
     letterSpacing: 1,
   },

@@ -18,6 +18,7 @@ interface AnalysisReportPageProps {
   keyframeList: FrameAnalysis[];
   allFrames?: FrameAnalysis[];
   aiReport: AICoachingReport | null;
+  dynamicMetrics?: any;
   onBack: () => void;
 }
 

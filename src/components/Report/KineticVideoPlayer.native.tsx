@@ -43,6 +43,7 @@ export const KineticVideoPlayer: React.FC<KineticVideoPlayerProps> = ({
 }) => {
   const videoRef = useRef<Video>(null);
   const [containerSize, setContainerSize] = useState<{ width: number; height: number }>({ width: 340, height: 220 });
+  const [videoNaturalSize, setVideoNaturalSize] = useState<{ width: number; height: number } | null>(null);
 
   const handleLayout = (e: LayoutChangeEvent) => {
     const { width, height } = e.nativeEvent.layout;
@@ -50,6 +51,33 @@ export const KineticVideoPlayer: React.FC<KineticVideoPlayerProps> = ({
       setContainerSize({ width, height });
     }
   };
+
+  // Calculate pixel-perfect letterboxed video placement
+  const layoutMetrics = useMemo(() => {
+    const { width: cw, height: ch } = containerSize;
+    if (!videoNaturalSize || videoNaturalSize.width <= 0 || videoNaturalSize.height <= 0) {
+      return { drawWidth: cw, drawHeight: ch, offsetX: 0, offsetY: 0 };
+    }
+    const videoAspect = videoNaturalSize.width / videoNaturalSize.height;
+    const containerAspect = cw / ch;
+
+    let drawWidth = cw;
+    let drawHeight = ch;
+    let offsetX = 0;
+    let offsetY = 0;
+
+    if (containerAspect > videoAspect) {
+      drawHeight = ch;
+      drawWidth = drawHeight * videoAspect;
+      offsetX = (cw - drawWidth) / 2;
+    } else {
+      drawWidth = cw;
+      drawHeight = drawWidth / videoAspect;
+      offsetY = (ch - drawHeight) / 2;
+    }
+
+    return { drawWidth, drawHeight, offsetX, offsetY };
+  }, [containerSize, videoNaturalSize]);
 
   // Binary search for exact current frame
   const currentFrame = useMemo(() => {
@@ -69,7 +97,7 @@ export const KineticVideoPlayer: React.FC<KineticVideoPlayerProps> = ({
     return sortedFrames[idx];
   }, [sortedFrames, currentTime]);
 
-  const { width, height } = containerSize;
+  const { drawWidth, drawHeight, offsetX, offsetY } = layoutMetrics;
 
   return (
     <View style={styles.container} onLayout={handleLayout}>
@@ -87,6 +115,12 @@ export const KineticVideoPlayer: React.FC<KineticVideoPlayerProps> = ({
             if (status.durationMillis && onDurationChange) {
               onDurationChange(status.durationMillis / 1000);
             }
+            if ((status as any).naturalSize && (status as any).naturalSize.width > 0) {
+              const { width, height } = (status as any).naturalSize;
+              if (!videoNaturalSize || videoNaturalSize.width !== width || videoNaturalSize.height !== height) {
+                setVideoNaturalSize({ width, height });
+              }
+            }
           }
         }}
         style={styles.video}
@@ -100,30 +134,30 @@ export const KineticVideoPlayer: React.FC<KineticVideoPlayerProps> = ({
             {POSE_CONNECTIONS.map(([i1, i2], connIdx) => {
               const p1 = currentFrame.landmarks[i1];
               const p2 = currentFrame.landmarks[i2];
-              if (!p1 || !p2 || (p1.visibility && p1.visibility < 0.3) || (p2.visibility && p2.visibility < 0.3)) {
+              if (!p1 || !p2 || (p1.visibility && p1.visibility < 0.4) || (p2.visibility && p2.visibility < 0.4)) {
                 return null;
               }
               return (
                 <Line
                   key={`bone-${connIdx}`}
-                  p1={vec(p1.x * width, p1.y * height)}
-                  p2={vec(p2.x * width, p2.y * height)}
-                  color="rgba(239, 68, 68, 0.85)"
-                  strokeWidth={3}
+                  p1={vec(offsetX + p1.x * drawWidth, offsetY + p1.y * drawHeight)}
+                  p2={vec(offsetX + p2.x * drawWidth, offsetY + p2.y * drawHeight)}
+                  color="rgba(239, 68, 68, 0.9)"
+                  strokeWidth={3.5}
                 />
               );
             })}
 
             {/* Joints */}
             {currentFrame.landmarks.map((lm, i) => {
-              if (lm.visibility && lm.visibility < 0.3) return null;
+              if (lm.visibility && lm.visibility < 0.4) return null;
               const isHighlight = i === 11 || i === 12 || i === 23 || i === 24 || i === 25 || i === 26;
               return (
                 <Circle
                   key={`joint-${i}`}
-                  cx={lm.x * width}
-                  cy={lm.y * height}
-                  r={isHighlight ? 5 : 3.5}
+                  cx={offsetX + lm.x * drawWidth}
+                  cy={offsetY + lm.y * drawHeight}
+                  r={isHighlight ? 5.5 : 4}
                   color={isHighlight ? "#ef4444" : "#ffffff"}
                 />
               );
