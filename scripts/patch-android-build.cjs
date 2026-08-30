@@ -79,8 +79,59 @@ function patchAndroidGradleProperties() {
   }
 }
 
+function patchExpoModulePlugins() {
+  const nodeModulesDir = path.join(rootDir, 'node_modules');
+  const buildGradleFiles = findFilesRecursive(nodeModulesDir, 'build.gradle');
+
+  const expoCorePluginPath = path.join(nodeModulesDir, 'expo-modules-core/android/ExpoModulesCorePlugin.gradle');
+  if (!fs.existsSync(expoCorePluginPath)) {
+    console.warn(`[Patch] Skip patching plugins: ExpoModulesCorePlugin.gradle not found at ${expoCorePluginPath}`);
+    return;
+  }
+
+  const manualApplyHeader = '// Manual patch for missing expo-module-gradle-plugin';
+
+  for (const filePath of buildGradleFiles) {
+    if (filePath.includes('expo-modules-core')) continue;
+    
+    let content = fs.readFileSync(filePath, 'utf8');
+    const hasPluginId = content.includes("'expo-module-gradle-plugin'");
+    const hasManualApply = content.includes(manualApplyHeader);
+
+    if (hasPluginId || (hasManualApply && content.includes('plugins {'))) {
+      console.log(`[Patch] Patching/Repairing plugin usage in: ${filePath}`);
+      
+      // 1. Remove manual apply if it's in the wrong place
+      content = content.replace(/\/\/ Manual patch[\s\S]*?applyKotlinExpoModulesCorePlugin\(\)\n/g, '');
+
+      // 2. Replace plugins block with apply plugin
+      content = content.replace(/plugins\s*\{([\s\S]*?)\}/g, (match, p1) => {
+        let lines = p1.split('\n');
+        let newApplies = '';
+        lines.forEach(line => {
+          let trimmed = line.trim();
+          if (trimmed.startsWith('id ')) {
+            let pluginId = trimmed.replace('id ', '').replace(/'/g, "").replace(/"/g, "").trim();
+            if (pluginId && pluginId !== 'expo-module-gradle-plugin') {
+              newApplies += `apply plugin: '${pluginId}'\n`;
+            }
+          }
+        });
+        return newApplies;
+      });
+
+      // 3. Add manual apply at the top
+      const applyManual = `${manualApplyHeader}\napply from: new File(project(":expo-modules-core").projectDir.absolutePath, "ExpoModulesCorePlugin.gradle")\napplyKotlinExpoModulesCorePlugin()\n`;
+      content = applyManual + content.trim();
+
+      fs.writeFileSync(filePath, content, 'utf8');
+    }
+  }
+}
+
 console.log('[Klutchh Android Patch] Running pre/post build patches...');
 patchExpoModulesCorePlugin();
 sanitizeAndroidBuildGradle();
 patchAndroidGradleProperties();
+patchExpoModulePlugins();
 console.log('[Klutchh Android Patch] Complete.');
