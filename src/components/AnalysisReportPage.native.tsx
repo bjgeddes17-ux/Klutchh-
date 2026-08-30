@@ -12,6 +12,9 @@ import {
 import Slider from '@react-native-community/slider';
 import * as Haptics from 'expo-haptics';
 import { KineticVideoPlayer } from './Report/KineticVideoPlayer.native';
+import { GamifiedScore } from './Report/GamifiedScore.native';
+import { Top3Frames } from './Report/Top3Frames.native';
+import { DrillsSection } from './Report/DrillsSection.native';
 import { ArrowLeft, Download, AlertCircle, Play, Pause, Activity, Flame, ShieldAlert, Award, Zap } from 'lucide-react-native';
 import { SportRule, FrameAnalysis, AICoachingReport } from '../types';
 
@@ -165,42 +168,25 @@ export const AnalysisReportPage: React.FC<AnalysisReportPageProps> = ({
           </View>
         </View>
 
-        {/* Bento-Grid Diagnostic Keyframe Timeline */}
-        {keyframeList.length > 0 && (
-          <View style={styles.keyframeSection}>
-            <Text style={styles.sectionTitle}>BENTO DIAGNOSTICS</Text>
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.keyframeRow}>
-              {keyframeList.map((kf, idx) => {
-                const isCurrent = Math.abs(kf.timestamp - currentTime) < 0.2;
-                return (
-                  <TouchableOpacity
-                    key={idx}
-                    style={[styles.bentoCard, isCurrent && styles.bentoCardActive]}
-                    onPress={() => handleSeek(kf.timestamp)}
-                  >
-                    <View style={styles.bentoHeader}>
-                      <Activity color={isCurrent ? '#000' : '#facc15'} size={16} />
-                      <Text style={[styles.bentoPhase, isCurrent && styles.bentoTextActive]}>{kf.detectedPhase || `PHASE ${idx + 1}`}</Text>
-                    </View>
-                    <Text style={[styles.bentoTime, isCurrent && styles.bentoTextActive]}>{kf.timestamp.toFixed(2)}s</Text>
-                  </TouchableOpacity>
-                );
-              })}
-            </ScrollView>
-          </View>
-        )}
-
         {/* Hero Score Section */}
-        <View style={styles.scoreCard}>
-          <View>
-            <Text style={styles.scoreLabel}>PERFORMANCE RATING</Text>
-            <Text style={styles.scoreValue}>{aiReport?.overallGrade || 'A'}</Text>
-            <Text style={styles.scoreSubtext}>{aiReport?.summaryTitle || 'BIOMECHANICAL PRECISION'}</Text>
-          </View>
-          <View style={styles.scoreCircle}>
-             <Award color="#facc15" size={28} />
-          </View>
-        </View>
+        <GamifiedScore 
+          grade={aiReport?.overallGrade || 'A'} 
+          title={aiReport?.summaryTitle || 'BIOMECHANICAL PRECISION'} 
+        />
+
+        {/* Top 3 Frames */}
+        {keyframeList.length > 0 && (
+          <Top3Frames 
+            keyframes={keyframeList} 
+            onSeek={handleSeek} 
+            currentTime={currentTime} 
+          />
+        )}
+        
+        {/* Corrective Drills Section */}
+        {aiReport?.funCorrectiveDrills && aiReport.funCorrectiveDrills.length > 0 && (
+          <DrillsSection drills={aiReport.funCorrectiveDrills} />
+        )}
 
         {/* Active Tab: Faults & Insights */}
         {activeTab === 'faults' && (
@@ -451,54 +437,6 @@ const styles = StyleSheet.create({
     fontSize: 9,
     fontWeight: '700',
     fontStyle: 'italic',
-  },
-  keyframeSection: {
-    gap: 8,
-  },
-  keyframeRow: {
-    gap: 8,
-    paddingVertical: 4,
-  },
-  bentoCard: {
-    width: 90,
-    height: 70,
-    backgroundColor: '#0c0c0e',
-    borderRadius: 16,
-    padding: 10,
-    borderWidth: 1,
-    borderColor: '#27272a',
-    justifyContent: 'center',
-    gap: 4,
-  },
-  bentoCardActive: {
-    backgroundColor: '#1c1c1a',
-    borderColor: '#facc15',
-  },
-  bentoHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-  },
-  bentoPhase: {
-    color: '#71717a',
-    fontSize: 8,
-    fontWeight: '900',
-    letterSpacing: 0.5,
-  },
-  bentoTextActive: {
-    color: '#facc15',
-  },
-  bentoTime: {
-    color: '#ffffff',
-    fontSize: 10,
-    fontWeight: '800',
-  },
-  activeDot: {
-    width: 6,
-    height: 6,
-    borderRadius: 3,
-    backgroundColor: '#facc15',
-    marginTop: 2,
   },
   scoreCard: {
     backgroundColor: '#0c0c0e',

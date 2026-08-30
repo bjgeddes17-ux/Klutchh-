@@ -65,6 +65,46 @@ export const KineticVideoPlayer = React.memo(forwardRef<KineticVideoPlayerRef, K
     }
   };
 
+  // High-impact status color mapping
+const getStatusColor = (status: string) => {
+  switch (status) {
+    case 'optimal': return '#22c55e'; // Signal-Green
+    case 'warning': return '#06b6d4'; // Cyber-Cyan
+    case 'error': return '#d946ef';   // Laser-Magenta
+    default: return '#3b82f6';        // Deep-Space-Blue
+  }
+};
+
+export const KineticVideoPlayer = React.memo(forwardRef<KineticVideoPlayerRef, KineticVideoPlayerProps>(({
+  videoUrl,
+  sportRule,
+  sortedFrames,
+  isPlaying,
+  currentTime,
+  onTimeUpdate,
+  onDurationChange,
+  playbackRate = 1,
+  isDataReady,
+}, ref) => {
+  const videoRef = useRef<Video>(null);
+  const [containerSize, setContainerSize] = useState<{ width: number; height: number }>({ width: 340, height: 220 });
+  const [videoNaturalSize, setVideoNaturalSize] = useState<{ width: number; height: number } | null>(null);
+
+  useImperativeHandle(ref, () => ({
+    seek: (time: number) => {
+      if (videoRef.current) {
+        videoRef.current.setPositionAsync(time * 1000);
+      }
+    }
+  }));
+
+  const handleLayout = (e: LayoutChangeEvent) => {
+    const { width, height } = e.nativeEvent.layout;
+    if (width > 0 && height > 0) {
+      setContainerSize({ width, height });
+    }
+  };
+
   // Calculate pixel-perfect letterboxed video placement
   const layoutMetrics = useMemo(() => {
     const { width: cw, height: ch } = containerSize;
@@ -150,17 +190,23 @@ export const KineticVideoPlayer = React.memo(forwardRef<KineticVideoPlayerRef, K
               if (!p1 || !p2 || (p1.visibility && p1.visibility < 0.4) || (p2.visibility && p2.visibility < 0.4)) {
                 return null;
               }
-              const point1Pixels = mapLandmarkToPixels(p1, drawWidth, drawHeight, offsetX, offsetY);
-              const point2Pixels = mapLandmarkToPixels(p2, drawWidth, drawHeight, offsetX, offsetY);
+              const videoAspect = videoNaturalSize ? videoNaturalSize.width / videoNaturalSize.height : 16/9;
+              const point1Pixels = mapLandmarkToPixels(p1, containerSize, videoAspect, offsetX, offsetY);
+              const point2Pixels = mapLandmarkToPixels(p2, containerSize, videoAspect, offsetX, offsetY);
               const point1 = vec(point1Pixels.x, point1Pixels.y);
               const point2 = vec(point2Pixels.x, point2Pixels.y);
+              
+              // Map bone status based on rule results (simplified: use joint visibility or rule status if mapped)
+              const status = 'optimal'; // TODO: Map rule status to connections
+              const boneColor = getStatusColor(status);
+
               return (
                 <React.Fragment key={`bone-${connIdx}`}>
                   {/* Outer Glow */}
                   <Line
                     p1={point1}
                     p2={point2}
-                    color="#facc15"
+                    color={boneColor}
                     strokeWidth={8}
                     opacity={0.15}
                   />
@@ -180,16 +226,22 @@ export const KineticVideoPlayer = React.memo(forwardRef<KineticVideoPlayerRef, K
             {currentFrame.landmarks.map((lm, i) => {
               if (lm.visibility && lm.visibility < 0.4) return null;
               const isHighlight = i === 11 || i === 12 || i === 23 || i === 24 || i === 25 || i === 26;
-              const jointPixels = mapLandmarkToPixels(lm, drawWidth, drawHeight, offsetX, offsetY);
+              const videoAspect = videoNaturalSize ? videoNaturalSize.width / videoNaturalSize.height : 16/9;
+              const jointPixels = mapLandmarkToPixels(lm, containerSize, videoAspect, offsetX, offsetY);
               const cx = jointPixels.x;
               const cy = jointPixels.y;
+              
+              // Dynamic joint color
+              const status = 'optimal'; 
+              const jointColor = getStatusColor(status);
+
               return (
                 <React.Fragment key={`joint-group-${i}`}>
                   <Circle
                     cx={cx}
                     cy={cy}
                     r={isHighlight ? 9 : 6}
-                    color="#facc15"
+                    color={jointColor}
                     opacity={0.25}
                   />
                   <Circle
@@ -219,7 +271,8 @@ export const KineticVideoPlayer = React.memo(forwardRef<KineticVideoPlayerRef, K
             
             const angleVal = currentFrame.angles[rule.id] ?? 0;
             const status = currentFrame.ruleResults[rule.id] || 'optimal';
-            const vertexPixels = mapLandmarkToPixels(vertex, drawWidth, drawHeight, offsetX, offsetY);
+            const videoAspect = videoNaturalSize ? videoNaturalSize.width / videoNaturalSize.height : 16/9;
+            const vertexPixels = mapLandmarkToPixels(vertex, containerSize, videoAspect, offsetX, offsetY);
             
             return (
               <View 
