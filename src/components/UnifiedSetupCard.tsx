@@ -3,7 +3,7 @@ import { SPORTS_RULES } from '../data/sportsRules';
 import { SportId, UserAccount } from '../types';
 import { Upload, AlertCircle, CheckCircle2, Trophy, Activity, Target, Lock, FolderOpen } from 'lucide-react';
 import { motion } from 'motion/react';
-import eliteHeroImage from '../assets/images/klutchh_elite_hero_1786393193958.jpg';
+import eliteHeroImage from '../assets/images/klutchh_sleek_splash_1788068783170.jpg';
 
 interface UnifiedSetupCardProps {
   selectedSportId: SportId;
@@ -19,8 +19,6 @@ interface UnifiedSetupCardProps {
   currentUser: UserAccount | null;
   onOpenAuth: () => void;
   onImportReport?: (data: any) => void;
-  targetAthleteAnchor?: 'auto' | 'left' | 'center' | 'right';
-  onSelectAthleteAnchor?: (anchor: 'auto' | 'left' | 'center' | 'right') => void;
 }
 
 export const UnifiedSetupCard: React.FC<UnifiedSetupCardProps> = ({
@@ -37,8 +35,6 @@ export const UnifiedSetupCard: React.FC<UnifiedSetupCardProps> = ({
   currentUser,
   onOpenAuth,
   onImportReport,
-  targetAthleteAnchor = 'auto',
-  onSelectAthleteAnchor,
 }) => {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [fileName, setFileName] = useState<string | null>(null);
@@ -268,45 +264,6 @@ export const UnifiedSetupCard: React.FC<UnifiedSetupCardProps> = ({
                     {isSelected && <CheckCircle2 className="w-4 h-4 text-amber-400 shrink-0" />}
                   </div>
                   <p className="text-[10px] text-zinc-400 line-clamp-1">{tech.description}</p>
-                </button>
-              );
-            })}
-          </div>
-        </div>
-
-        {/* STEP 1.7: MULTI-PERSON GRID SELECTOR */}
-        <div className="flex flex-col gap-3">
-          <div className="flex items-center justify-between border-b border-zinc-800 pb-2">
-            <div className="flex items-center gap-2">
-              <span className="w-6 h-6 rounded-lg bg-zinc-800 text-amber-400 font-black text-xs flex items-center justify-center shrink-0 border border-amber-500/30">
-                1.7
-              </span>
-              <h3 className="text-xs font-black uppercase text-white tracking-wider">
-                Multi-Person Selection
-              </h3>
-            </div>
-            <span className="text-[10px] text-zinc-400 font-mono">
-              Multiple athletes in frame? Select target zone.
-            </span>
-          </div>
-
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
-            {(['auto', 'left', 'center', 'right'] as const).map((anchor) => {
-              const isSelected = targetAthleteAnchor === anchor;
-              return (
-                <button
-                  key={anchor}
-                  onClick={() => onSelectAthleteAnchor?.(anchor)}
-                  className={`p-3 rounded-xl border text-center transition-all flex flex-col items-center justify-center gap-1.5 ${
-                    isSelected
-                      ? 'bg-amber-500 text-zinc-950 border-amber-400 shadow-md shadow-amber-500/20'
-                      : 'bg-zinc-950 border-zinc-800 text-zinc-400 hover:text-white hover:border-zinc-700'
-                  }`}
-                >
-                  <span className="text-[10px] font-black uppercase tracking-wide">
-                    {anchor === 'auto' ? 'Auto / Primary' : `${anchor} Zone`}
-                  </span>
-                  {isSelected && <CheckCircle2 className={`w-4 h-4 ${isSelected ? 'text-zinc-950' : 'text-amber-400'}`} />}
                 </button>
               );
             })}

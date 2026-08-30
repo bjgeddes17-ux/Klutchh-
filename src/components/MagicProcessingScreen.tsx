@@ -14,7 +14,6 @@ interface MagicProcessingScreenProps {
   calibratedFps?: number;
   useOptionBPipeline?: boolean;
   onComplete: (result?: AnalysisResult) => void;
-  targetAthleteAnchor?: 'auto' | 'left' | 'center' | 'right';
   cropBox?: { x: number; y: number; width: number; height: number };
   startTime?: number;
   endTime?: number;
@@ -30,7 +29,6 @@ export const MagicProcessingScreen: React.FC<MagicProcessingScreenProps> = ({
   calibratedFps = 30,
   useOptionBPipeline = true,
   onComplete,
-  targetAthleteAnchor = 'auto',
   cropBox,
   startTime = 0,
   endTime,
@@ -136,97 +134,94 @@ export const MagicProcessingScreen: React.FC<MagicProcessingScreenProps> = ({
             setStatus('error');
           }
         }
-      }, 15000); // 15 seconds hard safety limit
+      }, 30000); // Increased to 30s for native handoff
 
-      analyzeVideoBiometrics(
-        videoUrl, 
-        sportRule, 
-        skillLevel, 
-        athleteCategory, 
-        calibratedFps, 
-        retryCount === 0 ? useOptionBPipeline : false, // Disable WebCodecs on retry
-        (p) => {
-          if (isMounted && !isTimedOut) updateProgress(p);
-        },
-        targetAthleteAnchor as 'auto' | 'left' | 'center' | 'right',
-        cropBox,
-        startTime,
-        endTime
-      )
-        .then(async (res) => {
-          clearTimeout(stuckWatchdog);
-          if (isMounted && !isTimedOut) {
-            console.log("Analysis completed successfully:", res);
-            if (res.isInvalidVideo) {
-              if (retryCount < 2) {
-                console.warn(`Static pose or invalid video detected (${res.invalidVideoCategory}), auto-retrying (${retryCount + 1}/2)...`);
-                setRetryCount(prev => prev + 1);
-                setStatus('warmup');
+      import('../lib/native/BiometricBridge').then(({ BiometricBridge }) => {
+        BiometricBridge.analyze(
+          videoUrl, 
+          sportRule, 
+          skillLevel, 
+          athleteCategory, 
+          calibratedFps, 
+          (p) => {
+            if (isMounted && !isTimedOut) updateProgress(p);
+          },
+          undefined, // targetAthleteAnchor removed
+          cropBox
+        )
+          .then(async (res) => {
+            clearTimeout(stuckWatchdog);
+            if (isMounted && !isTimedOut) {
+              console.log("Analysis completed successfully:", res);
+              if (res.isInvalidVideo) {
+                if (retryCount < 2) {
+                  console.warn(`Static pose or invalid video detected (${res.invalidVideoCategory}), auto-retrying (${retryCount + 1}/2)...`);
+                  setRetryCount(prev => prev + 1);
+                  setStatus('warmup');
+                  setTimeout(() => {
+                    if (isMounted) {
+                      setStatus('processing');
+                    }
+                  }, 2000);
+                  return;
+                }
+
+                // After retries, auto-generate optimized analysis profile so user isn't blocked by static frame
+                console.warn("Static pose detected repeatedly; auto-generating optimized analysis profile...");
+                try {
+                  const fallback = await generateFallbackAnalysisResult(videoUrl, sportRule, skillLevel, athleteCategory, calibratedFps);
+                  resultRef.current = fallback;
+                  setResult(fallback);
+                  setProgress(100);
+                } catch (fallbackErr) {
+                  setInvalidResult(res);
+                  setInvalidError(res.invalidVideoReason || `No human athlete detected in this video clip.`);
+                  setStatus('error');
+                }
+                return;
+              }
+              resultRef.current = res;
+              setResult(res);
+              setProgress(100);
+            }
+          })
+          .catch(async (err: any) => {
+            clearTimeout(stuckWatchdog);
+            if (isMounted && !isTimedOut) {
+              if (err instanceof DecoderError) {
+                setInvalidError("DECODER_CRASH");
+                setStatus('error');
+                return;
+              }
+              const errorMessage = err?.message || String(err);
+              
+              // If we have retries left, try the fallback
+              if (retryCount < 1) {
+                console.warn("Attempting fallback analysis after primary failure (cooldown starting)...");
+                
                 setTimeout(() => {
                   if (isMounted) {
+                    setRetryCount(prev => prev + 1);
                     setStatus('processing');
                   }
-                }, 2000);
+                }, 2000); 
                 return;
               }
 
-              // After retries, auto-generate optimized analysis profile so user isn't blocked by static frame
-              console.warn("Static pose detected repeatedly; auto-generating optimized analysis profile...");
+              console.log("Attempting final fallback analysis for non-critical error...");
               try {
                 const fallback = await generateFallbackAnalysisResult(videoUrl, sportRule, skillLevel, athleteCategory, calibratedFps);
                 resultRef.current = fallback;
                 setResult(fallback);
                 setProgress(100);
               } catch (fallbackErr) {
-                setInvalidResult(res);
-                setInvalidError(res.invalidVideoReason || `No human athlete detected in this video clip.`);
+                console.error("Fallback analysis also FAILED:", fallbackErr);
+                setInvalidError("Analysis failed completely: " + String(errorMessage));
                 setStatus('error');
               }
-              return;
             }
-            resultRef.current = res;
-            setResult(res);
-            setProgress(100);
-          }
-        })
-        .catch(async (err: any) => {
-          clearTimeout(stuckWatchdog);
-          if (isMounted && !isTimedOut) {
-            if (err instanceof DecoderError) {
-              setInvalidError("DECODER_CRASH");
-              setStatus('error');
-              return;
-            }
-            const errorMessage = err?.message || String(err);
-            
-            // If we have retries left, try the fallback
-            if (retryCount < 1) {
-              console.warn("Attempting fallback analysis after primary failure (cooldown starting)...");
-              
-              // Move to a 'cooldown' state visually if needed, but for now just wait
-              setTimeout(() => {
-                if (isMounted) {
-                  setRetryCount(prev => prev + 1);
-                  setStatus('processing');
-                }
-              }, 2000); // 2-second cooldown to let GPU/Decoder/CDN clear
-              return;
-            }
-
-            // For other unexpected errors, we can try the fallback but with a console note
-            console.log("Attempting final fallback analysis for non-critical error...");
-            try {
-              const fallback = await generateFallbackAnalysisResult(videoUrl, sportRule, skillLevel, athleteCategory, calibratedFps);
-              resultRef.current = fallback;
-              setResult(fallback);
-              setProgress(100);
-            } catch (fallbackErr) {
-              console.error("Fallback analysis also FAILED:", fallbackErr);
-              setInvalidError("Analysis failed completely: " + String(errorMessage));
-              setStatus('error');
-            }
-          }
-        });
+          });
+      });
     } else {
       setProgress(100);
     }
@@ -234,7 +229,7 @@ export const MagicProcessingScreen: React.FC<MagicProcessingScreenProps> = ({
     return () => {
       isMounted = false;
     };
-  }, [videoUrl, sportRule.id, skillLevel, athleteCategory, calibratedFps, targetAthleteAnchor, status, retryCount]);
+  }, [videoUrl, sportRule.id, skillLevel, athleteCategory, calibratedFps, status, retryCount]);
 
   if (invalidError === 'DECODER_CRASH') {
     return (
@@ -339,104 +334,78 @@ export const MagicProcessingScreen: React.FC<MagicProcessingScreenProps> = ({
   }
 
   return (
-    <div className="min-h-[70vh] flex flex-col items-center justify-center bg-zinc-950 border border-zinc-800 rounded-3xl p-8 text-center relative overflow-hidden shadow-2xl">
-      {/* Background Animated Glows */}
-      <div className="absolute -top-32 -left-32 w-96 h-96 bg-red-600/10 rounded-full blur-3xl pointer-events-none" />
-      <div className="absolute -bottom-32 -right-32 w-96 h-96 bg-amber-500/10 rounded-full blur-3xl pointer-events-none" />
-
-      {/* Center Radar Scanner Graphics */}
-      <div className="relative mb-8">
-        <div className="w-28 h-28 rounded-full border-2 border-red-500/40 bg-zinc-900 flex items-center justify-center relative shadow-lg shadow-red-600/20">
-          <div className="absolute inset-0 rounded-full border border-red-500 animate-ping opacity-25" />
-          <Scan className="w-12 h-12 text-red-500 animate-pulse" />
-          <div className="absolute -bottom-2 bg-red-600 text-white font-mono font-black text-[10px] px-2.5 py-0.5 rounded-full uppercase tracking-wider shadow">
-            {sportRule.name}
+    <div className="min-h-[70vh] flex flex-col items-center justify-center bg-zinc-950 border border-zinc-800 rounded-3xl p-8 sm:p-12 text-center relative overflow-hidden shadow-2xl">
+      {/* Background FX */}
+      <div className="absolute -top-40 -left-40 w-80 h-80 bg-yellow-500/5 rounded-full blur-3xl pointer-events-none" />
+      <div className="absolute -bottom-40 -right-40 w-80 h-80 bg-yellow-500/10 rounded-full blur-3xl pointer-events-none" />
+      
+      {/* Step Indicator */}
+      <div className="relative mb-12">
+        <div className="w-28 h-28 sm:w-36 sm:h-36 rounded-2xl bg-zinc-900 border border-zinc-800 flex items-center justify-center relative shadow-2xl overflow-hidden group">
+          <div className="absolute inset-0 bg-gradient-to-tr from-yellow-500/5 to-zinc-900 transition-transform duration-1000" />
+          
+          <div className="relative z-10 flex flex-col items-center">
+            <span className="text-3xl sm:text-4xl font-black text-white italic tracking-tighter">
+              {progress}%
+            </span>
+            <span className="text-[10px] font-black text-zinc-500 uppercase tracking-widest mt-1">
+              Extracting
+            </span>
           </div>
-        </div>
-      </div>
 
-      {/* Main Title */}
-      <div className="flex items-center justify-center gap-2 mb-2">
-        <div className="w-5 h-5 rounded-lg bg-amber-500 animate-pulse" />
-        <h2 className="text-2xl font-black text-white uppercase tracking-tight">
-          Klutchh Biometric Engine
-        </h2>
-      </div>
-      <p className="text-xs text-zinc-400 max-w-md mx-auto mb-8 leading-relaxed">
-        Analyzing your uploaded video clip through MediaPipe 3D joint keypoint detection and evaluating 40 Biometric Rules...
-        {retryCount > 0 && (
-          <span className="block mt-3 px-3 py-1.5 rounded-xl bg-amber-500/15 border border-amber-500/30 text-amber-300 font-bold text-[11px] animate-pulse">
-            🔄 Whoops, caught a static frame or pose! Let's try that one more time (Attempt #{retryCount + 1})...
-          </span>
-        )}
-        <br />
-        <span className="text-amber-500/80 font-black uppercase text-[10px] mt-2 block">
-          ⚡ Long Clips (&gt;10s) Take 3-5 Mins. Please Stay On This Page.
-        </span>
-      </p>
-
-      {/* Progress Bar */}
-      <div className="w-full max-w-lg mb-8">
-        <div className="flex items-center justify-between text-xs font-mono mb-2">
-          <div className="flex items-center gap-2">
-            <span className="text-zinc-400 font-bold uppercase tracking-wider">Analysis Progress</span>
-            {retryCount > 0 && (
-              <span className="px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-400 text-[10px] font-black border border-amber-500/30 animate-pulse">
-                RETRY #{retryCount}: COMPATIBILITY MODE
-              </span>
-            )}
-          </div>
-          <span className="text-red-400 font-black">{progress}%</span>
-        </div>
-        <div className="w-full h-3 bg-zinc-900 border border-zinc-800 rounded-full overflow-hidden p-0.5">
-          <div
-            className="h-full bg-gradient-to-r from-red-600 via-amber-500 to-emerald-500 rounded-full transition-all duration-150 ease-out shadow-sm"
+          {/* Progress Bar Overlay */}
+          <div 
+            className="absolute bottom-0 left-0 h-1.5 bg-gradient-to-r from-yellow-600 via-yellow-400 to-yellow-600 transition-all duration-300"
             style={{ width: `${progress}%` }}
           />
         </div>
       </div>
 
-      {/* Steps List */}
-      <div className="w-full max-w-lg grid grid-cols-1 gap-3 text-left">
+      <div className="flex flex-col gap-3 mb-10 max-w-lg">
+        <h2 className="text-2xl sm:text-3xl font-black text-white italic uppercase tracking-wider">
+          Engine <span className="text-transparent bg-clip-text bg-gradient-to-r from-yellow-500 to-yellow-300 underline decoration-yellow-500/30">Analyzing</span> Movement
+        </h2>
+        <p className="text-zinc-400 text-xs sm:text-sm font-medium leading-relaxed px-4">
+          Mapping 33 biomechanical keypoints against the <span className="text-white font-bold">{sportRule.name}</span> protocol. 
+          {retryCount > 0 && <span className="text-yellow-500 font-black ml-1 italic block mt-1">Recalibrating detection buffers...</span>}
+        </p>
+      </div>
+
+      {/* Process Pipeline */}
+      <div className="w-full max-w-md flex flex-col gap-2.5">
         {STEPS.map((step, idx) => {
           const isDone = idx < currentStepIndex || progress === 100;
           const isCurrent = idx === currentStepIndex && progress < 100;
 
           return (
-            <div
+            <motion.div
               key={step.id}
-              className={`p-3.5 rounded-2xl border transition-all flex items-center justify-between ${
+              initial={{ x: -20, opacity: 0 }}
+              animate={{ x: 0, opacity: 1 }}
+              transition={{ delay: idx * 0.1 }}
+              className={`px-5 py-4 rounded-xl border transition-all flex items-center gap-4 ${
                 isDone
-                  ? 'bg-zinc-900/90 border-emerald-500/30 text-white'
+                  ? 'bg-zinc-900/40 border-zinc-800 text-zinc-500'
                   : isCurrent
-                  ? 'bg-zinc-900 border-red-500/50 text-white shadow-md shadow-red-600/10'
-                  : 'bg-zinc-950/50 border-zinc-800/50 text-zinc-600'
+                  ? 'bg-zinc-900 border-yellow-500/40 text-white shadow-lg shadow-yellow-500/5'
+                  : 'bg-zinc-950 border-zinc-900/50 text-zinc-700'
               }`}
             >
-              <div className="flex items-center gap-3">
-                <div
-                  className={`w-7 h-7 rounded-xl flex items-center justify-center text-xs font-black ${
-                    isDone
-                      ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
-                      : isCurrent
-                      ? 'bg-red-600 text-white animate-bounce'
-                      : 'bg-zinc-800 text-zinc-500'
-                  }`}
-                >
-                  {isDone ? <CheckCircle2 className="w-4 h-4" /> : step.id}
-                </div>
-                <div>
-                  <h4 className="text-xs font-bold">{step.label}</h4>
-                  <p className="text-[11px] text-zinc-400">{step.sub}</p>
-                </div>
+              <div className={`w-2 h-2 rounded-full ${
+                isDone ? 'bg-emerald-500' : isCurrent ? 'bg-yellow-500 animate-pulse' : 'bg-zinc-800'
+              }`} />
+              
+              <div className="flex flex-col items-start flex-1">
+                <span className={`text-[11px] font-black uppercase tracking-wider ${isCurrent ? 'text-yellow-500' : ''}`}>
+                  {step.label}
+                </span>
+                <span className="text-[10px] text-zinc-500 font-medium truncate max-w-[200px] sm:max-w-none">
+                  {step.sub}
+                </span>
               </div>
 
-              {isCurrent && (
-                <span className="text-[10px] font-mono font-bold text-amber-400 bg-amber-400/10 px-2 py-0.5 rounded border border-amber-400/20 uppercase tracking-wider animate-pulse">
-                  Processing
-                </span>
-              )}
-            </div>
+              {isDone && <CheckCircle2 className="w-4 h-4 text-emerald-500 shrink-0" />}
+            </motion.div>
           );
         })}
       </div>
@@ -447,18 +416,19 @@ export const MagicProcessingScreen: React.FC<MagicProcessingScreenProps> = ({
           <motion.div 
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
-            className="mt-6 w-full max-w-lg bg-amber-500/10 border border-amber-500/30 rounded-2xl p-4 flex flex-col items-center gap-3"
+            exit={{ opacity: 0, y: 10 }}
+            className="mt-8 w-full max-w-md bg-zinc-900/80 border border-amber-500/30 rounded-2xl p-5 flex flex-col items-center gap-3 backdrop-blur-sm shadow-2xl"
           >
-            <div className="flex items-center gap-2 text-amber-500 font-bold text-xs uppercase tracking-wider animate-pulse">
-              <AlertTriangle className="w-4 h-4" />
-              Heavy Video Processing Detected
+            <div className="flex items-center gap-2 text-amber-500 font-black text-xs uppercase tracking-widest animate-pulse">
+              <AlertTriangle className="w-5 h-5" />
+              Heavy Video Stream Detected
             </div>
-            <p className="text-[10px] text-zinc-400 text-center leading-relaxed">
-              Your device is working hard to analyze this clip. If progress doesn't move in the next 30 seconds, you can try a high-speed fallback.
+            <p className="text-[10px] text-zinc-400 text-center leading-relaxed font-medium">
+              Your device is processing a complex high-FPS sequence. If the engine hangs, we can switch to a high-speed optimized fallback.
             </p>
             <button
               onClick={() => setRetryCount(prev => prev + 1)}
-              className="px-4 py-2 bg-amber-500 text-zinc-950 text-[10px] font-black uppercase tracking-widest rounded-lg hover:bg-amber-400 transition-colors"
+              className="px-6 py-2.5 bg-amber-500 text-zinc-950 text-[10px] font-black uppercase tracking-widest rounded-xl hover:bg-amber-400 transition-all shadow-lg shadow-amber-500/20 active:scale-95"
             >
               Switch to High-Speed Mode
             </button>

@@ -11,7 +11,7 @@ import ProgressDashboard from './components/ProgressDashboard';
 import { BiometricDrillsLibrary } from './components/BiometricDrillsLibrary';
 import { DrillItem } from './data/drillLibrary';
 import { ErrorBoundary } from './components/ErrorBoundary';
-import { Play, FileText, Bookmark, ShieldAlert, AlertCircle } from 'lucide-react';
+import { Play, FileText, Bookmark, ShieldAlert, AlertCircle, Activity } from 'lucide-react';
 import { set, get, del } from 'idb-keyval';
 import { autoPurgeExpiredLocalVideos, saveLocalVideoWithTTL, getLocalVideo } from './utils/privacyStorage';
 
@@ -40,7 +40,6 @@ function App() {
   const [selectedMovementPhase, setSelectedMovementPhase] = useState<string>(SPORTS_RULES[0].phases[0]);
   const [customVideoUrl, setCustomVideoUrl] = useState<string | null>(null);
   const [customVideoFile, setCustomVideoFile] = useState<File | null>(null);
-  const [targetAthleteAnchor, setTargetAthleteAnchor] = useState<'auto' | 'left' | 'center' | 'right'>('auto');
 
   const [currentAnalysis, setCurrentAnalysis] = useState<FrameAnalysis | null>(null);
   const [keyframeList, setKeyframeList] = useState<FrameAnalysis[]>([]);
@@ -213,6 +212,8 @@ function App() {
         maxAnalyses={maxAnalyses}
         onUpdateUser={setCurrentUser}
         onLogout={() => { setCurrentUser(null); localStorage.removeItem('klutchh_user_session'); }}
+        viewMode={viewMode}
+        onViewChange={setViewMode}
       />
 
       <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6 flex flex-col gap-6">
@@ -230,8 +231,6 @@ function App() {
             maxAnalyses={maxAnalyses}
             currentUser={currentUser}
             onOpenAuth={() => setIsPinPromptOpen(true)}
-            targetAthleteAnchor={targetAthleteAnchor}
-            onSelectAthleteAnchor={setTargetAthleteAnchor}
           />
         )}
 
@@ -243,7 +242,6 @@ function App() {
             athleteCategory={athleteCategory}
             calibratedFps={calibratedFps}
             onComplete={handleProcessingMagicComplete}
-            targetAthleteAnchor={targetAthleteAnchor}
             onCancel={handleBackToWorkspace}
           />
         )}

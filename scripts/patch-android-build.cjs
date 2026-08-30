@@ -36,7 +36,7 @@ function patchExpoModulesCorePlugin() {
   void apply(Project project) {
     project.rootProject.ext.expoProvidesDefaultConfig = { true }
     project.ext.safeExtGet = { prop, fallback ->
-      project.rootProject.ext.has(prop) ? project.rootProject.ext.get(prop) : fallback
+      rootProject.ext.has(prop) ? rootProject.ext.get(prop) : fallback
     }
     project.buildscript {
       project.ext.kotlinVersion = {
@@ -142,8 +142,9 @@ function patchExpoModulePlugins() {
     let content = fs.readFileSync(filePath, 'utf8');
     const hasPluginId = content.includes("'expo-module-gradle-plugin'");
     const hasManualApply = content.includes(manualApplyHeader);
+    const isMissingCalls = !content.includes('useDefaultAndroidSdkVersions()');
 
-    if (hasPluginId || (hasManualApply && content.includes('plugins {'))) {
+    if (hasPluginId || (hasManualApply && (content.includes('plugins {') || isMissingCalls))) {
       console.log(`[Patch] Patching/Repairing plugin usage in: ${filePath}`);
       
       // 1. Remove manual apply if it's in the wrong place
@@ -165,7 +166,15 @@ function patchExpoModulePlugins() {
         return newApplies;
       });
 
-      // 3. Add manual apply at the top
+      // 3. Ensure SDK version calls are present
+      if (!content.includes('useDefaultAndroidSdkVersions()')) {
+        content = content + '\nuseDefaultAndroidSdkVersions()\n';
+      }
+      if (!content.includes('useExpoPublishing()')) {
+        content = content + 'useExpoPublishing()\n';
+      }
+
+      // 4. Add manual apply at the top
       const applyManual = `${manualApplyHeader}\napply from: new File(project(":expo-modules-core").projectDir.absolutePath, "ExpoModulesCorePlugin.gradle")\napplyKotlinExpoModulesCorePlugin()\n`;
       content = applyManual + content.trim();
 
