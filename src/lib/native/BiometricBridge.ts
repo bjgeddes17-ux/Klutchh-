@@ -16,7 +16,8 @@ export const BiometricBridge = {
     category: AthleteCategory,
     fps: number = 30,
     onProgress?: (progress: number) => void,
-    anchor?: any
+    anchor?: any,
+    cropBox?: any
   ): Promise<AnalysisResult> {
     console.log('[BiometricBridge] STANDALONE LOCAL ANALYSIS:', videoUri);
 
@@ -29,8 +30,7 @@ export const BiometricBridge = {
         sportRule,
         skillLevel,
         category,
-        fps,
-        onProgress
+        fps
       );
       return result;
     } catch (error) {

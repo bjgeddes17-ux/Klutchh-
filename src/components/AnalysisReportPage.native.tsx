@@ -9,6 +9,7 @@ import {
   StatusBar,
   Dimensions,
   Share,
+  Alert,
 } from 'react-native';
 import Slider from '@react-native-community/slider';
 import * as Haptics from 'expo-haptics';
@@ -64,6 +65,8 @@ interface AnalysisReportPageProps {
   dynamicMetrics?: any;
   onBack: () => void;
 }
+
+const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
 export const AnalysisReportPage: React.FC<AnalysisReportPageProps> = ({
   sportRule,
