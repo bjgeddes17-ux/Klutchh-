@@ -15,7 +15,8 @@ import { KineticVideoPlayer } from './Report/KineticVideoPlayer.native';
 import { GamifiedScore } from './Report/GamifiedScore.native';
 import { Top3Frames } from './Report/Top3Frames.native';
 import { DrillsSection } from './Report/DrillsSection.native';
-import { ArrowLeft, Download, AlertCircle, Play, Pause, Activity, Flame, ShieldAlert, Award, Zap } from 'lucide-react-native';
+import { TopDeviations, DeviationMoment } from './Report/TopDeviations.native';
+import { ArrowLeft, Download, AlertCircle, Play, Pause, Activity, Flame, ShieldAlert, Award, Zap, SkipBack, SkipForward } from 'lucide-react-native';
 import { SportRule, FrameAnalysis, AICoachingReport } from '../types';
 
 interface AnalysisReportPageProps {
@@ -40,6 +41,7 @@ export const AnalysisReportPage: React.FC<AnalysisReportPageProps> = ({
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
   const [activeTab, setActiveTab] = useState<'video' | 'faults' | 'metrics'>('video');
+  const [isFullScreen, setIsFullScreen] = useState(false);
   const videoRef = useRef<any>(null);
 
   const sortedFrames = useMemo(() => {
@@ -47,12 +49,84 @@ export const AnalysisReportPage: React.FC<AnalysisReportPageProps> = ({
   }, [allFrames]);
 
   const handleSeek = (timestamp: number) => {
-    setCurrentTime(timestamp);
+    const clampedTime = Math.max(0, Math.min(timestamp, duration));
+    setCurrentTime(clampedTime);
     if (videoRef.current) {
-      videoRef.current.seek(timestamp);
-      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+      videoRef.current.seek(clampedTime);
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     }
   };
+
+  const handleFrameStep = (direction: 'forward' | 'backward') => {
+    setIsPlaying(false); // Pause when stepping
+    const step = 0.033; // 30fps approximation
+    const nextTime = direction === 'forward' ? currentTime + step : currentTime - step;
+    handleSeek(nextTime);
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+  };
+
+  const toggleFullScreen = () => {
+    setIsFullScreen(!isFullScreen);
+    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+  };
+
+  const topDeviations = useMemo(() => {
+    if (!sortedFrames.length || !sportRule.jointRules.length) return [];
+
+    const deviations: DeviationMoment[] = [];
+
+    sportRule.jointRules.forEach(rule => {
+      let maxDev = 0;
+      let worstFrame: FrameAnalysis | null = null;
+
+      sortedFrames.forEach(frame => {
+        const val = frame.angles[rule.id];
+        if (val !== undefined) {
+          const mid = (rule.idealMin + rule.idealMax) / 2;
+          const dev = Math.abs(val - mid);
+          const status = frame.ruleResults[rule.id];
+          if (status === 'error' || status === 'warning') {
+            if (dev > maxDev) {
+              maxDev = dev;
+              worstFrame = frame;
+            }
+          }
+        }
+      });
+
+      if (worstFrame) {
+        const val = worstFrame.angles[rule.id];
+        const isLow = val < rule.idealMin;
+        
+        let correction = `Keep your ${rule.name.toLowerCase()} within ${rule.idealMin}-${rule.idealMax}°.`;
+        if (isLow) {
+          correction = `Open up your ${rule.name.toLowerCase()} angle. You dipped to ${val.toFixed(1)}° (Goal: ${rule.idealMin}°+).`;
+        } else {
+          correction = `Tighten your ${rule.name.toLowerCase()} angle. You hit ${val.toFixed(1)}° (Goal: <${rule.idealMax}°).`;
+        }
+
+        deviations.push({
+          ruleId: rule.id,
+          ruleName: rule.name,
+          timestamp: worstFrame.timestamp,
+          currentValue: val,
+          targetRange: [rule.idealMin, rule.idealMax],
+          status: worstFrame.ruleResults[rule.id] as 'error' | 'warning',
+          correction
+        });
+      }
+    });
+
+    return deviations
+      .sort((a, b) => {
+        if (a.status === 'error' && b.status !== 'error') return -1;
+        if (a.status !== 'error' && b.status === 'error') return 1;
+        const aMid = (a.targetRange[0] + a.targetRange[1]) / 2;
+        const bMid = (b.targetRange[0] + b.targetRange[1]) / 2;
+        return Math.abs(b.currentValue - bMid) - Math.abs(a.currentValue - aMid);
+      })
+      .slice(0, 3);
+  }, [sortedFrames, sportRule]);
 
   const onSlidingComplete = (value: number) => {
     handleSeek(value);
@@ -116,7 +190,7 @@ export const AnalysisReportPage: React.FC<AnalysisReportPageProps> = ({
             currentTime={currentTime}
             onTimeUpdate={setCurrentTime}
             onDurationChange={setDuration}
-            isDataReady={true}
+            isDataReady={sortedFrames.length > 0}
           />
           
           {/* Controls Overlay */}
@@ -130,19 +204,33 @@ export const AnalysisReportPage: React.FC<AnalysisReportPageProps> = ({
             </View>
           </View>
 
-          <TouchableOpacity 
-            onPress={() => setIsPlaying(!isPlaying)}
-            style={styles.playButtonOverlay}
-          >
-            {isPlaying ? <Pause color="#fff" size={20} /> : <Play color="#fff" size={20} fill="#fff" />}
-          </TouchableOpacity>
+          <View style={styles.playbackControlsOverlay}>
+            <TouchableOpacity 
+              onPress={() => handleFrameStep('backward')}
+              style={styles.stepButtonOverlay}
+            >
+              <SkipBack color="#fff" size={16} />
+            </TouchableOpacity>
+
+            <TouchableOpacity 
+              onPress={() => setIsPlaying(!isPlaying)}
+              style={styles.playButtonOverlay}
+            >
+              {isPlaying ? <Pause color="#fff" size={24} /> : <Play color="#fff" size={24} fill="#fff" />}
+            </TouchableOpacity>
+
+            <TouchableOpacity 
+              onPress={() => handleFrameStep('forward')}
+              style={styles.stepButtonOverlay}
+            >
+              <SkipForward color="#fff" size={16} />
+            </TouchableOpacity>
+          </View>
           <TouchableOpacity 
             style={styles.fullscreenButtonOverlay}
-            onPress={() => {
-              // Implementation for full screen toggle
-            }}
+            onPress={toggleFullScreen}
           >
-             <Text style={{color: 'white', fontSize: 10}}>FULL</Text>
+             <Text style={{color: 'white', fontWeight: 'bold', fontSize: 10}}>FULL</Text>
           </TouchableOpacity>
         </View>
 
@@ -172,6 +260,12 @@ export const AnalysisReportPage: React.FC<AnalysisReportPageProps> = ({
         <GamifiedScore 
           grade={aiReport?.overallGrade || 'A'} 
           title={aiReport?.summaryTitle || 'BIOMECHANICAL PRECISION'} 
+        />
+
+        {/* Top 3 Deviations */}
+        <TopDeviations 
+          deviations={topDeviations} 
+          onSeek={handleSeek} 
         />
 
         {/* Top 3 Frames */}
@@ -218,18 +312,41 @@ export const AnalysisReportPage: React.FC<AnalysisReportPageProps> = ({
         {activeTab === 'metrics' && (
           <View style={styles.metricsSection}>
             <Text style={styles.sectionTitle}>JOINT ANGULAR CORRIDORS</Text>
-            {sportRule.jointRules.map((rule, idx) => (
-              <View key={rule.id || idx} style={styles.metricRow}>
-                <View style={styles.metricInfo}>
-                  <Text style={styles.metricName}>{rule.name}</Text>
-                  <Text style={styles.metricPhase}>{rule.phase}</Text>
-                </View>
-                <View style={styles.metricRangeBox}>
-                  <Text style={styles.metricRange}>{rule.idealMin}° - {rule.idealMax}°</Text>
-                  <Text style={styles.metricStatus}>OPTIMAL</Text>
-                </View>
-              </View>
-            ))}
+            {sportRule.jointRules.map((rule, idx) => {
+              const worstFrame = sortedFrames.reduce((worst, curr) => {
+                const currStatus = curr.ruleResults[rule.id] || 'optimal';
+                const worstStatus = worst?.ruleResults[rule.id] || 'optimal';
+                const statusOrder: Record<string, number> = { 'error': 3, 'warning': 2, 'good': 1, 'optimal': 0 };
+                return statusOrder[currStatus] > (statusOrder[worstStatus] || 0) ? curr : worst;
+              }, sortedFrames[0]);
+              
+              const worstStatus = worstFrame?.ruleResults[rule.id] || 'optimal';
+
+              return (
+                <TouchableOpacity 
+                  key={rule.id || idx} 
+                  style={styles.metricRow}
+                  onPress={() => worstFrame && handleSeek(worstFrame.timestamp)}
+                >
+                  <View style={styles.metricInfo}>
+                    <Text style={styles.metricName}>{rule.name}</Text>
+                    <Text style={styles.metricPhase}>{rule.phase}</Text>
+                  </View>
+                  <View style={[
+                    styles.metricRangeBox,
+                    worstStatus === 'error' && { borderColor: 'rgba(239, 68, 68, 0.3)' },
+                    worstStatus === 'warning' && { borderColor: 'rgba(168, 85, 247, 0.3)' }
+                  ]}>
+                    <Text style={styles.metricRange}>{rule.idealMin}° - {rule.idealMax}°</Text>
+                    <Text style={[
+                      styles.metricStatus,
+                      worstStatus === 'error' && { color: '#ef4444' },
+                      worstStatus === 'warning' && { color: '#a855f7' }
+                    ]}>{worstStatus.toUpperCase()}</Text>
+                  </View>
+                </TouchableOpacity>
+              );
+            })}
           </View>
         )}
 
@@ -243,10 +360,74 @@ export const AnalysisReportPage: React.FC<AnalysisReportPageProps> = ({
                   <Text style={styles.insightText}>{typeof insight === 'string' ? insight : insight?.finding || insight?.title || ''}</Text>
                </View>
              ))}
+
+             <DrillsSection 
+               drills={aiReport?.drills || []} 
+               onViewDrill={(ts) => handleSeek(ts)}
+             />
           </View>
         )}
 
       </ScrollView>
+
+      {/* Full Screen Overlay */}
+      {isFullScreen && (
+        <View style={styles.fullScreenOverlay}>
+          <StatusBar hidden />
+          <KineticVideoPlayer
+            ref={videoRef}
+            videoUrl={videoUrl || ''}
+            sportRule={sportRule}
+            sortedFrames={sortedFrames}
+            isPlaying={isPlaying}
+            currentTime={currentTime}
+            onTimeUpdate={setCurrentTime}
+            onDurationChange={setDuration}
+            isDataReady={sortedFrames.length > 0}
+          />
+          
+          <View style={styles.fullScreenHud}>
+            <TouchableOpacity style={styles.exitFullScreen} onPress={toggleFullScreen}>
+              <ArrowLeft color="#fff" size={24} />
+              <Text style={styles.exitText}>EXIT FULL SCREEN</Text>
+            </TouchableOpacity>
+
+            <View style={styles.fullScreenBottom}>
+              <View style={styles.fullScreenScrubber}>
+                <Text style={styles.fsTime}>{currentTime.toFixed(2)}s</Text>
+                <Slider
+                  style={styles.fsSlider}
+                  minimumValue={0}
+                  maximumValue={duration || 1}
+                  value={currentTime}
+                  onValueChange={handleSeek}
+                  minimumTrackTintColor="#facc15"
+                  maximumTrackTintColor="rgba(255,255,255,0.3)"
+                  thumbTintColor="#facc15"
+                />
+                <Text style={styles.fsTime}>{(duration || 0).toFixed(2)}s</Text>
+              </View>
+              
+              <View style={styles.fsControlsGroup}>
+                <TouchableOpacity onPress={() => handleFrameStep('backward')} style={styles.fsStepBtn}>
+                  <SkipBack color="#fff" size={20} />
+                </TouchableOpacity>
+                
+                <TouchableOpacity 
+                  onPress={() => setIsPlaying(!isPlaying)}
+                  style={styles.fsPlayBtn}
+                >
+                  {isPlaying ? <Pause color="#fff" size={28} /> : <Play color="#fff" size={28} fill="#fff" />}
+                </TouchableOpacity>
+
+                <TouchableOpacity onPress={() => handleFrameStep('forward')} style={styles.fsStepBtn}>
+                  <SkipForward color="#fff" size={20} />
+                </TouchableOpacity>
+              </View>
+            </View>
+          </View>
+        </View>
+      )}
     </SafeAreaView>
   );
 };
@@ -382,15 +563,27 @@ const styles = StyleSheet.create({
     fontWeight: '900',
     letterSpacing: 1,
   },
-  playButtonOverlay: {
+  playbackControlsOverlay: {
     position: 'absolute',
     bottom: 14,
     right: 14,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
     backgroundColor: 'rgba(0,0,0,0.65)',
-    padding: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
     borderRadius: 40,
     borderWidth: 1,
     borderColor: 'rgba(250, 204, 21, 0.3)',
+  },
+  stepButtonOverlay: {
+    padding: 4,
+  },
+  playButtonOverlay: {
+    padding: 8,
+    backgroundColor: 'rgba(250, 204, 21, 0.2)',
+    borderRadius: 20,
   },
   fullscreenButtonOverlay: {
     position: 'absolute',
@@ -604,5 +797,75 @@ const styles = StyleSheet.create({
     color: '#22c55e',
     fontSize: 8,
     fontWeight: '900',
+  },
+  fullScreenOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: '#000',
+    zIndex: 1000,
+  },
+  fullScreenHud: {
+    ...StyleSheet.absoluteFillObject,
+    justifyContent: 'space-between',
+    padding: 20,
+    paddingTop: 40,
+    backgroundColor: 'rgba(0,0,0,0.2)',
+  },
+  exitFullScreen: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    backgroundColor: 'rgba(0,0,0,0.6)',
+    padding: 12,
+    borderRadius: 12,
+    alignSelf: 'flex-start',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.1)',
+  },
+  exitText: {
+    color: '#fff',
+    fontSize: 12,
+    fontWeight: '900',
+    letterSpacing: 1,
+  },
+  fullScreenBottom: {
+    backgroundColor: 'rgba(0,0,0,0.8)',
+    padding: 20,
+    borderRadius: 24,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 15,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.1)',
+  },
+  fullScreenScrubber: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  fsTime: {
+    color: '#a1a1aa',
+    fontSize: 10,
+    fontWeight: '700',
+    minWidth: 40,
+  },
+  fsSlider: {
+    flex: 1,
+    height: 40,
+  },
+  fsPlayBtn: {
+    backgroundColor: '#facc15',
+    padding: 12,
+    borderRadius: 30,
+  },
+  fsControlsGroup: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 20,
+  },
+  fsStepBtn: {
+    padding: 8,
+    backgroundColor: 'rgba(255,255,255,0.1)',
+    borderRadius: 20,
   },
 });

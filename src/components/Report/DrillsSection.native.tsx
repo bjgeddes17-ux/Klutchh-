@@ -1,26 +1,40 @@
 import React from 'react';
-import { View, Text, StyleSheet } from 'react-native';
-import { Zap } from 'lucide-react-native';
+import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
+import { Zap, Play } from 'lucide-react-native';
 import { CorrectiveDrill } from '../../types';
 
 interface DrillsSectionProps {
   drills: CorrectiveDrill[];
+  onViewDrill?: (timestamp: number) => void;
 }
 
-export const DrillsSection: React.FC<DrillsSectionProps> = ({ drills }) => (
+export const DrillsSection: React.FC<DrillsSectionProps> = ({ drills, onViewDrill }) => (
   <View style={styles.section}>
     <Text style={styles.sectionTitle}>CORRECTIVE DRILLS</Text>
     {drills.map((drill, idx) => (
-      <View key={idx} style={styles.drillCard}>
+      <TouchableOpacity 
+        key={idx} 
+        style={styles.drillCard}
+        onPress={() => onViewDrill && drill.timestamp !== undefined && onViewDrill(drill.timestamp)}
+        activeOpacity={0.7}
+      >
         <View style={styles.drillIcon}>
           <Zap color="#facc15" size={18} />
         </View>
         <View style={styles.drillContent}>
-          <Text style={styles.drillName}>{drill.name}</Text>
+          <View style={styles.drillHeader}>
+            <Text style={styles.drillName}>{drill.name}</Text>
+            {onViewDrill && (
+              <View style={styles.watchBadge}>
+                <Play color="#facc15" size={8} fill="#facc15" />
+                <Text style={styles.watchText}>WATCH</Text>
+              </View>
+            )}
+          </View>
           <Text style={styles.drillDesc}>{drill.description}</Text>
           <Text style={styles.drillReps}>Reps: {drill.reps}</Text>
         </View>
-      </View>
+      </TouchableOpacity>
     ))}
   </View>
 );
@@ -56,10 +70,29 @@ const styles = StyleSheet.create({
     flex: 1,
     gap: 4,
   },
+  drillHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
   drillName: {
     color: '#ffffff',
     fontSize: 14,
     fontWeight: '800',
+  },
+  watchBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: 'rgba(250, 204, 21, 0.1)',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 4,
+  },
+  watchText: {
+    color: '#facc15',
+    fontSize: 8,
+    fontWeight: '900',
   },
   drillDesc: {
     color: '#a1a1aa',

@@ -50,7 +50,7 @@ export const KineticVideoPlayer = React.memo(forwardRef<KineticVideoPlayerRef, K
   sportRule,
   sortedFrames,
   isPlaying,
-  currentTime,
+  currentTime: externalTime,
   onTimeUpdate,
   onDurationChange,
   playbackRate = 1,
@@ -60,13 +60,24 @@ export const KineticVideoPlayer = React.memo(forwardRef<KineticVideoPlayerRef, K
   const [containerSize, setContainerSize] = useState<{ width: number; height: number }>({ width: 340, height: 220 });
   const [videoNaturalSize, setVideoNaturalSize] = useState<{ width: number; height: number } | null>(null);
 
+  // Use local time for high-frequency skeleton updates to avoid React render lag from parent
+  const [localTime, setLocalTime] = useState(0);
+
   useImperativeHandle(ref, () => ({
     seek: (time: number) => {
+      setLocalTime(time);
       if (videoRef.current) {
         videoRef.current.setPositionAsync(time * 1000);
       }
     }
   }));
+
+  // Sync internal time with external time only when it's a significant jump (e.g. seek from parent)
+  React.useEffect(() => {
+    if (Math.abs(localTime - externalTime) > 0.1) {
+      setLocalTime(externalTime);
+    }
+  }, [externalTime]);
 
   const handleLayout = (e: LayoutChangeEvent) => {
     const { width, height } = e.nativeEvent.layout;
@@ -81,6 +92,9 @@ export const KineticVideoPlayer = React.memo(forwardRef<KineticVideoPlayerRef, K
     if (!videoNaturalSize || videoNaturalSize.width <= 0 || videoNaturalSize.height <= 0) {
       return { drawWidth: cw, drawHeight: ch, offsetX: 0, offsetY: 0 };
     }
+    
+    // We must handle potential orientation issues. MediaPipe landmarks are normalized to the video buffer.
+    // If the video is vertical (natural height > natural width), but container is horizontal.
     const videoAspect = videoNaturalSize.width / videoNaturalSize.height;
     const containerAspect = cw / ch;
 
@@ -90,12 +104,14 @@ export const KineticVideoPlayer = React.memo(forwardRef<KineticVideoPlayerRef, K
     let offsetY = 0;
 
     if (containerAspect > videoAspect) {
+      // Pillarbox (bars on sides)
       drawHeight = ch;
-      drawWidth = drawHeight * videoAspect;
+      drawWidth = ch * videoAspect;
       offsetX = (cw - drawWidth) / 2;
     } else {
+      // Letterbox (bars on top/bottom)
       drawWidth = cw;
-      drawHeight = drawWidth / videoAspect;
+      drawHeight = cw / videoAspect;
       offsetY = (ch - drawHeight) / 2;
     }
 
@@ -110,7 +126,7 @@ export const KineticVideoPlayer = React.memo(forwardRef<KineticVideoPlayerRef, K
     let idx = 0;
     while (low <= high) {
       const mid = (low + high) >> 1;
-      if (sortedFrames[mid].timestamp <= currentTime) {
+      if (sortedFrames[mid].timestamp <= localTime) {
         idx = mid;
         low = mid + 1;
       } else {
@@ -118,9 +134,29 @@ export const KineticVideoPlayer = React.memo(forwardRef<KineticVideoPlayerRef, K
       }
     }
     return sortedFrames[idx];
-  }, [sortedFrames, currentTime]);
+  }, [sortedFrames, localTime]);
 
   const { drawWidth, drawHeight, offsetX, offsetY } = layoutMetrics;
+
+  // Helper to get status for a connection
+  const getConnectionStatus = (p1: number, p2: number) => {
+    if (!currentFrame) return 'optimal';
+    
+    // Find all rules that involve either of these points
+    // Rules are usually defined as an angle at keypoints[1] (the vertex)
+    const activeRules = sportRule.jointRules.filter(r => 
+      r.keypoints[1] === p1 || r.keypoints[1] === p2 || 
+      (r.keypoints.includes(p1) && r.keypoints.includes(p2))
+    );
+    
+    if (activeRules.length === 0) return 'optimal';
+    
+    // Prioritize 'error' > 'warning' > 'good' > 'optimal'
+    const statuses = activeRules.map(r => currentFrame.ruleResults[r.id] || 'optimal');
+    if (statuses.includes('error')) return 'error';
+    if (statuses.includes('warning')) return 'warning';
+    return 'optimal';
+  };
 
   return (
     <View style={styles.container} onLayout={handleLayout}>
@@ -132,14 +168,18 @@ export const KineticVideoPlayer = React.memo(forwardRef<KineticVideoPlayerRef, K
         resizeMode={ResizeMode.CONTAIN}
         shouldPlay={isPlaying}
         isLooping={false}
+        progressUpdateIntervalMillis={16} // 60fps updates for smooth skeleton
         onPlaybackStatusUpdate={(status) => {
           if (status.isLoaded) {
-            onTimeUpdate(status.positionMillis / 1000);
+            const time = status.positionMillis / 1000;
+            setLocalTime(time);
+            onTimeUpdate(time);
             if (status.durationMillis && onDurationChange) {
               onDurationChange(status.durationMillis / 1000);
             }
             if ((status as any).naturalSize && (status as any).naturalSize.width > 0) {
               const { width, height } = (status as any).naturalSize;
+              // Only update if dimensions actually changed
               if (!videoNaturalSize || videoNaturalSize.width !== width || videoNaturalSize.height !== height) {
                 setVideoNaturalSize({ width, height });
               }
@@ -149,121 +189,115 @@ export const KineticVideoPlayer = React.memo(forwardRef<KineticVideoPlayerRef, K
         style={styles.video}
       />
 
-      {/* Hardware-Accelerated Native Skia Skeleton */}
-      <Canvas style={styles.canvas}>
-        {isDataReady && currentFrame?.landmarks && (
-          <>
-            {/* Enhanced Skeletal Bones */}
-            {POSE_CONNECTIONS.map(([i1, i2], connIdx) => {
-              const p1 = currentFrame.landmarks[i1];
-              const p2 = currentFrame.landmarks[i2];
-              if (!p1 || !p2 || (p1.visibility && p1.visibility < 0.4) || (p2.visibility && p2.visibility < 0.4)) {
-                return null;
-              }
-              const videoAspect = videoNaturalSize ? videoNaturalSize.width / videoNaturalSize.height : 16/9;
-              const point1Pixels = mapLandmarkToPixels(p1, containerSize, videoAspect, offsetX, offsetY);
-              const point2Pixels = mapLandmarkToPixels(p2, containerSize, videoAspect, offsetX, offsetY);
-              const point1 = vec(point1Pixels.x, point1Pixels.y);
-              const point2 = vec(point2Pixels.x, point2Pixels.y);
-              
-              // Map bone status based on rule results (simplified: use joint visibility or rule status if mapped)
-              const status = 'optimal'; // TODO: Map rule status to connections
-              const boneColor = getStatusColor(status);
+      {/* 
+        NEW: The Canvas and Metrics View are now precisely sized and positioned 
+        to match the "CONTAIN"ed video frame. This eliminates drift and 
+        ensures the skeleton is never "Giant".
+      */}
+      <View 
+        pointerEvents="none"
+        style={{
+          position: 'absolute',
+          left: offsetX,
+          top: offsetY,
+          width: drawWidth,
+          height: drawHeight,
+          zIndex: 10,
+        }}
+      >
+        <Canvas style={StyleSheet.absoluteFill}>
+          {isDataReady && currentFrame?.landmarks && (
+            <>
+              {/* Enhanced Skeletal Bones */}
+              {POSE_CONNECTIONS.map(([i1, i2], connIdx) => {
+                const p1 = currentFrame.landmarks[i1];
+                const p2 = currentFrame.landmarks[i2];
+                if (!p1 || !p2 || (p1.visibility && p1.visibility < 0.4) || (p2.visibility && p2.visibility < 0.4)) {
+                  return null;
+                }
+                
+                // Landmarks are 0-1, drawWidth/drawHeight is the frame size
+                const x1 = p1.x * drawWidth;
+                const y1 = p1.y * drawHeight;
+                const x2 = p2.x * drawWidth;
+                const y2 = p2.y * drawHeight;
+                
+                const point1 = vec(x1, y1);
+                const point2 = vec(x2, y2);
+                
+                const status = getConnectionStatus(i1, i2);
+                const boneColor = getStatusColor(status);
 
+                return (
+                  <React.Fragment key={`bone-${connIdx}`}>
+                    <Line p1={point1} p2={point2} color={boneColor} strokeWidth={8} opacity={0.15} />
+                    <Line p1={point1} p2={point2} color="#ffffff" strokeWidth={2} opacity={1} />
+                  </React.Fragment>
+                );
+              })}
+
+              {/* Enhanced Joints */}
+              {currentFrame.landmarks.map((lm, i) => {
+                if (lm.visibility && lm.visibility < 0.4) return null;
+                const isHighlight = i === 11 || i === 12 || i === 23 || i === 24 || i === 25 || i === 26;
+                const cx = lm.x * drawWidth;
+                const cy = lm.y * drawHeight;
+                
+                const status = getConnectionStatus(i, i);
+                const jointColor = getStatusColor(status);
+
+                return (
+                  <React.Fragment key={`joint-group-${i}`}>
+                    <Circle cx={cx} cy={cy} r={isHighlight ? 9 : 6} color={jointColor} opacity={0.25} />
+                    <Circle cx={cx} cy={cy} r={isHighlight ? 4 : 2.5} color="#ffffff" opacity={1} />
+                  </React.Fragment>
+                );
+              })}
+            </>
+          )}
+        </Canvas>
+
+        {/* Biometric Metric Labels - Now also precisely positioned within the frame */}
+        {currentFrame && (
+          <View style={StyleSheet.absoluteFill}>
+            {sportRule.jointRules.map((rule, idx) => {
+              const vertex = currentFrame.landmarks[rule.keypoints[1]];
+              if (!vertex) return null;
+              
+              const angleVal = currentFrame.angles[rule.id] ?? 0;
+              const status = currentFrame.ruleResults[rule.id] || 'optimal';
+              
+              // Map vertex to pixels within this relative frame
+              const vx = vertex.x * drawWidth;
+              const vy = vertex.y * drawHeight;
+              
+              // Collision avoidance: Stagger and alternate sides if needed
+              // We'll alternate left/right to reduce overlap
+              const isEven = idx % 2 === 0;
+              const staggerY = idx * 22;
+              
               return (
-                <React.Fragment key={`bone-${connIdx}`}>
-                  {/* Outer Glow */}
-                  <Line
-                    p1={point1}
-                    p2={point2}
-                    color={boneColor}
-                    strokeWidth={8}
-                    opacity={0.15}
-                  />
-                  {/* Inner Core */}
-                  <Line
-                    p1={point1}
-                    p2={point2}
-                    color="#ffffff"
-                    strokeWidth={2}
-                    opacity={1}
-                  />
-                </React.Fragment>
+                <View 
+                  key={rule.id}
+                  style={[
+                    styles.metricLabel,
+                    {
+                      left: isEven ? vx + 10 : vx - 130, // Alternate sides
+                      top: vy - 50 + (idx * 15), // Smaller stagger
+                      borderColor: getStatusColor(status),
+                      maxWidth: 120,
+                    }
+                  ]}
+                >
+                  <Text style={styles.metricText} numberOfLines={1}>
+                    {rule.name.split(' ')[0]}: {angleVal.toFixed(1)}°
+                  </Text>
+                </View>
               );
             })}
-
-            {/* Enhanced Joints */}
-            {currentFrame.landmarks.map((lm, i) => {
-              if (lm.visibility && lm.visibility < 0.4) return null;
-              const isHighlight = i === 11 || i === 12 || i === 23 || i === 24 || i === 25 || i === 26;
-              const videoAspect = videoNaturalSize ? videoNaturalSize.width / videoNaturalSize.height : 16/9;
-              const jointPixels = mapLandmarkToPixels(lm, containerSize, videoAspect, offsetX, offsetY);
-              const cx = jointPixels.x;
-              const cy = jointPixels.y;
-              
-              // Dynamic joint color
-              const status = 'optimal'; 
-              const jointColor = getStatusColor(status);
-
-              return (
-                <React.Fragment key={`joint-group-${i}`}>
-                  <Circle
-                    cx={cx}
-                    cy={cy}
-                    r={isHighlight ? 9 : 6}
-                    color={jointColor}
-                    opacity={0.25}
-                  />
-                  <Circle
-                    cx={cx}
-                    cy={cy}
-                    r={isHighlight ? 4 : 2.5}
-                    color="#ffffff"
-                    opacity={1}
-                  />
-                </React.Fragment>
-              );
-            })}
-          </>
+          </View>
         )}
-      </Canvas>
-
-      {/* Biometric Metric Labels */}
-      {currentFrame && (
-        <View style={StyleSheet.absoluteFill}>
-          {sportRule.jointRules.map((rule, idx) => {
-            const [kp1, kp2, kp3] = rule.keypoints;
-            const p1 = currentFrame.landmarks[kp1];
-            const vertex = currentFrame.landmarks[kp2];
-            const p3 = currentFrame.landmarks[kp3];
-            
-            if (!p1 || !vertex || !p3) return null;
-            
-            const angleVal = currentFrame.angles[rule.id] ?? 0;
-            const status = currentFrame.ruleResults[rule.id] || 'optimal';
-            const videoAspect = videoNaturalSize ? videoNaturalSize.width / videoNaturalSize.height : 16/9;
-            const vertexPixels = mapLandmarkToPixels(vertex, containerSize, videoAspect, offsetX, offsetY);
-            
-            return (
-              <View 
-                key={rule.id}
-                style={[
-                  styles.metricLabel,
-                  {
-                    left: vertexPixels.x + 10,
-                    top: vertexPixels.y - 10,
-                    borderColor: status === 'error' ? '#ef4444' : status === 'warning' ? '#a855f7' : '#facc15'
-                  }
-                ]}
-              >
-                <Text style={styles.metricText}>
-                  {rule.name}: {angleVal.toFixed(1)}{rule.unit}
-                </Text>
-              </View>
-            );
-          })}
-        </View>
-      )}
+      </View>
     </View>
   );
 }));
