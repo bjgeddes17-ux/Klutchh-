@@ -16,6 +16,7 @@ interface KineticVideoPlayerProps {
   playbackRate?: number;
   isDataReady: boolean;
   viewMode?: 'student' | 'coach';
+  showSkeleton?: boolean;
 }
 
 export interface KineticVideoPlayerRef {
@@ -55,6 +56,7 @@ export const KineticVideoPlayer = React.memo(forwardRef<KineticVideoPlayerRef, K
   onDurationChange,
   playbackRate = 1,
   isDataReady,
+  showSkeleton = true,
 }, ref) => {
   const videoRef = useRef<Video>(null);
   const [containerSize, setContainerSize] = useState<{ width: number; height: number }>({ width: 340, height: 220 });
@@ -238,7 +240,7 @@ export const KineticVideoPlayer = React.memo(forwardRef<KineticVideoPlayerRef, K
         }}
       >
         <Canvas style={StyleSheet.absoluteFill}>
-          {isDataReady && currentFrame?.landmarks && (
+          {showSkeleton && isDataReady && currentFrame?.landmarks && (
             <>
               {/* Enhanced Skeletal Bones */}
               {POSE_CONNECTIONS.map(({ points: [i1, i2], color: boneColor }, connIdx) => {

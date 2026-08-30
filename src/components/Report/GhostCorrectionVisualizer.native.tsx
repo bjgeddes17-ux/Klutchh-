@@ -37,234 +37,41 @@ export const GhostCorrectionVisualizerNative: React.FC<GhostCorrectionVisualizer
   sportRule,
   onSeekTimestamp,
 }) => {
-  const [selectedFaultIdx, setSelectedFaultIdx] = useState(0);
-  const [ghostInterpolation, setGhostInterpolation] = useState(0); // 0 = actual, 1 = optimal
-
-  // Identify Top 3 Faults (Logic shared with Web)
-  const top3Faults: MovementFault[] = useMemo(() => {
-    const searchPool = (allFrames && allFrames.length > 0 ? allFrames : keyframeList) || [];
-    if (searchPool.length === 0) return [];
-
-    const allCandidates: any[] = [];
-
-    sportRule.jointRules.forEach(rule => {
-      let maxDelta = -1;
-      let worstFrame: FrameAnalysis | null = null;
-      let worstAngle = 0;
-
-      searchPool.forEach(frame => {
-        let measured = frame.angles?.[rule.id];
-        if (measured === undefined && frame.landmarks && rule.keypoints?.length === 3) {
-          const [p1, p2, p3] = rule.keypoints;
-          if (frame.landmarks[p1] && frame.landmarks[p2] && frame.landmarks[p3]) {
-            measured = calculateAngle(frame.landmarks[p1], frame.landmarks[p2], frame.landmarks[p3]);
-          }
-        }
-
-        if (measured === undefined) return;
-
-        let delta = 0;
-        if (measured < rule.idealMin) delta = rule.idealMin - measured;
-        else if (measured > rule.idealMax) delta = measured - rule.idealMax;
-
-        if (delta > maxDelta) {
-          maxDelta = delta;
-          worstFrame = frame;
-          worstAngle = Math.round(measured);
-        }
-      });
-
-      if (worstFrame && maxDelta > 3) {
-        allCandidates.push({
-          rule,
-          frame: worstFrame,
-          measuredAngle: worstAngle,
-          delta: Math.round(maxDelta),
-          timestamp: worstFrame.timestamp,
-          phase: worstFrame.detectedPhase || 'Movement'
-        });
-      }
-    });
-
-    allCandidates.sort((a, b) => b.delta - a.delta);
-
-    return allCandidates.slice(0, 3).map((item, idx) => ({
-      id: `fault-${idx}`,
-      rank: idx + 1,
-      rule: item.rule,
-      measuredAngle: item.measuredAngle,
-      targetRange: `${item.rule.idealMin}° - ${item.rule.idealMax}°`,
-      delta: item.delta,
-      severity: item.delta > 15 ? 'critical' : 'high',
-      phase: item.phase,
-      timestamp: item.timestamp,
-      keyframe: item.frame,
-      title: item.rule.name,
-      causeDescription: `Detected ${item.delta}° deviation from optimal axis during ${item.phase}.`,
-      correctionCues: item.rule.impactOnPerformance || "Adjust joint alignment to maintain kinetic chain integrity.",
-      biomechanicalConsequence: item.rule.injuryRiskFactor || "Increased shear stress on joint complex."
-    }));
-  }, [keyframeList, allFrames, sportRule]);
-
-  const activeFault = top3Faults[selectedFaultIdx];
-
-  // Helper to get adjusted "Ghost" landmarks
-  const getAdjustedLandmarks = (fault: MovementFault, interp: number) => {
-    if (!fault?.keyframe?.landmarks) return [];
-    const landmarks = fault.keyframe.landmarks;
-    const rule = fault.rule;
-    
-    return landmarks.map((pt, idx) => {
-      if (!pt) return pt;
-      let nx = pt.x;
-      let ny = pt.y;
-
-      // Simple heuristic for "Optimal" adjustment based on fault type
-      if (rule.keypoints?.includes(idx)) {
-        const isTooSmall = fault.measuredAngle < rule.idealMin;
-        const correction = isTooSmall ? 0.05 : -0.05;
-        
-        // Push the joint towards a better position
-        if (idx === 25 || idx === 26) { // Knees
-          nx += idx === 25 ? -correction : correction;
-        } else if (idx === 11 || idx === 12) { // Shoulders
-          ny -= 0.03;
-        }
-      }
-
-      return {
-        x: pt.x + (nx - pt.x) * interp,
-        y: pt.y + (ny - pt.y) * interp,
-        visibility: pt.visibility
-      };
-    });
-  };
-
-  const adjustedLandmarks = useMemo(() => {
-    if (!activeFault) return [];
-    return getAdjustedLandmarks(activeFault, ghostInterpolation);
-  }, [activeFault, ghostInterpolation]);
-
-  if (!activeFault) return null;
-
-  const CANVAS_SIZE = SCREEN_WIDTH - 48;
-
   return (
     <View style={styles.container}>
       <View style={styles.header}>
         <View style={styles.titleRow}>
-          <AlertTriangle size={20} color="#ef4444" />
-          <Text style={styles.title}>GHOST CORRECTION HUD</Text>
+          <Sparkles size={20} color="#34d399" />
+          <Text style={styles.title}>FILMSTRIP ANALYSIS</Text>
         </View>
-        <Text style={styles.subtitle}>
-          Compare your actual pose (Red) vs. optimal ghost (Emerald)
-        </Text>
       </View>
-
-      {/* Fault Selector Tabs */}
-      <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.tabsScroll}>
-        {top3Faults.map((fault, idx) => (
-          <TouchableOpacity
-            key={fault.id}
-            onPress={() => {
-              setSelectedFaultIdx(idx);
-              onSeekTimestamp?.(fault.timestamp);
-            }}
-            style={[
-              styles.tab,
-              selectedFaultIdx === idx && styles.tabActive
-            ]}
+      <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+        {keyframeList.map((frame, idx) => (
+          <TouchableOpacity 
+            key={idx} 
+            onPress={() => onSeekTimestamp?.(frame.timestamp)}
+            style={styles.canvasContainer}
           >
-            <View style={styles.tabBadge}>
-              <Text style={styles.tabBadgeText}>#{fault.rank}</Text>
-            </View>
-            <Text style={[styles.tabText, selectedFaultIdx === idx && styles.tabTextActive]}>
-              {fault.rule.name}
-            </Text>
-            <Text style={styles.tabDelta}>Δ {fault.delta}°</Text>
+            <Canvas style={{ width: 120, height: 120 }}>
+              {POSE_CONNECTIONS.map((conn, cIdx) => {
+                const p1 = frame.landmarks[conn.points[0]];
+                const p2 = frame.landmarks[conn.points[1]];
+                if (!p1 || !p2) return null;
+                return (
+                  <Line
+                    key={`line-${cIdx}`}
+                    p1={vec(p1.x * 120, p1.y * 120)}
+                    p2={vec(p2.x * 120, p1.y * 120)}
+                    color="#38bdf8"
+                    strokeWidth={2}
+                  />
+                );
+              })}
+            </Canvas>
+            <Text style={styles.tabBadgeText}>{frame.timestamp.toFixed(2)}s</Text>
           </TouchableOpacity>
         ))}
       </ScrollView>
-
-      {/* Skia Interactive Stage */}
-      <View style={styles.canvasContainer}>
-        <Canvas style={{ width: CANVAS_SIZE, height: CANVAS_SIZE }}>
-          {/* Skeleton Rendering */}
-          {POSE_CONNECTIONS.map((conn, i) => {
-            const p1 = adjustedLandmarks[conn.points[0]];
-            const p2 = adjustedLandmarks[conn.points[1]];
-            if (!p1 || !p2) return null;
-
-            const isFocal = activeFault.rule.keypoints?.includes(conn.points[0]) && activeFault.rule.keypoints?.includes(conn.points[1]);
-            const strokeColor = isFocal ? (ghostInterpolation > 0.6 ? '#10b981' : '#ef4444') : '#38bdf8';
-            
-            return (
-              <Line
-                key={`line-${i}`}
-                p1={vec(p1.x * CANVAS_SIZE, p1.y * CANVAS_SIZE)}
-                p2={vec(p2.x * CANVAS_SIZE, p2.y * CANVAS_SIZE)}
-                color={strokeColor}
-                strokeWidth={isFocal ? 6 : 3}
-                opacity={isFocal ? 0.9 : 0.4}
-              />
-            );
-          })}
-
-          {/* Joint Nodes */}
-          {adjustedLandmarks.map((lm, i) => {
-            if (i < 11 || (lm.visibility && lm.visibility < 0.4)) return null;
-            const isFocal = activeFault.rule.keypoints?.includes(i);
-            return (
-              <Circle
-                key={`joint-${i}`}
-                cx={lm.x * CANVAS_SIZE}
-                cy={lm.y * CANVAS_SIZE}
-                r={isFocal ? 5 : 3}
-                color={isFocal ? (ghostInterpolation > 0.6 ? '#10b981' : '#ef4444') : '#ffffff'}
-              />
-            );
-          })}
-        </Canvas>
-
-        {/* Legend Overlay */}
-        <View style={styles.canvasLegend}>
-          <View style={styles.legendItem}>
-            <View style={[styles.legendDot, { backgroundColor: '#ef4444' }]} />
-            <Text style={styles.legendText}>Actual Breakdown</Text>
-          </View>
-          <View style={styles.legendItem}>
-            <View style={[styles.legendDot, { backgroundColor: '#10b981' }]} />
-            <Text style={styles.legendText}>Target Ghost</Text>
-          </View>
-        </View>
-      </View>
-
-      {/* Biomechanical Insight Cards */}
-      <View style={styles.insightGrid}>
-        <View style={styles.insightCard}>
-          <View style={styles.cardHeader}>
-            <AlertTriangle size={14} color="#f87171" />
-            <Text style={styles.cardTitle}>BIOMECHANICAL RISK</Text>
-          </View>
-          <Text style={styles.cardText}>{activeFault.biomechanicalConsequence}</Text>
-        </View>
-
-        <View style={[styles.insightCard, styles.insightCardGreen]}>
-          <View style={styles.cardHeader}>
-            <Sparkles size={14} color="#34d399" />
-            <Text style={[styles.cardTitle, { color: '#34d399' }]}>CORRECTION CUE</Text>
-          </View>
-          <Text style={styles.cardText}>{activeFault.correctionCues}</Text>
-        </View>
-      </View>
-
-      <TouchableOpacity 
-        style={styles.seekButton}
-        onPress={() => onSeekTimestamp?.(activeFault.timestamp)}
-      >
-        <Text style={styles.seekButtonText}>JUMP TO KEYFRAME ({activeFault.timestamp.toFixed(2)}s)</Text>
-        <ChevronRight size={16} color="#fbbf24" />
-      </TouchableOpacity>
     </View>
   );
 };

@@ -84,6 +84,10 @@ export const AnalysisReportPage: React.FC<AnalysisReportPageProps> = ({
   const [isFullScreen, setIsFullScreen] = useState(false);
   const videoRef = useRef<any>(null);
 
+  const toggleFullScreen = () => {
+    setIsFullScreen(!isFullScreen);
+  };
+
   const sortedFrames = useMemo(() => {
     return [...allFrames].sort((a, b) => a.timestamp - b.timestamp);
   }, [allFrames]);
@@ -194,7 +198,7 @@ export const AnalysisReportPage: React.FC<AnalysisReportPageProps> = ({
       <ScrollView style={styles.container} contentContainerStyle={styles.content}>
         
         {/* Main Video & Scrubber Stage */}
-        <View style={styles.videoStage}>
+        <View style={[styles.videoStage, isFullScreen && styles.videoStageFull]}>
           <KineticVideoPlayer
             ref={videoRef}
             videoUrl={videoUrl || ''}
@@ -205,9 +209,13 @@ export const AnalysisReportPage: React.FC<AnalysisReportPageProps> = ({
             onTimeUpdate={setCurrentTime}
             onDurationChange={setDuration}
             isDataReady={sortedFrames.length > 0}
+            showSkeleton={true}
           />
           
           <View style={styles.videoHudTop}>
+            <TouchableOpacity onPress={toggleFullScreen} style={styles.fullScreenButton}>
+              <Text style={{color: 'white', fontWeight: 'bold'}}>{isFullScreen ? 'X' : '[]'}</Text>
+            </TouchableOpacity>
             <View style={styles.timestampBadge}>
               <Text style={styles.timestampText}>{currentTime.toFixed(2)}s / {duration.toFixed(2)}s</Text>
             </View>
@@ -462,8 +470,23 @@ const styles = StyleSheet.create({
     borderRadius: 24,
     overflow: 'hidden',
     position: 'relative',
-    borderWidth: 1,
-    borderColor: '#1f1f23',
+    borderWidth: 2,
+    borderColor: '#fbbf24', 
+  },
+  videoStageFull: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    width: SCREEN_WIDTH,
+    height: Dimensions.get('window').height,
+    zIndex: 100,
+    borderRadius: 0,
+    aspectRatio: undefined,
+  },
+  fullScreenButton: {
+    backgroundColor: 'rgba(0,0,0,0.7)',
+    padding: 8,
+    borderRadius: 8,
   },
   videoHudTop: {
     position: 'absolute',
@@ -665,14 +688,14 @@ const styles = StyleSheet.create({
   },
   scrubberContainer: {
     backgroundColor: '#09090b',
-    borderRadius: 20,
-    padding: 16,
+    borderRadius: 24,
+    padding: 24,
     borderWidth: 1,
-    borderColor: '#18181b',
+    borderColor: '#27272a',
   },
   slider: {
     width: '100%',
-    height: 40,
+    height: 56,
   },
   scrubberLabels: {
     flexDirection: 'row',
