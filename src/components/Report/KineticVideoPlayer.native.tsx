@@ -1,5 +1,5 @@
 import React, { useRef, useState, useMemo, useImperativeHandle, forwardRef } from 'react';
-import { View, StyleSheet, LayoutChangeEvent } from 'react-native';
+import { View, StyleSheet, LayoutChangeEvent, Text } from 'react-native';
 import { Video, ResizeMode } from 'expo-av';
 import { Canvas, Line, Circle, vec } from '@shopify/react-native-skia';
 import { SportRule, FrameAnalysis } from '../../types';
@@ -150,9 +150,8 @@ export const KineticVideoPlayer = forwardRef<KineticVideoPlayerRef, KineticVideo
                 return null;
               }
               return (
-                <>
+                <React.Fragment key={`bone-${connIdx}`}>
                   <Line
-                    key={`bone-glow-${connIdx}`}
                     p1={vec(offsetX + p1.x * drawWidth, offsetY + p1.y * drawHeight)}
                     p2={vec(offsetX + p2.x * drawWidth, offsetY + p2.y * drawHeight)}
                     color="#facc15"
@@ -160,14 +159,13 @@ export const KineticVideoPlayer = forwardRef<KineticVideoPlayerRef, KineticVideo
                     opacity={0.2}
                   />
                   <Line
-                    key={`bone-${connIdx}`}
                     p1={vec(offsetX + p1.x * drawWidth, offsetY + p1.y * drawHeight)}
                     p2={vec(offsetX + p2.x * drawWidth, offsetY + p2.y * drawHeight)}
                     color="#facc15"
                     strokeWidth={1.5}
                     opacity={0.9}
                   />
-                </>
+                </React.Fragment>
               );
             })}
 
@@ -191,23 +189,47 @@ export const KineticVideoPlayer = forwardRef<KineticVideoPlayerRef, KineticVideo
                     color={isHighlight ? "#facc15" : "#ffffff"}
                     opacity={1}
                   />
-                  {isHighlight && (
-                    <Circle
-                      cx={offsetX + lm.x * drawWidth}
-                      cy={offsetY + lm.y * drawHeight}
-                      r={9}
-                      color="#facc15"
-                      style="stroke"
-                      strokeWidth={0.5}
-                      opacity={0.4}
-                    />
-                  )}
                 </React.Fragment>
               );
             })}
           </>
         )}
       </Canvas>
+
+      {/* Biometric Metric Labels */}
+      {currentFrame && (
+        <View style={StyleSheet.absoluteFill}>
+          {sportRule.jointRules.map((rule, idx) => {
+            const [kp1, kp2, kp3] = rule.keypoints;
+            const p1 = currentFrame.landmarks[kp1];
+            const vertex = currentFrame.landmarks[kp2];
+            const p3 = currentFrame.landmarks[kp3];
+            
+            if (!p1 || !vertex || !p3) return null;
+            
+            const angleVal = currentFrame.angles[rule.id] ?? 0;
+            const status = currentFrame.ruleResults[rule.id] || 'optimal';
+            
+            return (
+              <View 
+                key={rule.id}
+                style={[
+                  styles.metricLabel,
+                  {
+                    left: offsetX + vertex.x * drawWidth + 10,
+                    top: offsetY + vertex.y * drawHeight - 10,
+                    borderColor: status === 'error' ? '#ef4444' : status === 'warning' ? '#a855f7' : '#facc15'
+                  }
+                ]}
+              >
+                <Text style={styles.metricText}>
+                  {rule.name}: {angleVal.toFixed(1)}{rule.unit}
+                </Text>
+              </View>
+            );
+          })}
+        </View>
+      )}
     </View>
   );
 });
@@ -234,5 +256,18 @@ const styles = StyleSheet.create({
     top: 0,
     bottom: 0,
     zIndex: 10,
+  },
+  metricLabel: {
+    position: 'absolute',
+    backgroundColor: 'rgba(0, 0, 0, 0.8)',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 6,
+    borderWidth: 1,
+  },
+  metricText: {
+    color: '#fff',
+    fontSize: 10,
+    fontWeight: 'bold',
   },
 });
