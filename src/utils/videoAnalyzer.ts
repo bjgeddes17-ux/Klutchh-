@@ -1,6 +1,7 @@
 import { SportRule, SkillLevel, AthleteCategory, FrameAnalysis, AICoachingReport, AnalysisResult, CorrectiveDrill, MediaPipeLandmark } from '../types';
 import { detectPoseForVideoFrame, resetPoseCache } from './mediapipePose';
-import { calculateSymmetry, calculateKneeValgusScore, calculateAngle, drawPoseSkeleton } from './geometry';
+import { calculateSymmetry, calculateKneeValgusScore, calculateAngle } from '../shared/biomechanics';
+import { drawPoseSkeleton } from './geometry';
 import { calculateBiometricScore, matchBiomechanicalArchetype } from './rulesEngine';
 import { extractFramesPipelined, getFrame } from './frameExtractor';
 import { getBiomechanicalSequence, calculateKlutchhScore } from './klutchhAnalysis';

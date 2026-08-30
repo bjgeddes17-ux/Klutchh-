@@ -3,6 +3,7 @@ import { View, StyleSheet, LayoutChangeEvent, Text } from 'react-native';
 import { Video, ResizeMode } from 'expo-av';
 import { Canvas, Line, Circle, vec } from '@shopify/react-native-skia';
 import { SportRule, FrameAnalysis } from '../../types';
+import { mapLandmarkToPixels } from '../../shared/geometry';
 
 interface KineticVideoPlayerProps {
   videoUrl: string;
@@ -34,7 +35,7 @@ const POSE_CONNECTIONS: [number, number][] = [
   [24, 26], [26, 28], [28, 30], [30, 32],
 ];
 
-export const KineticVideoPlayer = forwardRef<KineticVideoPlayerRef, KineticVideoPlayerProps>(({
+export const KineticVideoPlayer = React.memo(forwardRef<KineticVideoPlayerRef, KineticVideoPlayerProps>(({
   videoUrl,
   sportRule,
   sortedFrames,
@@ -140,53 +141,62 @@ export const KineticVideoPlayer = forwardRef<KineticVideoPlayerRef, KineticVideo
 
       {/* Hardware-Accelerated Native Skia Skeleton */}
       <Canvas style={styles.canvas}>
-        {currentFrame?.landmarks && (
+        {isDataReady && currentFrame?.landmarks && (
           <>
-            {/* Skeletal Bones */}
+            {/* Enhanced Skeletal Bones */}
             {POSE_CONNECTIONS.map(([i1, i2], connIdx) => {
               const p1 = currentFrame.landmarks[i1];
               const p2 = currentFrame.landmarks[i2];
               if (!p1 || !p2 || (p1.visibility && p1.visibility < 0.4) || (p2.visibility && p2.visibility < 0.4)) {
                 return null;
               }
+              const point1Pixels = mapLandmarkToPixels(p1, drawWidth, drawHeight, offsetX, offsetY);
+              const point2Pixels = mapLandmarkToPixels(p2, drawWidth, drawHeight, offsetX, offsetY);
+              const point1 = vec(point1Pixels.x, point1Pixels.y);
+              const point2 = vec(point2Pixels.x, point2Pixels.y);
               return (
                 <React.Fragment key={`bone-${connIdx}`}>
+                  {/* Outer Glow */}
                   <Line
-                    p1={vec(offsetX + p1.x * drawWidth, offsetY + p1.y * drawHeight)}
-                    p2={vec(offsetX + p2.x * drawWidth, offsetY + p2.y * drawHeight)}
+                    p1={point1}
+                    p2={point2}
                     color="#facc15"
-                    strokeWidth={5}
-                    opacity={0.2}
+                    strokeWidth={8}
+                    opacity={0.15}
                   />
+                  {/* Inner Core */}
                   <Line
-                    p1={vec(offsetX + p1.x * drawWidth, offsetY + p1.y * drawHeight)}
-                    p2={vec(offsetX + p2.x * drawWidth, offsetY + p2.y * drawHeight)}
-                    color="#facc15"
-                    strokeWidth={1.5}
-                    opacity={0.9}
+                    p1={point1}
+                    p2={point2}
+                    color="#ffffff"
+                    strokeWidth={2}
+                    opacity={1}
                   />
                 </React.Fragment>
               );
             })}
 
-            {/* Joints */}
+            {/* Enhanced Joints */}
             {currentFrame.landmarks.map((lm, i) => {
               if (lm.visibility && lm.visibility < 0.4) return null;
               const isHighlight = i === 11 || i === 12 || i === 23 || i === 24 || i === 25 || i === 26;
+              const jointPixels = mapLandmarkToPixels(lm, drawWidth, drawHeight, offsetX, offsetY);
+              const cx = jointPixels.x;
+              const cy = jointPixels.y;
               return (
                 <React.Fragment key={`joint-group-${i}`}>
                   <Circle
-                    cx={offsetX + lm.x * drawWidth}
-                    cy={offsetY + lm.y * drawHeight}
-                    r={isHighlight ? 7 : 5}
+                    cx={cx}
+                    cy={cy}
+                    r={isHighlight ? 9 : 6}
                     color="#facc15"
-                    opacity={0.15}
+                    opacity={0.25}
                   />
                   <Circle
-                    cx={offsetX + lm.x * drawWidth}
-                    cy={offsetY + lm.y * drawHeight}
-                    r={isHighlight ? 3.5 : 2}
-                    color={isHighlight ? "#facc15" : "#ffffff"}
+                    cx={cx}
+                    cy={cy}
+                    r={isHighlight ? 4 : 2.5}
+                    color="#ffffff"
                     opacity={1}
                   />
                 </React.Fragment>
@@ -209,6 +219,7 @@ export const KineticVideoPlayer = forwardRef<KineticVideoPlayerRef, KineticVideo
             
             const angleVal = currentFrame.angles[rule.id] ?? 0;
             const status = currentFrame.ruleResults[rule.id] || 'optimal';
+            const vertexPixels = mapLandmarkToPixels(vertex, drawWidth, drawHeight, offsetX, offsetY);
             
             return (
               <View 
@@ -216,8 +227,8 @@ export const KineticVideoPlayer = forwardRef<KineticVideoPlayerRef, KineticVideo
                 style={[
                   styles.metricLabel,
                   {
-                    left: offsetX + vertex.x * drawWidth + 10,
-                    top: offsetY + vertex.y * drawHeight - 10,
+                    left: vertexPixels.x + 10,
+                    top: vertexPixels.y - 10,
                     borderColor: status === 'error' ? '#ef4444' : status === 'warning' ? '#a855f7' : '#facc15'
                   }
                 ]}
@@ -232,7 +243,7 @@ export const KineticVideoPlayer = forwardRef<KineticVideoPlayerRef, KineticVideo
       )}
     </View>
   );
-});
+}););
 
 const styles = StyleSheet.create({
   container: {

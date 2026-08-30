@@ -133,6 +133,14 @@ export const AnalysisReportPage: React.FC<AnalysisReportPageProps> = ({
           >
             {isPlaying ? <Pause color="#fff" size={20} /> : <Play color="#fff" size={20} fill="#fff" />}
           </TouchableOpacity>
+          <TouchableOpacity 
+            style={styles.fullscreenButtonOverlay}
+            onPress={() => {
+              // Implementation for full screen toggle
+            }}
+          >
+             <Text style={{color: 'white', fontSize: 10}}>FULL</Text>
+          </TouchableOpacity>
         </View>
 
         {/* Manual HUD Scrubber */}
@@ -157,24 +165,24 @@ export const AnalysisReportPage: React.FC<AnalysisReportPageProps> = ({
           </View>
         </View>
 
-        {/* Keyframe Timeline Scrubber */}
+        {/* Bento-Grid Diagnostic Keyframe Timeline */}
         {keyframeList.length > 0 && (
           <View style={styles.keyframeSection}>
-            <Text style={styles.sectionTitle}>SYNCHRONIZED KEYFRAMES</Text>
+            <Text style={styles.sectionTitle}>BENTO DIAGNOSTICS</Text>
             <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.keyframeRow}>
               {keyframeList.map((kf, idx) => {
                 const isCurrent = Math.abs(kf.timestamp - currentTime) < 0.2;
                 return (
                   <TouchableOpacity
                     key={idx}
-                    style={[styles.keyframeCard, isCurrent && styles.keyframeCardActive]}
+                    style={[styles.bentoCard, isCurrent && styles.bentoCardActive]}
                     onPress={() => handleSeek(kf.timestamp)}
                   >
-      <Text style={styles.keyframePhase}>
-        {kf.detectedPhase || `PHASE ${idx + 1}`}
-      </Text>
-                    <Text style={styles.keyframeTime}>{kf.timestamp.toFixed(2)}s</Text>
-                    {isCurrent && <View style={styles.activeDot} />}
+                    <View style={styles.bentoHeader}>
+                      <Activity color={isCurrent ? '#000' : '#facc15'} size={16} />
+                      <Text style={[styles.bentoPhase, isCurrent && styles.bentoTextActive]}>{kf.detectedPhase || `PHASE ${idx + 1}`}</Text>
+                    </View>
+                    <Text style={[styles.bentoTime, isCurrent && styles.bentoTextActive]}>{kf.timestamp.toFixed(2)}s</Text>
                   </TouchableOpacity>
                 );
               })}
@@ -398,6 +406,16 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: 'rgba(250, 204, 21, 0.3)',
   },
+  fullscreenButtonOverlay: {
+    position: 'absolute',
+    bottom: 14,
+    left: 14,
+    backgroundColor: 'rgba(0,0,0,0.65)',
+    padding: 12,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: 'rgba(250, 204, 21, 0.3)',
+  },
   timestampBadge: {
     backgroundColor: 'rgba(0,0,0,0.7)',
     paddingHorizontal: 10,
@@ -441,34 +459,39 @@ const styles = StyleSheet.create({
     gap: 8,
     paddingVertical: 4,
   },
-  keyframeCard: {
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    backgroundColor: '#141417',
-    borderRadius: 12,
+  bentoCard: {
+    width: 90,
+    height: 70,
+    backgroundColor: '#0c0c0e',
+    borderRadius: 16,
+    padding: 10,
     borderWidth: 1,
     borderColor: '#27272a',
-    alignItems: 'center',
-    gap: 2,
+    justifyContent: 'center',
+    gap: 4,
   },
-  keyframeCardActive: {
-    borderColor: '#facc15',
+  bentoCardActive: {
     backgroundColor: '#1c1c1a',
+    borderColor: '#facc15',
   },
-  keyframePhase: {
-    color: '#71717a',
-    fontSize: 9,
-    fontWeight: '900',
-    fontStyle: 'italic',
-    letterSpacing: 1,
+  bentoHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
   },
-  keyframePhaseActive: {
-    color: '#facc15',
-  },
-  keyframeTime: {
+  bentoPhase: {
     color: '#71717a',
     fontSize: 8,
-    fontWeight: '700',
+    fontWeight: '900',
+    letterSpacing: 0.5,
+  },
+  bentoTextActive: {
+    color: '#facc15',
+  },
+  bentoTime: {
+    color: '#ffffff',
+    fontSize: 10,
+    fontWeight: '800',
   },
   activeDot: {
     width: 6,
