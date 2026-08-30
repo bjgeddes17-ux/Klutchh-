@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useRef } from 'react';
 import { 
   View, 
   Text, 
@@ -6,9 +6,12 @@ import {
   TouchableOpacity, 
   SafeAreaView, 
   StyleSheet, 
-  StatusBar 
+  StatusBar,
+  Dimensions
 } from 'react-native';
-import { KineticVideoPlayer } from './Report/KineticVideoPlayer';
+import Slider from '@react-native-community/slider';
+import * as Haptics from 'expo-haptics';
+import { KineticVideoPlayer } from './Report/KineticVideoPlayer.native';
 import { ArrowLeft, Download, AlertCircle, Play, Pause, Activity, Flame, ShieldAlert, Award, Zap } from 'lucide-react-native';
 import { SportRule, FrameAnalysis, AICoachingReport } from '../types';
 
@@ -34,6 +37,7 @@ export const AnalysisReportPage: React.FC<AnalysisReportPageProps> = ({
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
   const [activeTab, setActiveTab] = useState<'video' | 'faults' | 'metrics'>('video');
+  const videoRef = useRef<any>(null);
 
   const sortedFrames = useMemo(() => {
     return [...allFrames].sort((a, b) => a.timestamp - b.timestamp);
@@ -41,6 +45,14 @@ export const AnalysisReportPage: React.FC<AnalysisReportPageProps> = ({
 
   const handleSeek = (timestamp: number) => {
     setCurrentTime(timestamp);
+    if (videoRef.current) {
+      videoRef.current.seek(timestamp);
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    }
+  };
+
+  const onSlidingComplete = (value: number) => {
+    handleSeek(value);
   };
 
   return (
@@ -67,24 +79,24 @@ export const AnalysisReportPage: React.FC<AnalysisReportPageProps> = ({
           style={[styles.subTab, activeTab === 'video' && styles.subTabActive]} 
           onPress={() => setActiveTab('video')}
         >
-          <Activity color={activeTab === 'video' ? '#ef4444' : '#71717a'} size={14} />
-          <Text style={[styles.subTabText, activeTab === 'video' && styles.subTabTextActive]}>VIDEO & SKELETON</Text>
+          <Activity color={activeTab === 'video' ? '#facc15' : '#71717a'} size={14} />
+          <Text style={[styles.subTabText, activeTab === 'video' && styles.subTabTextActive]}>VIDEO HUD</Text>
         </TouchableOpacity>
 
         <TouchableOpacity 
           style={[styles.subTab, activeTab === 'faults' && styles.subTabActive]} 
           onPress={() => setActiveTab('faults')}
         >
-          <ShieldAlert color={activeTab === 'faults' ? '#ef4444' : '#71717a'} size={14} />
-          <Text style={[styles.subTabText, activeTab === 'faults' && styles.subTabTextActive]}>FAULTS & GHOST</Text>
+          <ShieldAlert color={activeTab === 'faults' ? '#facc15' : '#71717a'} size={14} />
+          <Text style={[styles.subTabText, activeTab === 'faults' && styles.subTabTextActive]}>DIAGNOSTICS</Text>
         </TouchableOpacity>
 
         <TouchableOpacity 
           style={[styles.subTab, activeTab === 'metrics' && styles.subTabActive]} 
           onPress={() => setActiveTab('metrics')}
         >
-          <Zap color={activeTab === 'metrics' ? '#ef4444' : '#71717a'} size={14} />
-          <Text style={[styles.subTabText, activeTab === 'metrics' && styles.subTabTextActive]}>METRICS</Text>
+          <Zap color={activeTab === 'metrics' ? '#facc15' : '#71717a'} size={14} />
+          <Text style={[styles.subTabText, activeTab === 'metrics' && styles.subTabTextActive]}>TELEMETRY</Text>
         </TouchableOpacity>
       </View>
 
@@ -93,6 +105,7 @@ export const AnalysisReportPage: React.FC<AnalysisReportPageProps> = ({
         {/* Video & Skeleton Stage */}
         <View style={styles.videoStage}>
           <KineticVideoPlayer
+            ref={videoRef}
             videoUrl={videoUrl || ''}
             sportRule={sportRule}
             sortedFrames={sortedFrames}
@@ -104,15 +117,43 @@ export const AnalysisReportPage: React.FC<AnalysisReportPageProps> = ({
           />
           
           {/* Controls Overlay */}
+          <View style={styles.videoHudTop}>
+            <View style={styles.timestampBadge}>
+              <Text style={styles.timestampText}>{currentTime.toFixed(2)}s / {duration.toFixed(2)}s</Text>
+            </View>
+            <View style={styles.liveTag}>
+              <View style={styles.liveDot} />
+              <Text style={styles.liveText}>BIO-FEEDBACK</Text>
+            </View>
+          </View>
+
           <TouchableOpacity 
             onPress={() => setIsPlaying(!isPlaying)}
             style={styles.playButtonOverlay}
           >
-            {isPlaying ? <Pause color="#fff" size={24} /> : <Play color="#fff" size={24} />}
+            {isPlaying ? <Pause color="#fff" size={20} /> : <Play color="#fff" size={20} fill="#fff" />}
           </TouchableOpacity>
+        </View>
 
-          <View style={styles.timestampBadge}>
-            <Text style={styles.timestampText}>{currentTime.toFixed(2)}s</Text>
+        {/* Manual HUD Scrubber */}
+        <View style={styles.scrubberContainer}>
+          <Slider
+            style={styles.slider}
+            minimumValue={0}
+            maximumValue={duration || 1}
+            value={currentTime}
+            onSlidingComplete={onSlidingComplete}
+            onValueChange={(val) => {
+              setCurrentTime(val);
+              // Real-time skeleton sync while dragging
+            }}
+            minimumTrackTintColor="#facc15"
+            maximumTrackTintColor="#27272a"
+            thumbTintColor="#facc15"
+          />
+          <View style={styles.scrubberLabels}>
+            <Text style={styles.scrubberTime}>0.00</Text>
+            <Text style={styles.scrubberTime}>{duration.toFixed(2)}s</Text>
           </View>
         </View>
 
@@ -129,9 +170,9 @@ export const AnalysisReportPage: React.FC<AnalysisReportPageProps> = ({
                     style={[styles.keyframeCard, isCurrent && styles.keyframeCardActive]}
                     onPress={() => handleSeek(kf.timestamp)}
                   >
-                    <Text style={[styles.keyframePhase, isCurrent && styles.keyframePhaseActive]}>
-                      {kf.detectedPhase || `Phase ${idx + 1}`}
-                    </Text>
+      <Text style={styles.keyframePhase}>
+        {kf.detectedPhase || `PHASE ${idx + 1}`}
+      </Text>
                     <Text style={styles.keyframeTime}>{kf.timestamp.toFixed(2)}s</Text>
                     {isCurrent && <View style={styles.activeDot} />}
                   </TouchableOpacity>
@@ -144,24 +185,24 @@ export const AnalysisReportPage: React.FC<AnalysisReportPageProps> = ({
         {/* Hero Score Section */}
         <View style={styles.scoreCard}>
           <View>
-            <Text style={styles.scoreLabel}>OVERALL KLUTCHH GRADE</Text>
-            <Text style={styles.scoreValue}>{aiReport?.overallGrade || 'A-'}</Text>
-            <Text style={styles.scoreSubtext}>{aiReport?.summaryTitle || 'Biomechanical Precision'}</Text>
+            <Text style={styles.scoreLabel}>PERFORMANCE RATING</Text>
+            <Text style={styles.scoreValue}>{aiReport?.overallGrade || 'A'}</Text>
+            <Text style={styles.scoreSubtext}>{aiReport?.summaryTitle || 'BIOMECHANICAL PRECISION'}</Text>
           </View>
           <View style={styles.scoreCircle}>
-             <Award color="#ef4444" size={28} />
+             <Award color="#facc15" size={28} />
           </View>
         </View>
 
         {/* Active Tab: Faults & Insights */}
         {activeTab === 'faults' && (
           <View style={styles.insightSection}>
-            <Text style={styles.sectionTitle}>TOP BIOMECHANICAL CORRECTIONS</Text>
+            <Text style={styles.sectionTitle}>ANOMALY LOGS</Text>
             {sportRule.jointRules.slice(0, 3).map((rule, idx) => (
               <View key={rule.id || idx} style={styles.faultCard}>
                 <View style={styles.faultHeader}>
                   <View style={styles.faultRankBadge}>
-                    <Text style={styles.faultRankText}>#{idx + 1}</Text>
+                    <Text style={styles.faultRankText}>RATING: #{idx + 1}</Text>
                   </View>
                   <Text style={styles.faultTitle}>{rule.name}</Text>
                   <View style={styles.faultDeltaBadge}>
@@ -204,7 +245,7 @@ export const AnalysisReportPage: React.FC<AnalysisReportPageProps> = ({
              <Text style={styles.sectionTitle}>COACHING SYNTHESIS</Text>
              {aiReport?.biomechanicInsights?.map((insight: any, idx: number) => (
                <View key={idx} style={styles.insightCard}>
-                  <View style={styles.insightIcon}><AlertCircle color="#ef4444" size={16} /></View>
+                  <View style={styles.insightIcon}><AlertCircle color="#facc15" size={16} /></View>
                   <Text style={styles.insightText}>{typeof insight === 'string' ? insight : insight?.finding || insight?.title || ''}</Text>
                </View>
              ))}
@@ -248,10 +289,11 @@ const styles = StyleSheet.create({
     letterSpacing: 1,
   },
   headerSubtitle: {
-    color: '#ef4444',
+    color: '#facc15',
     fontSize: 9,
+    fontStyle: 'italic',
     fontWeight: '900',
-    letterSpacing: 1,
+    letterSpacing: 1.5,
   },
   exportButton: {
     padding: 8,
@@ -303,29 +345,62 @@ const styles = StyleSheet.create({
   videoStage: {
     width: '100%',
     aspectRatio: 16 / 9,
-    backgroundColor: '#111',
-    borderRadius: 20,
+    backgroundColor: '#000',
+    borderRadius: 24,
     overflow: 'hidden',
     position: 'relative',
     borderWidth: 1,
-    borderColor: '#27272a',
+    borderColor: '#1f1f23',
+    shadowColor: '#facc15',
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.1,
+    shadowRadius: 10,
+  },
+  videoHudTop: {
+    position: 'absolute',
+    top: 14,
+    left: 14,
+    right: 14,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  liveTag: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(0,0,0,0.6)',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 6,
+    gap: 6,
+    borderWidth: 1,
+    borderColor: 'rgba(250, 204, 21, 0.2)',
+  },
+  liveDot: {
+    width: 4,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: '#facc15',
+  },
+  liveText: {
+    color: '#facc15',
+    fontSize: 8,
+    fontWeight: '900',
+    letterSpacing: 1,
   },
   playButtonOverlay: {
     position: 'absolute',
     bottom: 14,
     right: 14,
     backgroundColor: 'rgba(0,0,0,0.65)',
-    padding: 10,
-    borderRadius: 30,
+    padding: 12,
+    borderRadius: 40,
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.15)',
+    borderColor: 'rgba(250, 204, 21, 0.3)',
   },
   timestampBadge: {
-    position: 'absolute',
-    top: 14,
-    left: 14,
     backgroundColor: 'rgba(0,0,0,0.7)',
-    paddingHorizontal: 8,
+    paddingHorizontal: 10,
     paddingVertical: 4,
     borderRadius: 8,
     borderWidth: 1,
@@ -334,7 +409,30 @@ const styles = StyleSheet.create({
   timestampText: {
     color: '#ffffff',
     fontSize: 10,
-    fontWeight: '800',
+    fontWeight: '900',
+    fontStyle: 'italic',
+  },
+  scrubberContainer: {
+    backgroundColor: '#0c0c0e',
+    borderRadius: 20,
+    padding: 12,
+    borderWidth: 1,
+    borderColor: '#1f1f23',
+  },
+  slider: {
+    width: '100%',
+    height: 30,
+  },
+  scrubberLabels: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    paddingHorizontal: 4,
+  },
+  scrubberTime: {
+    color: '#52525b',
+    fontSize: 9,
+    fontWeight: '700',
+    fontStyle: 'italic',
   },
   keyframeSection: {
     gap: 8,
@@ -354,16 +452,18 @@ const styles = StyleSheet.create({
     gap: 2,
   },
   keyframeCardActive: {
-    borderColor: '#ef4444',
-    backgroundColor: '#1f1a1a',
+    borderColor: '#facc15',
+    backgroundColor: '#1c1c1a',
   },
   keyframePhase: {
-    color: '#a1a1aa',
+    color: '#71717a',
     fontSize: 9,
-    fontWeight: '800',
+    fontWeight: '900',
+    fontStyle: 'italic',
+    letterSpacing: 1,
   },
   keyframePhaseActive: {
-    color: '#ef4444',
+    color: '#facc15',
   },
   keyframeTime: {
     color: '#71717a',
@@ -371,46 +471,52 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
   activeDot: {
-    width: 4,
-    height: 4,
-    borderRadius: 2,
-    backgroundColor: '#ef4444',
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: '#facc15',
     marginTop: 2,
   },
   scoreCard: {
-    backgroundColor: '#141417',
-    borderRadius: 20,
-    padding: 18,
+    backgroundColor: '#0c0c0e',
+    borderRadius: 24,
+    padding: 24,
     flexDirection: 'row',
-    justifyContent: 'space-between',
     alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 20,
     borderWidth: 1,
-    borderColor: '#27272a',
+    borderColor: 'rgba(250, 204, 21, 0.1)',
   },
   scoreLabel: {
     color: '#71717a',
-    fontSize: 9,
+    fontSize: 10,
     fontWeight: '900',
-    letterSpacing: 1,
+    letterSpacing: 1.5,
+    fontStyle: 'italic',
   },
   scoreValue: {
-    color: '#ef4444',
-    fontSize: 32,
+    color: '#facc15',
+    fontSize: 42,
     fontWeight: '900',
+    fontStyle: 'italic',
     letterSpacing: 1,
+    marginVertical: 4,
   },
   scoreSubtext: {
     color: '#a1a1aa',
-    fontSize: 11,
-    fontWeight: '700',
+    fontSize: 10,
+    fontWeight: '800',
+    letterSpacing: 1,
+    textTransform: 'uppercase',
   },
   scoreCircle: {
     width: 54,
     height: 54,
     borderRadius: 27,
-    backgroundColor: 'rgba(239, 68, 68, 0.12)',
+    backgroundColor: 'rgba(250, 204, 21, 0.1)',
     borderWidth: 1,
-    borderColor: 'rgba(239, 68, 68, 0.3)',
+    borderColor: 'rgba(250, 204, 21, 0.3)',
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -424,18 +530,20 @@ const styles = StyleSheet.create({
     letterSpacing: 1.5,
   },
   insightCard: {
-    backgroundColor: '#141417',
-    padding: 14,
-    borderRadius: 14,
+    backgroundColor: '#0c0c0e',
+    padding: 16,
+    borderRadius: 16,
     flexDirection: 'row',
     gap: 12,
     alignItems: 'center',
     borderWidth: 1,
-    borderColor: '#27272a',
+    borderColor: '#1f1f23',
+    borderLeftWidth: 3,
+    borderLeftColor: '#facc15',
   },
   insightIcon: {
     padding: 6,
-    backgroundColor: 'rgba(239, 68, 68, 0.1)',
+    backgroundColor: 'rgba(250, 204, 21, 0.05)',
     borderRadius: 8,
   },
   insightText: {
@@ -445,12 +553,12 @@ const styles = StyleSheet.create({
     lineHeight: 16,
   },
   faultCard: {
-    backgroundColor: '#141417',
-    padding: 14,
-    borderRadius: 16,
+    backgroundColor: '#0c0c0e',
+    padding: 16,
+    borderRadius: 20,
     borderWidth: 1,
-    borderColor: '#27272a',
-    gap: 8,
+    borderColor: '#1f1f23',
+    gap: 10,
   },
   faultHeader: {
     flexDirection: 'row',
@@ -460,13 +568,14 @@ const styles = StyleSheet.create({
   faultRankBadge: {
     paddingHorizontal: 6,
     paddingVertical: 2,
-    backgroundColor: '#ef4444',
-    borderRadius: 6,
+    backgroundColor: '#facc15',
+    borderRadius: 4,
   },
   faultRankText: {
-    color: '#ffffff',
+    color: '#000',
     fontSize: 9,
     fontWeight: '900',
+    fontStyle: 'italic',
   },
   faultTitle: {
     color: '#ffffff',
@@ -526,7 +635,7 @@ const styles = StyleSheet.create({
     gap: 2,
   },
   metricRange: {
-    color: '#ef4444',
+    color: '#facc15',
     fontSize: 11,
     fontWeight: '800',
   },

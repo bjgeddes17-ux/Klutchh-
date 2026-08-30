@@ -159,11 +159,8 @@ export function drawPoseSkeleton(
 
   if (!landmarks || landmarks.length === 0) return;
 
-  // HIGH-TECH BIOMECHANICAL VOLUMETRIC ATHLETE SILHOUETTE UNDERLAY
-  const sportId = (sportRule?.id as string) || 'rugby';
-  const activeThemeColor = sportId === 'rugby' ? 'rgba(239, 68, 68, 0.3)' 
-                        : sportId === 'swim' ? 'rgba(56, 189, 248, 0.3)' 
-                        : 'rgba(245, 158, 11, 0.3)'; // fallback to gold
+  // 1. Draw stylized torso polygon frame (11=L Shoulder, 12=R Shoulder, 24=R Hip, 23=L Hip)
+  const activeThemeColor = 'rgba(250, 204, 21, 0.3)'; // High-tech electric yellow
 
   ctx.save();
   ctx.lineJoin = 'round';
@@ -214,8 +211,17 @@ export function drawPoseSkeleton(
       ctx.moveTo(pt1.x * width, pt1.y * height);
       ctx.lineTo(pt2.x * width, pt2.y * height);
       ctx.strokeStyle = '#ffffff';
-      ctx.globalAlpha = 0.04;
-      ctx.lineWidth = 3;
+      ctx.globalAlpha = 0.05;
+      ctx.lineWidth = 4;
+      ctx.stroke();
+
+      // Sharp HUD Core
+      ctx.beginPath();
+      ctx.moveTo(pt1.x * width, pt1.y * height);
+      ctx.lineTo(pt2.x * width, pt2.y * height);
+      ctx.strokeStyle = '#facc15';
+      ctx.globalAlpha = 0.8;
+      ctx.lineWidth = 1.5;
       ctx.stroke();
       ctx.globalAlpha = 1.0;
     }

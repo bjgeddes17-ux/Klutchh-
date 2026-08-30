@@ -11,6 +11,7 @@ import {
   ActivityIndicator,
   Dimensions,
   Alert,
+  Image,
 } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
 import {
@@ -344,10 +345,11 @@ export default function App() {
       <View style={styles.appBar}>
         <View style={styles.brandRow}>
           <View style={styles.logoContainer}>
-            <View style={styles.logoBadge}>
-              <TrendingUp color="#ef4444" size={16} />
-              <ChevronsUp color="#f59e0b" size={16} style={{ marginLeft: -6 }} />
-            </View>
+            <Image 
+              source={require('../assets/icon.png')} 
+              style={styles.logoImage}
+              resizeMode="contain"
+            />
           </View>
           <View>
             <View style={styles.brandTitleRow}>
@@ -374,7 +376,7 @@ export default function App() {
           style={[styles.tabButton, activeTab === 'analyze' && styles.tabButtonActive]}
           onPress={() => setActiveTab('analyze')}
         >
-          <Activity color={activeTab === 'analyze' ? '#ef4444' : '#71717a'} size={15} />
+          <Activity color={activeTab === 'analyze' ? '#facc15' : '#71717a'} size={15} />
           <Text style={[styles.tabText, activeTab === 'analyze' && styles.tabTextActive]}>ANALYZE</Text>
         </TouchableOpacity>
 
@@ -392,7 +394,7 @@ export default function App() {
           style={[styles.tabButton, activeTab === 'saved' && styles.tabButtonActive]}
           onPress={() => setActiveTab('saved')}
         >
-          <Bookmark color={activeTab === 'saved' ? '#ef4444' : '#71717a'} size={15} />
+          <Bookmark color={activeTab === 'saved' ? '#facc15' : '#71717a'} size={15} />
           <Text style={[styles.tabText, activeTab === 'saved' && styles.tabTextActive]}>
             SAVED ({savedReports.length})
           </Text>
@@ -437,7 +439,7 @@ export default function App() {
                     >
                       <View style={styles.sportTileTop}>
                         <Text style={styles.sportEmoji}>{sport.icon}</Text>
-                        {isSelected && <CheckCircle2 color="#ef4444" size={16} />}
+                        {isSelected && <CheckCircle2 color="#facc15" size={16} />}
                       </View>
                       <Text style={[styles.sportTileName, isSelected && styles.sportTileNameActive]}>
                         {sport.name.toUpperCase()}
@@ -547,13 +549,26 @@ export default function App() {
 
               {isProcessing ? (
                 <View style={styles.processingContainer}>
-                  <ActivityIndicator size="large" color="#ef4444" />
-                  <Text style={styles.processingTitle}>ANALYZING JOINT TELEMETRY ({processingProgress}%)</Text>
-                  <View style={styles.progressBarTrack}>
-                    <View style={[styles.progressBarFill, { width: `${processingProgress}%` }]} />
+                  <View style={styles.processingHeader}>
+                    <ActivityIndicator size="small" color="#facc15" />
+                    <Text style={styles.processingTitle}>NEURAL BIOMECHANIC SCANNING</Text>
                   </View>
-                  <Text style={styles.processingStepText}>{processingStep}</Text>
-                  <Text style={styles.processingCautionText}>⚡ Processing on native hardware acceleration...</Text>
+                  
+                  <View style={styles.scanningVisual}>
+                    <View style={styles.progressBarTrack}>
+                      <View style={[styles.progressBarFill, { width: `${processingProgress}%` }]} />
+                    </View>
+                    <View style={styles.scanningGlow} />
+                  </View>
+
+                  <View style={styles.telemetryLog}>
+                    <Text style={styles.telemetryText}>[SYSTEM] INITIALIZING CV ENGINE...</Text>
+                    <Text style={styles.telemetryText}>[SENSOR] TRACKING 32 JOINT ANCHORS</Text>
+                    <Text style={styles.telemetryText}>[MODEL] RUNNING ANOMALY DETECTION...</Text>
+                    <Text style={styles.telemetryStatus}>{processingStep.toUpperCase()} - {processingProgress}%</Text>
+                  </View>
+
+                  <Text style={styles.processingCautionText}>⚡ EDGE AI HARDWARE ACCELERATION ACTIVE</Text>
                 </View>
               ) : (
                 <View style={styles.uploadDropzone}>
@@ -583,7 +598,7 @@ export default function App() {
                       style={styles.sampleActionBtn}
                       onPress={() => handleStartAnalysis('Sample_Pro_Athletic_Clip.mp4')}
                     >
-                      <Play color="#ef4444" size={16} />
+                      <Play color="#facc15" size={16} />
                       <Text style={styles.sampleActionText}>PRO SAMPLE</Text>
                     </TouchableOpacity>
                   </View>
@@ -715,17 +730,12 @@ const styles = StyleSheet.create({
     gap: 10,
   },
   logoContainer: {
-    position: 'relative',
+    marginRight: 4,
   },
-  logoBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#18181b',
-    paddingHorizontal: 8,
-    paddingVertical: 6,
-    borderRadius: 10,
-    borderWidth: 1,
-    borderColor: '#27272a',
+  logoImage: {
+    width: 44,
+    height: 44,
+    borderRadius: 12,
   },
   brandTitleRow: {
     flexDirection: 'row',
@@ -740,15 +750,15 @@ const styles = StyleSheet.create({
     fontStyle: 'italic',
   },
   techPill: {
-    backgroundColor: 'rgba(239, 68, 68, 0.15)',
+    backgroundColor: 'rgba(250, 204, 21, 0.15)',
     borderWidth: 1,
-    borderColor: 'rgba(239, 68, 68, 0.4)',
+    borderColor: 'rgba(250, 204, 21, 0.4)',
     paddingHorizontal: 6,
     paddingVertical: 2,
     borderRadius: 6,
   },
   techPillText: {
-    color: '#ef4444',
+    color: '#facc15',
     fontSize: 8,
     fontWeight: '900',
     letterSpacing: 0.5,
@@ -801,7 +811,7 @@ const styles = StyleSheet.create({
     borderBottomColor: 'transparent',
   },
   tabButtonActive: {
-    borderBottomColor: '#ef4444',
+    borderBottomColor: '#facc15',
   },
   tabText: {
     color: '#71717a',
@@ -841,9 +851,9 @@ const styles = StyleSheet.create({
   },
   heroBadge: {
     alignSelf: 'flex-start',
-    backgroundColor: 'rgba(239, 68, 68, 0.2)',
+    backgroundColor: 'rgba(250, 204, 21, 0.2)',
     borderLeftWidth: 3,
-    borderLeftColor: '#ef4444',
+    borderLeftColor: '#facc15',
     paddingHorizontal: 10,
     paddingVertical: 4,
     borderRadius: 4,
@@ -909,12 +919,12 @@ const styles = StyleSheet.create({
     width: 22,
     height: 22,
     borderRadius: 6,
-    backgroundColor: '#ef4444',
+    backgroundColor: '#facc15',
     alignItems: 'center',
     justifyContent: 'center',
   },
   stepNumberText: {
-    color: '#ffffff',
+    color: '#000',
     fontSize: 11,
     fontWeight: '900',
   },
@@ -945,8 +955,8 @@ const styles = StyleSheet.create({
     gap: 4,
   },
   sportTileActive: {
-    backgroundColor: 'rgba(239, 68, 68, 0.15)',
-    borderColor: '#ef4444',
+    backgroundColor: 'rgba(250, 204, 21, 0.15)',
+    borderColor: '#facc15',
   },
   sportTileTop: {
     flexDirection: 'row',
@@ -1064,8 +1074,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   chipActive: {
-    backgroundColor: '#ef4444',
-    borderColor: '#ef4444',
+    backgroundColor: '#facc15',
+    borderColor: '#facc15',
   },
   chipText: {
     color: '#a1a1aa',
@@ -1074,7 +1084,7 @@ const styles = StyleSheet.create({
     letterSpacing: 0.5,
   },
   chipTextActive: {
-    color: '#ffffff',
+    color: '#000000',
   },
   uploadDropzone: {
     backgroundColor: '#08080c',
@@ -1112,14 +1122,14 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#ef4444',
+    backgroundColor: '#facc15',
     paddingVertical: 14,
     borderRadius: 12,
     gap: 8,
     marginTop: 4,
   },
   primaryActionText: {
-    color: '#ffffff',
+    color: '#000000',
     fontSize: 11,
     fontWeight: '900',
     letterSpacing: 0.8,
@@ -1154,27 +1164,74 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     backgroundColor: '#14141c',
     borderWidth: 1,
-    borderColor: 'rgba(239, 68, 68, 0.4)',
+    borderColor: 'rgba(250, 204, 21, 0.4)',
     paddingVertical: 11,
     borderRadius: 10,
     gap: 6,
   },
   sampleActionText: {
-    color: '#ef4444',
+    color: '#facc15',
     fontSize: 9,
     fontWeight: '800',
     letterSpacing: 0.5,
   },
   processingContainer: {
+    backgroundColor: '#0c0c0e',
+    borderRadius: 20,
+    padding: 24,
+    borderWidth: 1,
+    borderColor: 'rgba(250, 204, 21, 0.2)',
     alignItems: 'center',
-    paddingVertical: 24,
-    gap: 12,
+    gap: 16,
+  },
+  processingHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
   },
   processingTitle: {
-    color: '#ffffff',
-    fontSize: 12,
+    color: '#facc15',
+    fontSize: 10,
     fontWeight: '900',
-    letterSpacing: 0.8,
+    letterSpacing: 1.5,
+    fontStyle: 'italic',
+  },
+  scanningVisual: {
+    width: '100%',
+    position: 'relative',
+  },
+  scanningGlow: {
+    position: 'absolute',
+    top: -10,
+    left: '50%',
+    width: 60,
+    height: 40,
+    backgroundColor: 'rgba(250, 204, 21, 0.1)',
+    borderRadius: 30,
+    transform: [{ translateX: -30 }],
+  },
+  telemetryLog: {
+    width: '100%',
+    backgroundColor: '#000',
+    padding: 12,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: '#1f1f23',
+    gap: 4,
+  },
+  telemetryText: {
+    color: '#71717a',
+    fontSize: 8,
+    fontFamily: 'System',
+    fontWeight: '600',
+    letterSpacing: 0.5,
+  },
+  telemetryStatus: {
+    color: '#facc15',
+    fontSize: 9,
+    fontWeight: '900',
+    marginTop: 4,
+    fontStyle: 'italic',
   },
   progressBarTrack: {
     width: '100%',
@@ -1185,17 +1242,13 @@ const styles = StyleSheet.create({
   },
   progressBarFill: {
     height: '100%',
-    backgroundColor: '#ef4444',
-  },
-  processingStepText: {
-    color: '#f59e0b',
-    fontSize: 10,
-    fontWeight: '700',
-    textAlign: 'center',
+    backgroundColor: '#facc15',
   },
   processingCautionText: {
-    color: '#71717a',
-    fontSize: 9,
+    color: '#52525b',
+    fontSize: 8,
+    fontWeight: '800',
+    letterSpacing: 0.5,
     textAlign: 'center',
   },
   drillsContainer: {
@@ -1215,13 +1268,13 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
   },
   drillBadge: {
-    backgroundColor: 'rgba(239, 68, 68, 0.15)',
+    backgroundColor: 'rgba(250, 204, 21, 0.15)',
     paddingHorizontal: 6,
     paddingVertical: 2,
     borderRadius: 4,
   },
   drillBadgeText: {
-    color: '#ef4444',
+    color: '#facc15',
     fontSize: 8,
     fontWeight: '900',
   },
@@ -1296,15 +1349,15 @@ const styles = StyleSheet.create({
     marginTop: 2,
   },
   savedGradeBadge: {
-    backgroundColor: 'rgba(239, 68, 68, 0.2)',
+    backgroundColor: 'rgba(250, 204, 21, 0.2)',
     borderWidth: 1,
-    borderColor: '#ef4444',
+    borderColor: '#facc15',
     paddingHorizontal: 10,
     paddingVertical: 4,
     borderRadius: 8,
   },
   savedGradeText: {
-    color: '#ef4444',
+    color: '#facc15',
     fontSize: 12,
     fontWeight: '900',
   },
@@ -1369,7 +1422,7 @@ const styles = StyleSheet.create({
     fontWeight: '800',
   },
   modalDoneBtn: {
-    backgroundColor: '#ef4444',
+    backgroundColor: '#facc15',
     paddingVertical: 12,
     borderRadius: 12,
     alignItems: 'center',
@@ -1377,7 +1430,7 @@ const styles = StyleSheet.create({
     marginTop: 8,
   },
   modalDoneBtnText: {
-    color: '#ffffff',
+    color: '#000',
     fontSize: 11,
     fontWeight: '900',
     letterSpacing: 1,

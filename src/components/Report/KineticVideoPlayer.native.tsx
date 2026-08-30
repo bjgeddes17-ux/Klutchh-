@@ -1,5 +1,5 @@
-import React, { useRef, useState, useMemo } from 'react';
-import { View, StyleSheet, Dimensions, LayoutChangeEvent } from 'react-native';
+import React, { useRef, useState, useMemo, useImperativeHandle, forwardRef } from 'react';
+import { View, StyleSheet, LayoutChangeEvent } from 'react-native';
 import { Video, ResizeMode } from 'expo-av';
 import { Canvas, Line, Circle, vec } from '@shopify/react-native-skia';
 import { SportRule, FrameAnalysis } from '../../types';
@@ -17,6 +17,10 @@ interface KineticVideoPlayerProps {
   viewMode?: 'student' | 'coach';
 }
 
+export interface KineticVideoPlayerRef {
+  seek: (time: number) => void;
+}
+
 const POSE_CONNECTIONS: [number, number][] = [
   // Head / Neck
   [0, 11], [0, 12],
@@ -30,7 +34,7 @@ const POSE_CONNECTIONS: [number, number][] = [
   [24, 26], [26, 28], [28, 30], [30, 32],
 ];
 
-export const KineticVideoPlayer: React.FC<KineticVideoPlayerProps> = ({
+export const KineticVideoPlayer = forwardRef<KineticVideoPlayerRef, KineticVideoPlayerProps>(({
   videoUrl,
   sportRule,
   sortedFrames,
@@ -40,10 +44,18 @@ export const KineticVideoPlayer: React.FC<KineticVideoPlayerProps> = ({
   onDurationChange,
   playbackRate = 1,
   isDataReady,
-}) => {
+}, ref) => {
   const videoRef = useRef<Video>(null);
   const [containerSize, setContainerSize] = useState<{ width: number; height: number }>({ width: 340, height: 220 });
   const [videoNaturalSize, setVideoNaturalSize] = useState<{ width: number; height: number } | null>(null);
+
+  useImperativeHandle(ref, () => ({
+    seek: (time: number) => {
+      if (videoRef.current) {
+        videoRef.current.setPositionAsync(time * 1000);
+      }
+    }
+  }));
 
   const handleLayout = (e: LayoutChangeEvent) => {
     const { width, height } = e.nativeEvent.layout;
@@ -138,13 +150,24 @@ export const KineticVideoPlayer: React.FC<KineticVideoPlayerProps> = ({
                 return null;
               }
               return (
-                <Line
-                  key={`bone-${connIdx}`}
-                  p1={vec(offsetX + p1.x * drawWidth, offsetY + p1.y * drawHeight)}
-                  p2={vec(offsetX + p2.x * drawWidth, offsetY + p2.y * drawHeight)}
-                  color="rgba(239, 68, 68, 0.9)"
-                  strokeWidth={3.5}
-                />
+                <>
+                  <Line
+                    key={`bone-glow-${connIdx}`}
+                    p1={vec(offsetX + p1.x * drawWidth, offsetY + p1.y * drawHeight)}
+                    p2={vec(offsetX + p2.x * drawWidth, offsetY + p2.y * drawHeight)}
+                    color="#facc15"
+                    strokeWidth={5}
+                    opacity={0.2}
+                  />
+                  <Line
+                    key={`bone-${connIdx}`}
+                    p1={vec(offsetX + p1.x * drawWidth, offsetY + p1.y * drawHeight)}
+                    p2={vec(offsetX + p2.x * drawWidth, offsetY + p2.y * drawHeight)}
+                    color="#facc15"
+                    strokeWidth={1.5}
+                    opacity={0.9}
+                  />
+                </>
               );
             })}
 
@@ -153,13 +176,33 @@ export const KineticVideoPlayer: React.FC<KineticVideoPlayerProps> = ({
               if (lm.visibility && lm.visibility < 0.4) return null;
               const isHighlight = i === 11 || i === 12 || i === 23 || i === 24 || i === 25 || i === 26;
               return (
-                <Circle
-                  key={`joint-${i}`}
-                  cx={offsetX + lm.x * drawWidth}
-                  cy={offsetY + lm.y * drawHeight}
-                  r={isHighlight ? 5.5 : 4}
-                  color={isHighlight ? "#ef4444" : "#ffffff"}
-                />
+                <React.Fragment key={`joint-group-${i}`}>
+                  <Circle
+                    cx={offsetX + lm.x * drawWidth}
+                    cy={offsetY + lm.y * drawHeight}
+                    r={isHighlight ? 7 : 5}
+                    color="#facc15"
+                    opacity={0.15}
+                  />
+                  <Circle
+                    cx={offsetX + lm.x * drawWidth}
+                    cy={offsetY + lm.y * drawHeight}
+                    r={isHighlight ? 3.5 : 2}
+                    color={isHighlight ? "#facc15" : "#ffffff"}
+                    opacity={1}
+                  />
+                  {isHighlight && (
+                    <Circle
+                      cx={offsetX + lm.x * drawWidth}
+                      cy={offsetY + lm.y * drawHeight}
+                      r={9}
+                      color="#facc15"
+                      style="stroke"
+                      strokeWidth={0.5}
+                      opacity={0.4}
+                    />
+                  )}
+                </React.Fragment>
               );
             })}
           </>
@@ -167,7 +210,7 @@ export const KineticVideoPlayer: React.FC<KineticVideoPlayerProps> = ({
       </Canvas>
     </View>
   );
-};
+});
 
 const styles = StyleSheet.create({
   container: {

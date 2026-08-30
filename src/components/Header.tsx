@@ -99,7 +99,7 @@ export const Header: React.FC<HeaderProps> = ({
                 onClick={() => onViewChange('workspace')}
                 className={`px-4 py-1.5 rounded-lg text-xs font-black uppercase tracking-wider transition-all ${
                   viewMode === 'workspace' 
-                    ? 'bg-zinc-900 text-red-500 border border-red-500/30' 
+                    ? 'bg-zinc-900 text-yellow-500 border border-yellow-500/30' 
                     : 'text-zinc-500 hover:text-zinc-300'
                 }`}
               >
@@ -109,7 +109,7 @@ export const Header: React.FC<HeaderProps> = ({
                 onClick={() => onViewChange('progress')}
                 className={`px-4 py-1.5 rounded-lg text-xs font-black uppercase tracking-wider transition-all ${
                   viewMode === 'progress' 
-                    ? 'bg-zinc-900 text-red-500 border border-red-500/30' 
+                    ? 'bg-zinc-900 text-yellow-500 border border-yellow-500/30' 
                     : 'text-zinc-500 hover:text-zinc-300'
                 }`}
               >
@@ -125,7 +125,7 @@ export const Header: React.FC<HeaderProps> = ({
                 <select 
                   value={calibratedFps}
                   onChange={(e) => onChangeCalibratedFps?.(Number(e.target.value))}
-                  className="bg-transparent text-[10px] font-black text-red-400 outline-none cursor-pointer"
+                  className="bg-transparent text-[10px] font-black text-yellow-500 outline-none cursor-pointer"
                 >
                   <option value={30}>30</option>
                   <option value={60}>60</option>
@@ -151,7 +151,7 @@ export const Header: React.FC<HeaderProps> = ({
               onClick={onOpenDrillsLibrary}
               className="flex items-center gap-2 px-3 py-1.5 bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 rounded-lg text-[10px] font-black uppercase text-zinc-300 transition-all"
             >
-              <BookOpen className="w-3 h-3 text-red-500" />
+              <BookOpen className="w-3 h-3 text-yellow-500" />
               <span className="hidden sm:inline">Drills</span>
             </button>
 
@@ -165,7 +165,7 @@ export const Header: React.FC<HeaderProps> = ({
                 >
                   <FileText className="w-5 h-5" />
                   {savedReportsCount > 0 && (
-                    <span className="absolute top-0 right-0 w-4 h-4 bg-red-600 text-white text-[10px] font-black rounded-full flex items-center justify-center border-2 border-zinc-950">
+                    <span className="absolute top-0 right-0 w-4 h-4 bg-yellow-500 text-black text-[10px] font-black rounded-full flex items-center justify-center border-2 border-zinc-950">
                       {savedReportsCount}
                     </span>
                   )}
@@ -185,7 +185,7 @@ export const Header: React.FC<HeaderProps> = ({
             ) : (
               <button 
                 onClick={onOpenAuth}
-                className="flex items-center gap-2 px-4 py-1.5 bg-red-600 hover:bg-red-500 text-white text-[10px] font-black uppercase tracking-wider rounded-lg shadow-lg shadow-red-600/20 transition-all active:scale-95"
+                className="flex items-center gap-2 px-4 py-1.5 bg-yellow-500 hover:bg-yellow-400 text-black text-[10px] font-black uppercase tracking-wider rounded-lg shadow-lg shadow-yellow-500/20 transition-all active:scale-95"
               >
                 <LogIn className="w-3.5 h-3.5" />
                 Sign In

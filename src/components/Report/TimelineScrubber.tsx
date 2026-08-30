@@ -39,7 +39,7 @@ export const TimelineScrubber: React.FC<TimelineScrubberProps> = ({
           step={1 / fps}
           value={currentTime}
           onChange={(e) => onSeek(parseFloat(e.target.value))}
-          className="w-full accent-red-600 bg-zinc-800/90 h-2 rounded-lg cursor-pointer shadow-inner"
+          className="w-full accent-yellow-500 bg-zinc-800/90 h-2 rounded-lg cursor-pointer shadow-inner"
         />
       </div>
 
@@ -48,7 +48,7 @@ export const TimelineScrubber: React.FC<TimelineScrubberProps> = ({
         <div className="flex items-center gap-2">
           <button
             onClick={onTogglePlay}
-            className="px-3 py-1.5 bg-red-600 hover:bg-red-500 text-white rounded-xl shadow-lg shadow-red-600/30 transition-all active:scale-95 flex items-center gap-1.5 font-bold text-xs"
+            className="px-3 py-1.5 bg-yellow-500 hover:bg-yellow-400 text-black rounded-xl shadow-lg shadow-yellow-500/20 transition-all active:scale-95 flex items-center gap-1.5 font-black text-xs uppercase italic"
           >
             {isPlaying ? <Pause className="w-4 h-4 fill-current" /> : <Play className="w-4 h-4 fill-current ml-0.5" />}
             <span>{isPlaying ? 'Pause' : 'Play'}</span>
@@ -85,7 +85,7 @@ export const TimelineScrubber: React.FC<TimelineScrubberProps> = ({
                 onClick={() => onPlaybackSpeedChange(speed)}
                 className={`px-2 py-0.5 rounded-md font-mono font-bold transition-all ${
                   playbackSpeed === speed
-                    ? 'bg-red-600 text-white shadow'
+                    ? 'bg-yellow-500 text-black shadow'
                     : 'text-zinc-400 hover:text-white'
                 }`}
               >
