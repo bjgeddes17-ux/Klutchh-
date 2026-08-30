@@ -1,4 +1,4 @@
-import { MediaPipeLandmark } from '../types';
+import { MediaPipeLandmark, SportRule } from '../types';
 import { calculateAngle, POSE_CONNECTIONS } from '../shared/biomechanics';
 
 export { calculateAngle, POSE_CONNECTIONS };

@@ -1,6 +1,7 @@
 import { SportRule, SkillLevel, FrameAnalysis, MediaPipeLandmark } from '../types';
 import { detectPoseForVideoFrame, generateSyntheticSportsPose, resetPoseCache } from './mediapipePose';
-import { calculateAngle, calculateSymmetry, calculateKneeValgusScore } from './geometry';
+import { calculateAngle } from './geometry';
+import { calculateSymmetry, calculateKneeValgusScore } from '../shared/biomechanics';
 import { extractFramesPipelined, ExtractedFrame } from './frameExtractor';
 import { renderSampleSportFrame } from './sportsCanvasClips';
 import { calculateKlutchhScore } from './klutchhAnalysis';
