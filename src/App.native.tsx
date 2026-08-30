@@ -338,7 +338,7 @@ export default function App() {
 
   return (
     <SafeAreaView style={styles.safeArea}>
-      <StatusBar barStyle="light-content" backgroundColor="#050507" />
+      <StatusBar barStyle="light-content" />
 
       {/* Top App Bar (Matching Website Header) */}
       <View style={styles.appBar}>
