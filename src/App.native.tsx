@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   StyleSheet,
   Text,
@@ -37,12 +37,15 @@ import {
   ChevronsUp,
   AlertCircle,
   FolderOpen,
+  FileDown,
 } from 'lucide-react-native';
 import { SPORTS_RULES } from './data/sportsRules';
 import { COMPREHENSIVE_DRILL_LIBRARY, DrillItem } from './data/drillLibrary';
 import { SportRule, SkillLevel, AthleteCategory, AnalysisResult, SportId, FrameAnalysis, AICoachingReport } from './types';
 import { AnalysisReportPage } from './components/AnalysisReportPage.native';
-import { generateSyntheticSportsPose } from './utils/mediapipePose.native';
+import { BiometricBridge } from './lib/native/BiometricBridge';
+import { LocalStore } from './utils/localStorage.native';
+import { generateFallbackAnalysisResult } from './utils/videoAnalyzer';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
@@ -60,8 +63,17 @@ export default function App() {
   const [processingProgress, setProcessingProgress] = useState(0);
   const [processingStep, setProcessingStep] = useState('Initializing Core Pose Estimator...');
   const [analysisResult, setAnalysisResult] = useState<AnalysisResult | null>(null);
-  const [savedReports, setSavedReports] = useState<{ id: string; sportName: string; grade: string; score: number; date: string }[]>([]);
+  const [savedReports, setSavedReports] = useState<Record<string, AnalysisResult>>({});
   const [selectedDrill, setSelectedDrill] = useState<DrillItem | null>(null);
+
+  // Load saved reports from local storage on startup
+  useEffect(() => {
+    const loadSaved = async () => {
+      const reports = await LocalStore.getAllReports();
+      setSavedReports(reports);
+    };
+    loadSaved();
+  }, []);
 
   const currentSportRule: SportRule = SPORTS_RULES.find((s) => s.id === selectedSportId) || SPORTS_RULES[0];
 
@@ -119,197 +131,50 @@ export default function App() {
     }
   };
 
-  // Video analysis pipeline
-  const handleStartAnalysis = (targetVideoUri: string = 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4') => {
+  // Video analysis pipeline - LOCAL STANDALONE ENGINE
+  const handleStartAnalysis = async (targetVideoUri: string) => {
     setIsProcessing(true);
     setProcessingProgress(0);
+    setProcessingStep('Initializing Local Forensic Engine...');
     setVideoUrl(targetVideoUri);
 
-    let prog = 0;
-    const interval = setInterval(() => {
-      prog += 10;
-      if (prog >= 100) {
-        clearInterval(interval);
-        setProcessingProgress(100);
+    try {
+      const result = await BiometricBridge.analyze(
+        targetVideoUri,
+        currentSportRule,
+        skillLevel,
+        athleteCategory,
+        30, // FPS
+        (progress) => {
+          setProcessingProgress(Math.round(progress));
+          if (progress < 30) {
+            setProcessingStep('Extracting 30fps Biomechanical Data...');
+          } else if (progress < 65) {
+            setProcessingStep(`Verifying ${currentSportRule.name} Corridors...`);
+          } else {
+            setProcessingStep('Synthesizing Local Forensic Report...');
+          }
+        },
+        targetAthleteAnchor
+      );
 
-        // Generate high-precision synthetic telemetry frames
-        const frames: FrameAnalysis[] = [];
-        const frameCount = 36;
-        for (let i = 0; i < frameCount; i++) {
-          const ts = (i / frameCount) * 4;
-          const landmarks = generateSyntheticSportsPose(ts * 1000, ts);
-          frames.push({
-            frameNumber: i,
-            timestamp: ts,
-            landmarks,
-            detectedPhase: i < 10 ? 'Setup & Coil' : i < 24 ? 'Explosive Drive' : 'Kinetic Follow-Through',
-            angles: {
-              knee: 112 + Math.sin(i * 0.2) * 18,
-              hip: 136 + Math.cos(i * 0.2) * 14,
-              shoulder: 92 + Math.sin(i * 0.3) * 22,
-              trunk: 32 + Math.sin(i * 0.15) * 8,
-            },
-            ruleResults: {
-              knee: i === 16 ? 'warning' : 'optimal',
-              hip: 'optimal',
-              shoulder: 'good',
-            },
-            symmetryScore: 90 + Math.floor(Math.sin(i) * 5),
-            kneeSafetyScore: i === 16 ? 78 : 94,
-            activeLevel: skillLevel,
-            isRealDetection: true,
-          });
-        }
-
-        const report: AICoachingReport = {
-          overallGrade: 'A-',
-          summaryTitle: `Biomechanical Mastery: ${currentSportRule.name}`,
-          executiveDossier: {
-            headline: 'Kinetic Chain Precision & Stability Analysis',
-            overviewText: 'High neuromuscular drive observed across key transition phases with minor valgus deviation during eccentric loading.',
-            detectedFault: {
-              title: 'Medial Knee Valgus Collapse on Dynamic Deceleration',
-              description: 'During peak ground-contact deceleration, the lead knee exhibits a 14.2° internal rotation deviation away from the vertical tibial axis, losing kinetic force and creating shear stress.',
-              angleDeviation: '+14.2° Inward Deviation',
-              impact: 'Kinetic Energy Leakage: ~14% drop in forward impulse; increased ACL strain.',
-            },
-            goldStandard: {
-              title: 'Triple-Joint Stacking (Hip-Knee-Ankle Neutral Axis)',
-              description: 'Elite benchmark maintains the patellar apex directly collinear with the second metatarsal throughout eccentric load.',
-              idealRange: '0° - 3° Tibiofemoral Neutral Corrdior',
-              forceTransmission: 'Delivers 98% efficient ground reaction transfer through the posterior chain.',
-            },
-          },
-          keyStrengths: [
-            'Explosive Ground Reaction Force across initial load phase',
-            'Optimal Torso Forward Lean within efficiency corridor (31°)',
-            'High Rotational Velocity through hip-shoulder kinetic separation',
-          ],
-          strengthsDetailed: [
-            {
-              title: 'Explosive Posterior Chain Load',
-              desc: 'Glute-hamstring pre-stretch activates early, transferring maximum ground reaction force.',
-              metric: 'Peak Drive: 94% Efficiency',
-            },
-            {
-              title: 'Torso Angle Corridor Alignment',
-              desc: 'Spine maintained inside the optimal 28°-35° forward lean corridor without rounding.',
-              metric: 'Corridor Variance: ±1.8°',
-            },
-          ],
-          biomechanicInsights: [
-            'Triple-extension through ankle, knee, and hip generating high kinetic output.',
-            'Lead knee exhibits mild medial collapse at deceleration phase (14.2° inward deviation).',
-            `Trunk angle maintained within optimal ${currentSportRule.name} biomechanical corridor.`,
-          ],
-          areasToImprove: [
-            {
-              issue: 'Dynamic Knee Valgus Inward Tracking',
-              explanation: 'Gluteus medius under-activation allows femur internal rotation during maximum braking force.',
-              drillName: 'Banded Monster Walk & Hip Abduction Hold',
-              drillReps: '3 sets x 12 reps each side',
-              drillTip: 'Maintain tension across mini-band; do not allow knees to cave past toes.',
-            },
-            {
-              issue: 'Premature Upper-Body Rotation',
-              explanation: 'Thoracic rotation initiates 40ms before pelvis lockout, bleeding stored elastic torque.',
-              drillName: 'Rotational Core Transfer Snap',
-              drillReps: '3 sets x 10 reps',
-              drillTip: 'Hold hip lock until chest finishes drive.',
-            },
-          ],
-          injuryRiskAssessment: {
-            level: 'low',
-            findings: ['Minor right knee valgus during dynamic deceleration'],
-            preventionDrills: ['Single-leg Romanian Deadlifts', 'Banded Monster Walks'],
-          },
-          funCorrectiveDrills: [
-            {
-              name: 'Banded Monster Walk & Hip Abduction Hold',
-              description: 'Activates gluteus medius to eliminate inward knee collapse and reinforce alignment.',
-              reps: '3 sets x 12 reps',
-              targetJoint: 'Hip & Gluteus Medius',
-            },
-            {
-              name: 'Low-Hip Athletic Spine Hinge',
-              description: 'Eliminates upright bending during contact by locking the thoracic spine.',
-              reps: '3 sets x 10 reps',
-              targetJoint: 'Hip & Lumbar Spine',
-            },
-            {
-              name: 'Rotational Core Transfer Snap',
-              description: 'Builds explosive rotational sequencing for long-range power transfer.',
-              reps: '3 sets x 12 reps',
-              targetJoint: 'Thoracic Spine',
-            },
-          ],
-          coachEncouragement: 'Phenomenal kinetic rhythm. Focus on knee tracking to unlock peak power and injury armor!',
-        };
-
-        const syntheticResult: AnalysisResult = {
-          keyframes: [frames[4], frames[16], frames[28]],
-          allFrames: frames,
-          aiReport: report,
-          overallSymmetry: 90,
-          overallKneeSafety: 88,
-          measuredAngles: {
-            kneeAngle: 118,
-            hipAngle: 134,
-            torsoLean: 31,
-          },
-          ruleResultsSummary: {
-            kneeAlignment: 'warning',
-            hipExtension: 'optimal',
-            torsoAngle: 'optimal',
-          },
-          sequenceComparison: {
-            ideal: ['Setup & Coil', 'Explosive Drive', 'Kinetic Follow-Through'],
-            actual: ['Setup & Coil', 'Explosive Drive', 'Kinetic Follow-Through'],
-            isCorrect: true,
-            feedback: 'Sequence timing aligns with elite kinematic sequence.',
-          },
-          kineticSequence: {
-            steps: [
-              { name: 'Setup & Coil', timestamp: 0.5, score: 93, status: 'optimal' },
-              { name: 'Explosive Drive', timestamp: 1.8, score: 87, status: 'good' },
-              { name: 'Kinetic Follow-Through', timestamp: 3.1, score: 91, status: 'optimal' },
-            ],
-            firingOrder: [
-              { joint: 'Hips', peakTime: 0.9, peakVelocity: 360 },
-              { joint: 'Torso', peakTime: 1.2, peakVelocity: 440 },
-              { joint: 'Arms', peakTime: 1.5, peakVelocity: 530 },
-            ],
-            isCorrectOrder: true,
-            sequenceEfficiency: 91,
-          },
-          dynamicMetrics: {
-            peakAngularVelocity: 530,
-            estimatedPeakTorque: 88,
-            explosivenessScore: 92,
-            overallBiometricScore: 8.9,
-            overallSymmetry: 90,
-            overallKneeSafety: 88,
-            precisionScore: 94,
-            kineticFlowScore: 90,
-            jointArmorScore: 88,
-          },
-        };
-
-        setAnalysisResult(syntheticResult);
-        setIsProcessing(false);
+      if (result) {
+        // Save to local device storage
+        const reportId = `report_${Date.now()}`;
+        await LocalStore.saveReport(reportId, result);
+        
+        setAnalysisResult(result);
+        const updatedReports = await LocalStore.getAllReports();
+        setSavedReports(updatedReports);
       } else {
-        setProcessingProgress(prog);
-        if (prog < 30) {
-          setProcessingStep('Extracting 33 Biomechanical Keypoints...');
-        } else if (prog < 65) {
-          setProcessingStep(`Matching ${currentSportRule.name} Angular Corridors...`);
-        } else if (prog < 85) {
-          setProcessingStep('Evaluating Kinetic Chain & Torque Transfer...');
-        } else {
-          setProcessingStep('Synthesizing Executive Biomechanical Dossier...');
-        }
+        throw new Error("Analysis produced empty result.");
       }
-    }, 180);
+    } catch (e: any) {
+      console.error('Standalone Analysis Error:', e);
+      Alert.alert('Analysis Failed', 'The local engine could not process this video. Please try a clearer clip.');
+    } finally {
+      setIsProcessing(false);
+    }
   };
 
   const sportsList: { id: SportId; name: string; icon: string; count: number }[] = [
@@ -394,9 +259,9 @@ export default function App() {
           style={[styles.tabButton, activeTab === 'saved' && styles.tabButtonActive]}
           onPress={() => setActiveTab('saved')}
         >
-          <Bookmark color={activeTab === 'saved' ? '#facc15' : '#71717a'} size={15} />
+          <Bookmark color={activeTab === 'saved' ? '#f59e0b' : '#71717a'} size={15} />
           <Text style={[styles.tabText, activeTab === 'saved' && styles.tabTextActive]}>
-            SAVED ({savedReports.length})
+            SAVED ({Object.keys(savedReports).length})
           </Text>
         </TouchableOpacity>
       </View>
@@ -642,10 +507,10 @@ export default function App() {
           <View style={styles.savedContainer}>
             <View style={styles.sectionHeader}>
               <Text style={styles.sectionTitle}>SAVED BIOMECHANICAL AUDITS</Text>
-              <Text style={styles.sectionBadge}>{savedReports.length} SAVED</Text>
+              <Text style={styles.sectionBadge}>{Object.keys(savedReports).length} SAVED</Text>
             </View>
 
-            {savedReports.length === 0 ? (
+            {Object.keys(savedReports).length === 0 ? (
               <View style={styles.emptySavedBox}>
                 <Bookmark color="#3f3f46" size={48} />
                 <Text style={styles.emptySavedTitle}>NO SAVED REPORTS YET</Text>
@@ -654,16 +519,45 @@ export default function App() {
                 </Text>
               </View>
             ) : (
-              savedReports.map((report) => (
-                <View key={report.id} style={styles.savedCard}>
-                  <View>
-                    <Text style={styles.savedSportName}>{report.sportName}</Text>
-                    <Text style={styles.savedDate}>{report.date}</Text>
+              Object.entries(savedReports).map(([id, report]) => (
+                <TouchableOpacity 
+                  key={id} 
+                  style={styles.savedCard}
+                  onPress={() => setAnalysisResult(report)}
+                >
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.savedSportName}>{report.aiReport?.summaryTitle || 'SKELETON ANALYSIS'}</Text>
+                    <Text style={styles.savedDate}>{new Date(parseInt(id.split('_')[1])).toLocaleDateString()}</Text>
                   </View>
-                  <View style={styles.savedGradeBadge}>
-                    <Text style={styles.savedGradeText}>{report.grade}</Text>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+                    <View style={styles.savedGradeBadge}>
+                      <Text style={styles.savedGradeText}>{report.aiReport?.overallGrade || 'N/A'}</Text>
+                    </View>
+                    <TouchableOpacity 
+                      onPress={async () => {
+                        Alert.alert(
+                          'Delete Report',
+                          'Are you sure you want to permanently delete this forensic audit?',
+                          [
+                            { text: 'Cancel', style: 'cancel' },
+                            { 
+                              text: 'Delete', 
+                              style: 'destructive',
+                              onPress: async () => {
+                                await LocalStore.deleteReport(id);
+                                const updated = await LocalStore.getAllReports();
+                                setSavedReports(updated);
+                              }
+                            }
+                          ]
+                        );
+                      }}
+                      style={{ padding: 8 }}
+                    >
+                      <RotateCcw color="#ef4444" size={16} />
+                    </TouchableOpacity>
                   </View>
-                </View>
+                </TouchableOpacity>
               ))
             )}
           </View>

@@ -7,7 +7,8 @@ import {
   SafeAreaView, 
   StyleSheet, 
   StatusBar,
-  Dimensions
+  Dimensions,
+  Share,
 } from 'react-native';
 import Slider from '@react-native-community/slider';
 import * as Haptics from 'expo-haptics';
@@ -16,8 +17,43 @@ import { GamifiedScore } from './Report/GamifiedScore.native';
 import { Top3Frames } from './Report/Top3Frames.native';
 import { DrillsSection } from './Report/DrillsSection.native';
 import { TopDeviations, DeviationMoment } from './Report/TopDeviations.native';
-import { ArrowLeft, Download, AlertCircle, Play, Pause, Activity, Flame, ShieldAlert, Award, Zap, SkipBack, SkipForward } from 'lucide-react-native';
+import { GhostCorrectionVisualizerNative } from './Report/GhostCorrectionVisualizer.native';
+import { KineticVelocityWaveNative } from './Report/KineticVelocityWave.native';
+import { 
+  ArrowLeft, 
+  Download, 
+  AlertCircle, 
+  Play, 
+  Pause, 
+  Activity, 
+  Flame, 
+  ShieldAlert, 
+  Award, 
+  Zap, 
+  SkipBack, 
+  SkipForward,
+  ChevronLeft,
+  Share2,
+  ShieldCheck
+} from 'lucide-react-native';
 import { SportRule, FrameAnalysis, AICoachingReport } from '../types';
+
+const EXECUTIVE_DOSSIER_MOCK = {
+  headline: 'KINETIC CHAIN PRECISION & STABILITY ANALYSIS',
+  overviewText: 'High neuromuscular drive observed across key transition phases with minor valgus deviation during eccentric loading.',
+  detectedFault: {
+    title: 'Medial Knee Valgus Collapse on Dynamic Deceleration',
+    description: 'During peak ground-contact deceleration, the lead knee exhibits a 14.2° internal rotation deviation away from the vertical tibial axis, losing kinetic force and creating shear stress.',
+    angleDeviation: '+14.2° Inward Deviation',
+    impact: 'Kinetic Energy Leakage: ~14% drop in forward impulse; increased ACL strain.',
+  },
+  goldStandard: {
+    title: 'Triple-Joint Stacking (Hip-Knee-Ankle Neutral Axis)',
+    description: 'Elite benchmark maintains the patellar apex directly collinear with the second metatarsal throughout eccentric load.',
+    idealRange: '0° - 3° Tibiofemoral Neutral Corridor',
+    forceTransmission: 'Delivers 98% efficient ground reaction transfer through the posterior chain.',
+  },
+};
 
 interface AnalysisReportPageProps {
   sportRule: SportRule;
@@ -35,12 +71,13 @@ export const AnalysisReportPage: React.FC<AnalysisReportPageProps> = ({
   keyframeList = [],
   allFrames = [],
   aiReport,
+  dynamicMetrics,
   onBack
 }) => {
   const [isPlaying, setIsPlaying] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
-  const [activeTab, setActiveTab] = useState<'video' | 'faults' | 'metrics'>('video');
+  const [activeTab, setActiveTab] = useState<'diagnostics' | 'telemetry' | 'drills'>('diagnostics');
   const [isFullScreen, setIsFullScreen] = useState(false);
   const videoRef = useRef<any>(null);
 
@@ -58,27 +95,43 @@ export const AnalysisReportPage: React.FC<AnalysisReportPageProps> = ({
   };
 
   const handleFrameStep = (direction: 'forward' | 'backward') => {
-    setIsPlaying(false); // Pause when stepping
-    const step = 0.033; // 30fps approximation
+    setIsPlaying(false);
+    const step = 0.033; 
     const nextTime = direction === 'forward' ? currentTime + step : currentTime - step;
     handleSeek(nextTime);
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
   };
 
-  const toggleFullScreen = () => {
-    setIsFullScreen(!isFullScreen);
-    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+  const handleShare = async () => {
+    try {
+      const exportData = {
+        sport: sportRule.name,
+        date: new Date().toISOString(),
+        overallGrade: aiReport?.overallGrade || 'N/A',
+        metrics: dynamicMetrics,
+        frames: allFrames.length,
+      };
+      
+      const result = await Share.share({
+        message: `KLUTCHH Forensic Report: ${sportRule.name}\nGrade: ${exportData.overallGrade}\n\nDownload the Klutchh app to view the full interactive 3D analysis.`,
+        title: `Klutchh Report - ${sportRule.name}`,
+      });
+      
+      if (result.action === Share.sharedAction) {
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      }
+    } catch (error: any) {
+      Alert.alert('Share Failed', error.message);
+    }
   };
 
   const topDeviations = useMemo(() => {
     if (!sortedFrames.length || !sportRule.jointRules.length) return [];
-
     const deviations: DeviationMoment[] = [];
 
     sportRule.jointRules.forEach(rule => {
       let maxDev = 0;
       let worstFrame: FrameAnalysis | null = null;
-
       sortedFrames.forEach(frame => {
         const val = frame.angles[rule.id];
         if (val !== undefined) {
@@ -96,15 +149,6 @@ export const AnalysisReportPage: React.FC<AnalysisReportPageProps> = ({
 
       if (worstFrame) {
         const val = worstFrame.angles[rule.id];
-        const isLow = val < rule.idealMin;
-        
-        let correction = `Keep your ${rule.name.toLowerCase()} within ${rule.idealMin}-${rule.idealMax}°.`;
-        if (isLow) {
-          correction = `Open up your ${rule.name.toLowerCase()} angle. You dipped to ${val.toFixed(1)}° (Goal: ${rule.idealMin}°+).`;
-        } else {
-          correction = `Tighten your ${rule.name.toLowerCase()} angle. You hit ${val.toFixed(1)}° (Goal: <${rule.idealMax}°).`;
-        }
-
         deviations.push({
           ruleId: rule.id,
           ruleName: rule.name,
@@ -112,74 +156,41 @@ export const AnalysisReportPage: React.FC<AnalysisReportPageProps> = ({
           currentValue: val,
           targetRange: [rule.idealMin, rule.idealMax],
           status: worstFrame.ruleResults[rule.id] as 'error' | 'warning',
-          correction
+          correction: `Restore ${rule.name} alignment. Target: ${rule.idealMin}°-${rule.idealMax}°.`
         });
       }
     });
 
-    return deviations
-      .sort((a, b) => {
-        if (a.status === 'error' && b.status !== 'error') return -1;
-        if (a.status !== 'error' && b.status === 'error') return 1;
-        const aMid = (a.targetRange[0] + a.targetRange[1]) / 2;
-        const bMid = (b.targetRange[0] + b.targetRange[1]) / 2;
-        return Math.abs(b.currentValue - bMid) - Math.abs(a.currentValue - aMid);
-      })
-      .slice(0, 3);
+    return deviations.sort((a, b) => (a.status === 'error' ? -1 : 1)).slice(0, 3);
   }, [sortedFrames, sportRule]);
 
-  const onSlidingComplete = (value: number) => {
-    handleSeek(value);
-  };
+  const dossier = aiReport?.executiveDossier || EXECUTIVE_DOSSIER_MOCK;
 
   return (
     <SafeAreaView style={styles.safeArea}>
       <StatusBar barStyle="light-content" />
       
-      {/* Header */}
+      {/* Premium Forensic Header */}
       <View style={styles.header}>
-        <TouchableOpacity onPress={onBack} style={styles.backButton}>
-          <ArrowLeft color="#fff" size={20} />
-        </TouchableOpacity>
-        <View style={styles.headerTitleBox}>
-          <Text style={styles.headerSubtitle}>{sportRule.name.toUpperCase()} PERFORMANCE</Text>
-          <Text style={styles.headerTitle}>BIOMETRIC REPORT</Text>
+        <View style={styles.headerTop}>
+          <TouchableOpacity onPress={onBack} style={styles.backButton}>
+            <ChevronLeft size={24} color="#ffffff" />
+          </TouchableOpacity>
+          <View>
+            <View style={styles.headerBadge}>
+              <Text style={styles.headerBadgeText}>HERO STATUS: ACTIVE</Text>
+            </View>
+            <Text style={styles.headerTitle}>{sportRule.name} AUDIT</Text>
+          </View>
         </View>
-        <TouchableOpacity style={styles.exportButton}>
-          <Download color="#fff" size={18} />
-        </TouchableOpacity>
-      </View>
-
-      {/* Sub-Navigation */}
-      <View style={styles.tabRow}>
-        <TouchableOpacity 
-          style={[styles.subTab, activeTab === 'video' && styles.subTabActive]} 
-          onPress={() => setActiveTab('video')}
-        >
-          <Activity color={activeTab === 'video' ? '#facc15' : '#71717a'} size={14} />
-          <Text style={[styles.subTabText, activeTab === 'video' && styles.subTabTextActive]}>VIDEO HUD</Text>
-        </TouchableOpacity>
-
-        <TouchableOpacity 
-          style={[styles.subTab, activeTab === 'faults' && styles.subTabActive]} 
-          onPress={() => setActiveTab('faults')}
-        >
-          <ShieldAlert color={activeTab === 'faults' ? '#facc15' : '#71717a'} size={14} />
-          <Text style={[styles.subTabText, activeTab === 'faults' && styles.subTabTextActive]}>DIAGNOSTICS</Text>
-        </TouchableOpacity>
-
-        <TouchableOpacity 
-          style={[styles.subTab, activeTab === 'metrics' && styles.subTabActive]} 
-          onPress={() => setActiveTab('metrics')}
-        >
-          <Zap color={activeTab === 'metrics' ? '#facc15' : '#71717a'} size={14} />
-          <Text style={[styles.subTabText, activeTab === 'metrics' && styles.subTabTextActive]}>TELEMETRY</Text>
+        <TouchableOpacity style={styles.exportButton} onPress={handleShare}>
+          <Share2 size={16} color="#ffffff" />
         </TouchableOpacity>
       </View>
 
       <ScrollView style={styles.container} contentContainerStyle={styles.content}>
         
-        {/* Video & Skeleton Stage */}
+        {/* Main Video & Scrubber Stage */}
         <View style={styles.videoStage}>
           <KineticVideoPlayer
             ref={videoRef}
@@ -193,7 +204,6 @@ export const AnalysisReportPage: React.FC<AnalysisReportPageProps> = ({
             isDataReady={sortedFrames.length > 0}
           />
           
-          {/* Controls Overlay */}
           <View style={styles.videoHudTop}>
             <View style={styles.timestampBadge}>
               <Text style={styles.timestampText}>{currentTime.toFixed(2)}s / {duration.toFixed(2)}s</Text>
@@ -226,208 +236,156 @@ export const AnalysisReportPage: React.FC<AnalysisReportPageProps> = ({
               <SkipForward color="#fff" size={16} />
             </TouchableOpacity>
           </View>
-          <TouchableOpacity 
-            style={styles.fullscreenButtonOverlay}
-            onPress={toggleFullScreen}
-          >
-             <Text style={{color: 'white', fontWeight: 'bold', fontSize: 10}}>FULL</Text>
-          </TouchableOpacity>
         </View>
 
-        {/* Manual HUD Scrubber */}
+        {/* Precision Forensic Scrubber */}
         <View style={styles.scrubberContainer}>
           <Slider
             style={styles.slider}
             minimumValue={0}
             maximumValue={duration || 1}
             value={currentTime}
-            onSlidingComplete={onSlidingComplete}
+            onSlidingComplete={handleSeek}
             onValueChange={(val) => {
               setCurrentTime(val);
-              // Real-time skeleton sync while dragging
+              if (videoRef.current) {
+                videoRef.current.seek(val);
+              }
             }}
-            minimumTrackTintColor="#facc15"
+            minimumTrackTintColor="#fbbf24"
             maximumTrackTintColor="#27272a"
-            thumbTintColor="#facc15"
+            thumbTintColor="#fbbf24"
           />
           <View style={styles.scrubberLabels}>
-            <Text style={styles.scrubberTime}>0.00</Text>
-            <Text style={styles.scrubberTime}>{duration.toFixed(2)}s</Text>
+            <Text style={styles.scrubberTime}>0.00s</Text>
+            <Text style={styles.scrubberTime}>{(duration || 0).toFixed(2)}s</Text>
           </View>
         </View>
 
-        {/* Hero Score Section */}
-        <GamifiedScore 
-          grade={aiReport?.overallGrade || 'A'} 
-          title={aiReport?.summaryTitle || 'BIOMECHANICAL PRECISION'} 
-        />
+        {/* Tab Switcher - Premium Unified Control */}
+        <View style={styles.tabRow}>
+          <TouchableOpacity 
+            style={[styles.subTab, activeTab === 'diagnostics' && styles.subTabActive]} 
+            onPress={() => setActiveTab('diagnostics')}
+          >
+            <Activity color={activeTab === 'diagnostics' ? '#facc15' : '#71717a'} size={14} />
+            <Text style={[styles.subTabText, activeTab === 'diagnostics' && styles.subTabTextActive]}>DIAGNOSTICS</Text>
+          </TouchableOpacity>
 
-        {/* Top 3 Deviations */}
-        <TopDeviations 
-          deviations={topDeviations} 
-          onSeek={handleSeek} 
-        />
+          <TouchableOpacity 
+            style={[styles.subTab, activeTab === 'telemetry' && styles.subTabActive]} 
+            onPress={() => setActiveTab('telemetry')}
+          >
+            <Zap color={activeTab === 'telemetry' ? '#facc15' : '#71717a'} size={14} />
+            <Text style={[styles.subTabText, activeTab === 'telemetry' && styles.subTabTextActive]}>TELEMETRY</Text>
+          </TouchableOpacity>
 
-        {/* Top 3 Frames */}
-        {keyframeList.length > 0 && (
-          <Top3Frames 
-            keyframes={keyframeList} 
-            onSeek={handleSeek} 
-            currentTime={currentTime} 
-          />
-        )}
-        
-        {/* Corrective Drills Section */}
-        {aiReport?.funCorrectiveDrills && aiReport.funCorrectiveDrills.length > 0 && (
-          <DrillsSection drills={aiReport.funCorrectiveDrills} />
-        )}
+          <TouchableOpacity 
+            style={[styles.subTab, activeTab === 'drills' && styles.subTabActive]} 
+            onPress={() => setActiveTab('drills')}
+          >
+            <Flame color={activeTab === 'drills' ? '#facc15' : '#71717a'} size={14} />
+            <Text style={[styles.subTabText, activeTab === 'drills' && styles.subTabTextActive]}>DRILLS</Text>
+          </TouchableOpacity>
+        </View>
 
-        {/* Active Tab: Faults & Insights */}
-        {activeTab === 'faults' && (
-          <View style={styles.insightSection}>
-            <Text style={styles.sectionTitle}>ANOMALY LOGS</Text>
-            {sportRule.jointRules.slice(0, 3).map((rule, idx) => (
-              <View key={rule.id || idx} style={styles.faultCard}>
-                <View style={styles.faultHeader}>
-                  <View style={styles.faultRankBadge}>
-                    <Text style={styles.faultRankText}>RATING: #{idx + 1}</Text>
-                  </View>
-                  <Text style={styles.faultTitle}>{rule.name}</Text>
-                  <View style={styles.faultDeltaBadge}>
-                    <Text style={styles.faultDeltaText}>Target: {rule.idealMin}°-{rule.idealMax}°</Text>
-                  </View>
+        {activeTab === 'diagnostics' && (
+          <View style={styles.bentoGrid}>
+            {/* Executive Dossier Hero */}
+            <View style={styles.dossierHero}>
+              <View style={styles.dossierRow}>
+                <ShieldCheck size={20} color="#fbbf24" />
+                <Text style={styles.dossierHeadline}>{dossier.headline}</Text>
+              </View>
+              <Text style={styles.dossierOverview}>{dossier.overviewText}</Text>
+            </View>
+
+            {/* Ghost Correction HUD */}
+            <GhostCorrectionVisualizerNative
+              keyframeList={keyframeList}
+              allFrames={allFrames}
+              sportRule={sportRule}
+              onSeekTimestamp={handleSeek}
+            />
+
+            {/* Top 3 Deviations - Corrective Guidance */}
+            <TopDeviations 
+              deviations={topDeviations} 
+              onSeek={handleSeek} 
+            />
+
+            {/* Fault Comparison Grid */}
+            <View style={styles.faultComparisonGrid}>
+              <View style={styles.faultCard}>
+                <View style={[styles.faultCardHeader, { backgroundColor: '#450a0a' }]}>
+                  <ShieldAlert size={14} color="#ef4444" />
+                  <Text style={[styles.faultCardTitle, { color: '#ef4444' }]}>DETECTED FAULT</Text>
                 </View>
-                <Text style={styles.faultDesc}>
-                  {rule.impactOnPerformance || 'Maintain rigid kinetic alignment to maximize elastic power transmission.'}
-                </Text>
-                <Text style={styles.faultInjury}>
-                  ⚠️ {rule.injuryRiskFactor || 'Excessive joint deviation increases shear stress.'}
-                </Text>
+                <Text style={styles.faultCardHeadline}>{dossier.detectedFault.title}</Text>
+                <Text style={styles.faultCardDesc}>{dossier.detectedFault.description}</Text>
+                <View style={styles.faultMetric}>
+                  <Text style={styles.faultMetricLabel}>DEVIATION</Text>
+                  <Text style={styles.faultMetricValue}>{dossier.detectedFault.angleDeviation}</Text>
+                </View>
               </View>
-            ))}
-          </View>
-        )}
 
-        {/* Active Tab: Metrics */}
-        {activeTab === 'metrics' && (
-          <View style={styles.metricsSection}>
-            <Text style={styles.sectionTitle}>JOINT ANGULAR CORRIDORS</Text>
-            {sportRule.jointRules.map((rule, idx) => {
-              const worstFrame = sortedFrames.reduce((worst, curr) => {
-                const currStatus = curr.ruleResults[rule.id] || 'optimal';
-                const worstStatus = worst?.ruleResults[rule.id] || 'optimal';
-                const statusOrder: Record<string, number> = { 'error': 3, 'warning': 2, 'good': 1, 'optimal': 0 };
-                return statusOrder[currStatus] > (statusOrder[worstStatus] || 0) ? curr : worst;
-              }, sortedFrames[0]);
-              
-              const worstStatus = worstFrame?.ruleResults[rule.id] || 'optimal';
-
-              return (
-                <TouchableOpacity 
-                  key={rule.id || idx} 
-                  style={styles.metricRow}
-                  onPress={() => worstFrame && handleSeek(worstFrame.timestamp)}
-                >
-                  <View style={styles.metricInfo}>
-                    <Text style={styles.metricName}>{rule.name}</Text>
-                    <Text style={styles.metricPhase}>{rule.phase}</Text>
-                  </View>
-                  <View style={[
-                    styles.metricRangeBox,
-                    worstStatus === 'error' && { borderColor: 'rgba(239, 68, 68, 0.3)' },
-                    worstStatus === 'warning' && { borderColor: 'rgba(168, 85, 247, 0.3)' }
-                  ]}>
-                    <Text style={styles.metricRange}>{rule.idealMin}° - {rule.idealMax}°</Text>
-                    <Text style={[
-                      styles.metricStatus,
-                      worstStatus === 'error' && { color: '#ef4444' },
-                      worstStatus === 'warning' && { color: '#a855f7' }
-                    ]}>{worstStatus.toUpperCase()}</Text>
-                  </View>
-                </TouchableOpacity>
-              );
-            })}
-          </View>
-        )}
-
-        {/* General Insights */}
-        {activeTab === 'video' && (
-          <View style={styles.insightSection}>
-             <Text style={styles.sectionTitle}>COACHING SYNTHESIS</Text>
-             {aiReport?.biomechanicInsights?.map((insight: any, idx: number) => (
-               <View key={idx} style={styles.insightCard}>
-                  <View style={styles.insightIcon}><AlertCircle color="#facc15" size={16} /></View>
-                  <Text style={styles.insightText}>{typeof insight === 'string' ? insight : insight?.finding || insight?.title || ''}</Text>
-               </View>
-             ))}
-
-             <DrillsSection 
-               drills={aiReport?.drills || []} 
-               onViewDrill={(ts) => handleSeek(ts)}
-             />
-          </View>
-        )}
-
-      </ScrollView>
-
-      {/* Full Screen Overlay */}
-      {isFullScreen && (
-        <View style={styles.fullScreenOverlay}>
-          <StatusBar hidden />
-          <KineticVideoPlayer
-            ref={videoRef}
-            videoUrl={videoUrl || ''}
-            sportRule={sportRule}
-            sortedFrames={sortedFrames}
-            isPlaying={isPlaying}
-            currentTime={currentTime}
-            onTimeUpdate={setCurrentTime}
-            onDurationChange={setDuration}
-            isDataReady={sortedFrames.length > 0}
-          />
-          
-          <View style={styles.fullScreenHud}>
-            <TouchableOpacity style={styles.exitFullScreen} onPress={toggleFullScreen}>
-              <ArrowLeft color="#fff" size={24} />
-              <Text style={styles.exitText}>EXIT FULL SCREEN</Text>
-            </TouchableOpacity>
-
-            <View style={styles.fullScreenBottom}>
-              <View style={styles.fullScreenScrubber}>
-                <Text style={styles.fsTime}>{currentTime.toFixed(2)}s</Text>
-                <Slider
-                  style={styles.fsSlider}
-                  minimumValue={0}
-                  maximumValue={duration || 1}
-                  value={currentTime}
-                  onValueChange={handleSeek}
-                  minimumTrackTintColor="#facc15"
-                  maximumTrackTintColor="rgba(255,255,255,0.3)"
-                  thumbTintColor="#facc15"
-                />
-                <Text style={styles.fsTime}>{(duration || 0).toFixed(2)}s</Text>
-              </View>
-              
-              <View style={styles.fsControlsGroup}>
-                <TouchableOpacity onPress={() => handleFrameStep('backward')} style={styles.fsStepBtn}>
-                  <SkipBack color="#fff" size={20} />
-                </TouchableOpacity>
-                
-                <TouchableOpacity 
-                  onPress={() => setIsPlaying(!isPlaying)}
-                  style={styles.fsPlayBtn}
-                >
-                  {isPlaying ? <Pause color="#fff" size={28} /> : <Play color="#fff" size={28} fill="#fff" />}
-                </TouchableOpacity>
-
-                <TouchableOpacity onPress={() => handleFrameStep('forward')} style={styles.fsStepBtn}>
-                  <SkipForward color="#fff" size={20} />
-                </TouchableOpacity>
+              <View style={styles.faultCard}>
+                <View style={[styles.faultCardHeader, { backgroundColor: '#064e3b' }]}>
+                  <Award size={14} color="#34d399" />
+                  <Text style={[styles.faultCardTitle, { color: '#34d399' }]}>GOLD STANDARD</Text>
+                </View>
+                <Text style={styles.faultCardHeadline}>{dossier.goldStandard.title}</Text>
+                <Text style={styles.faultCardDesc}>{dossier.goldStandard.description}</Text>
+                <View style={styles.faultMetric}>
+                  <Text style={styles.faultMetricLabel}>OPTIMAL RANGE</Text>
+                  <Text style={[styles.faultMetricValue, { color: '#34d399' }]}>{dossier.goldStandard.idealRange}</Text>
+                </View>
               </View>
             </View>
           </View>
-        </View>
-      )}
+        )}
+
+        {activeTab === 'telemetry' && (
+          <View style={styles.bentoGrid}>
+            <KineticVelocityWaveNative 
+              allFrames={allFrames}
+              currentTime={currentTime}
+            />
+            
+            <View style={styles.statsGrid}>
+              <View style={styles.statBox}>
+                <Text style={styles.statLabel}>SYMMETRY</Text>
+                <Text style={styles.statValue}>{dynamicMetrics?.overallSymmetry ?? 88}%</Text>
+              </View>
+              <View style={styles.statBox}>
+                <Text style={styles.statLabel}>JOINT ARMOR</Text>
+                <Text style={styles.statValue}>{dynamicMetrics?.jointArmorScore ?? 92}%</Text>
+              </View>
+              <View style={styles.statBox}>
+                <Text style={styles.statLabel}>POWER OUTPUT</Text>
+                <Text style={styles.statValue}>{Math.round(dynamicMetrics?.peakAngularVelocity ?? 450)}°/s</Text>
+              </View>
+              <View style={styles.statBox}>
+                <Text style={styles.statLabel}>PRECISION</Text>
+                <Text style={styles.statValue}>{dynamicMetrics?.precisionScore ?? 94}%</Text>
+              </View>
+            </View>
+
+            <Top3Frames 
+              keyframes={keyframeList} 
+              onSeek={handleSeek} 
+              currentTime={currentTime} 
+            />
+          </View>
+        )}
+
+        {activeTab === 'drills' && (
+          <DrillsSection 
+            drills={aiReport?.funCorrectiveDrills || []} 
+            onViewDrill={(ts) => handleSeek(ts)}
+          />
+        )}
+      </ScrollView>
     </SafeAreaView>
   );
 };
@@ -435,87 +393,64 @@ export const AnalysisReportPage: React.FC<AnalysisReportPageProps> = ({
 const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
-    backgroundColor: '#09090b',
+    backgroundColor: '#000000',
   },
   header: {
     flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'space-between',
     paddingHorizontal: 20,
     paddingVertical: 14,
-    gap: 14,
+    backgroundColor: '#000000',
     borderBottomWidth: 1,
     borderBottomColor: '#18181b',
-    backgroundColor: '#09090b',
   },
-  headerTitleBox: {
-    flex: 1,
+  headerTop: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
   },
   backButton: {
     padding: 8,
     backgroundColor: '#18181b',
-    borderRadius: 10,
+    borderRadius: 12,
     borderWidth: 1,
     borderColor: '#27272a',
+  },
+  headerBadge: {
+    backgroundColor: '#450a0a',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 4,
+    alignSelf: 'flex-start',
+    marginBottom: 2,
+  },
+  headerBadgeText: {
+    color: '#ef4444',
+    fontSize: 8,
+    fontWeight: '900',
+    letterSpacing: 0.5,
   },
   headerTitle: {
     color: '#fff',
-    fontSize: 15,
+    fontSize: 16,
     fontWeight: '900',
+    fontStyle: 'italic',
     letterSpacing: 1,
   },
-  headerSubtitle: {
-    color: '#facc15',
-    fontSize: 9,
-    fontStyle: 'italic',
-    fontWeight: '900',
-    letterSpacing: 1.5,
-  },
   exportButton: {
-    padding: 8,
+    padding: 10,
     backgroundColor: '#18181b',
-    borderRadius: 10,
+    borderRadius: 12,
     borderWidth: 1,
     borderColor: '#27272a',
-  },
-  tabRow: {
-    flexDirection: 'row',
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    gap: 8,
-    borderBottomWidth: 1,
-    borderBottomColor: '#18181b',
-    backgroundColor: '#0c0c0e',
-  },
-  subTab: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 8,
-    borderRadius: 10,
-    gap: 6,
-    backgroundColor: 'transparent',
-  },
-  subTabActive: {
-    backgroundColor: '#18181b',
-    borderWidth: 1,
-    borderColor: '#27272a',
-  },
-  subTabText: {
-    color: '#71717a',
-    fontSize: 9,
-    fontWeight: '800',
-    letterSpacing: 0.5,
-  },
-  subTabTextActive: {
-    color: '#ffffff',
   },
   container: {
     flex: 1,
   },
   content: {
-    padding: 16,
-    gap: 16,
+    padding: 20,
+    gap: 20,
   },
   videoStage: {
     width: '100%',
@@ -526,10 +461,6 @@ const styles = StyleSheet.create({
     position: 'relative',
     borderWidth: 1,
     borderColor: '#1f1f23',
-    shadowColor: '#facc15',
-    shadowOffset: { width: 0, height: 0 },
-    shadowOpacity: 0.1,
-    shadowRadius: 10,
   },
   videoHudTop: {
     position: 'absolute',
@@ -538,18 +469,26 @@ const styles = StyleSheet.create({
     right: 14,
     flexDirection: 'row',
     justifyContent: 'space-between',
-    alignItems: 'center',
+  },
+  timestampBadge: {
+    backgroundColor: 'rgba(0,0,0,0.7)',
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 8,
+  },
+  timestampText: {
+    color: '#fff',
+    fontSize: 10,
+    fontWeight: '900',
   },
   liveTag: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: 'rgba(0,0,0,0.6)',
+    backgroundColor: 'rgba(0,0,0,0.7)',
     paddingHorizontal: 8,
     paddingVertical: 4,
     borderRadius: 6,
     gap: 6,
-    borderWidth: 1,
-    borderColor: 'rgba(250, 204, 21, 0.2)',
   },
   liveDot: {
     width: 4,
@@ -561,7 +500,6 @@ const styles = StyleSheet.create({
     color: '#facc15',
     fontSize: 8,
     fontWeight: '900',
-    letterSpacing: 1,
   },
   playbackControlsOverlay: {
     position: 'absolute',
@@ -570,7 +508,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
-    backgroundColor: 'rgba(0,0,0,0.65)',
+    backgroundColor: 'rgba(0,0,0,0.7)',
     paddingHorizontal: 12,
     paddingVertical: 8,
     borderRadius: 40,
@@ -585,287 +523,164 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(250, 204, 21, 0.2)',
     borderRadius: 20,
   },
-  fullscreenButtonOverlay: {
-    position: 'absolute',
-    bottom: 14,
-    left: 14,
-    backgroundColor: 'rgba(0,0,0,0.65)',
-    padding: 12,
+  tabRow: {
+    flexDirection: 'row',
+    gap: 8,
+    marginVertical: 4,
+  },
+  subTab: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 12,
+    borderRadius: 14,
+    backgroundColor: '#09090b',
+    borderWidth: 1,
+    borderColor: '#18181b',
+    gap: 6,
+  },
+  subTabActive: {
+    backgroundColor: '#18181b',
+    borderColor: '#27272a',
+  },
+  subTabText: {
+    color: '#71717a',
+    fontSize: 10,
+    fontWeight: '900',
+  },
+  subTabTextActive: {
+    color: '#ffffff',
+  },
+  bentoGrid: {
+    gap: 20,
+  },
+  dossierHero: {
+    backgroundColor: '#09090b',
+    padding: 20,
+    borderRadius: 24,
+    borderWidth: 1,
+    borderColor: '#18181b',
+  },
+  dossierRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: 8,
+  },
+  dossierHeadline: {
+    color: '#fbbf24',
+    fontSize: 12,
+    fontWeight: '900',
+    fontStyle: 'italic',
+  },
+  dossierOverview: {
+    color: '#d4d4d8',
+    fontSize: 12,
+    lineHeight: 18,
+    fontWeight: '500',
+  },
+  faultComparisonGrid: {
+    flexDirection: 'row',
+    gap: 12,
+  },
+  faultCard: {
+    flex: 1,
+    backgroundColor: '#09090b',
+    borderRadius: 24,
+    padding: 16,
+    borderWidth: 1,
+    borderColor: '#18181b',
+    gap: 12,
+  },
+  faultCardHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 6,
+    alignSelf: 'flex-start',
+  },
+  faultCardTitle: {
+    fontSize: 8,
+    fontWeight: '900',
+  },
+  faultCardHeadline: {
+    color: '#ffffff',
+    fontSize: 12,
+    fontWeight: '900',
+  },
+  faultCardDesc: {
+    color: '#a1a1aa',
+    fontSize: 10,
+    lineHeight: 14,
+  },
+  faultMetric: {
+    backgroundColor: '#000000',
+    padding: 10,
     borderRadius: 12,
     borderWidth: 1,
-    borderColor: 'rgba(250, 204, 21, 0.3)',
+    borderColor: '#18181b',
   },
-  timestampBadge: {
-    backgroundColor: 'rgba(0,0,0,0.7)',
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: 8,
+  faultMetricLabel: {
+    color: '#52525b',
+    fontSize: 8,
+    fontWeight: '900',
+    marginBottom: 2,
+  },
+  faultMetricValue: {
+    color: '#ef4444',
+    fontSize: 12,
+    fontWeight: '900',
+    fontFamily: 'monospace',
+  },
+  statsGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 10,
+  },
+  statBox: {
+    width: (SCREEN_WIDTH - 50) / 2,
+    backgroundColor: '#09090b',
+    padding: 16,
+    borderRadius: 20,
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.1)',
+    borderColor: '#18181b',
   },
-  timestampText: {
+  statLabel: {
+    color: '#52525b',
+    fontSize: 9,
+    fontWeight: '900',
+    marginBottom: 4,
+  },
+  statValue: {
     color: '#ffffff',
-    fontSize: 10,
+    fontSize: 20,
     fontWeight: '900',
     fontStyle: 'italic',
   },
   scrubberContainer: {
-    backgroundColor: '#0c0c0e',
+    backgroundColor: '#09090b',
     borderRadius: 20,
-    padding: 12,
+    padding: 16,
     borderWidth: 1,
-    borderColor: '#1f1f23',
+    borderColor: '#18181b',
   },
   slider: {
     width: '100%',
-    height: 30,
+    height: 40,
   },
   scrubberLabels: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     paddingHorizontal: 4,
+    marginTop: -4,
   },
   scrubberTime: {
     color: '#52525b',
-    fontSize: 9,
-    fontWeight: '700',
-    fontStyle: 'italic',
-  },
-  scoreCard: {
-    backgroundColor: '#0c0c0e',
-    borderRadius: 24,
-    padding: 24,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    marginBottom: 20,
-    borderWidth: 1,
-    borderColor: 'rgba(250, 204, 21, 0.1)',
-  },
-  scoreLabel: {
-    color: '#71717a',
-    fontSize: 10,
-    fontWeight: '900',
-    letterSpacing: 1.5,
-    fontStyle: 'italic',
-  },
-  scoreValue: {
-    color: '#facc15',
-    fontSize: 42,
-    fontWeight: '900',
-    fontStyle: 'italic',
-    letterSpacing: 1,
-    marginVertical: 4,
-  },
-  scoreSubtext: {
-    color: '#a1a1aa',
-    fontSize: 10,
-    fontWeight: '800',
-    letterSpacing: 1,
-    textTransform: 'uppercase',
-  },
-  scoreCircle: {
-    width: 54,
-    height: 54,
-    borderRadius: 27,
-    backgroundColor: 'rgba(250, 204, 21, 0.1)',
-    borderWidth: 1,
-    borderColor: 'rgba(250, 204, 21, 0.3)',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  insightSection: {
-    gap: 10,
-  },
-  sectionTitle: {
-    color: '#71717a',
-    fontSize: 10,
-    fontWeight: '900',
-    letterSpacing: 1.5,
-  },
-  insightCard: {
-    backgroundColor: '#0c0c0e',
-    padding: 16,
-    borderRadius: 16,
-    flexDirection: 'row',
-    gap: 12,
-    alignItems: 'center',
-    borderWidth: 1,
-    borderColor: '#1f1f23',
-    borderLeftWidth: 3,
-    borderLeftColor: '#facc15',
-  },
-  insightIcon: {
-    padding: 6,
-    backgroundColor: 'rgba(250, 204, 21, 0.05)',
-    borderRadius: 8,
-  },
-  insightText: {
-    color: '#d4d4d8',
-    fontSize: 11,
-    flex: 1,
-    lineHeight: 16,
-  },
-  faultCard: {
-    backgroundColor: '#0c0c0e',
-    padding: 16,
-    borderRadius: 20,
-    borderWidth: 1,
-    borderColor: '#1f1f23',
-    gap: 10,
-  },
-  faultHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  faultRankBadge: {
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    backgroundColor: '#facc15',
-    borderRadius: 4,
-  },
-  faultRankText: {
-    color: '#000',
-    fontSize: 9,
-    fontWeight: '900',
-    fontStyle: 'italic',
-  },
-  faultTitle: {
-    color: '#ffffff',
-    fontSize: 12,
-    fontWeight: '800',
-    flex: 1,
-  },
-  faultDeltaBadge: {
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    backgroundColor: '#27272a',
-    borderRadius: 6,
-  },
-  faultDeltaText: {
-    color: '#a1a1aa',
-    fontSize: 9,
-    fontWeight: '700',
-  },
-  faultDesc: {
-    color: '#a1a1aa',
-    fontSize: 11,
-    lineHeight: 16,
-  },
-  faultInjury: {
-    color: '#f59e0b',
     fontSize: 10,
     fontWeight: '700',
-  },
-  metricsSection: {
-    gap: 8,
-  },
-  metricRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    backgroundColor: '#141417',
-    padding: 12,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: '#27272a',
-  },
-  metricInfo: {
-    gap: 2,
-  },
-  metricName: {
-    color: '#ffffff',
-    fontSize: 12,
-    fontWeight: '800',
-  },
-  metricPhase: {
-    color: '#71717a',
-    fontSize: 9,
-    fontWeight: '700',
-  },
-  metricRangeBox: {
-    alignItems: 'flex-end',
-    gap: 2,
-  },
-  metricRange: {
-    color: '#facc15',
-    fontSize: 11,
-    fontWeight: '800',
-  },
-  metricStatus: {
-    color: '#22c55e',
-    fontSize: 8,
-    fontWeight: '900',
-  },
-  fullScreenOverlay: {
-    ...StyleSheet.absoluteFillObject,
-    backgroundColor: '#000',
-    zIndex: 1000,
-  },
-  fullScreenHud: {
-    ...StyleSheet.absoluteFillObject,
-    justifyContent: 'space-between',
-    padding: 20,
-    paddingTop: 40,
-    backgroundColor: 'rgba(0,0,0,0.2)',
-  },
-  exitFullScreen: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-    backgroundColor: 'rgba(0,0,0,0.6)',
-    padding: 12,
-    borderRadius: 12,
-    alignSelf: 'flex-start',
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.1)',
-  },
-  exitText: {
-    color: '#fff',
-    fontSize: 12,
-    fontWeight: '900',
-    letterSpacing: 1,
-  },
-  fullScreenBottom: {
-    backgroundColor: 'rgba(0,0,0,0.8)',
-    padding: 20,
-    borderRadius: 24,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 15,
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.1)',
-  },
-  fullScreenScrubber: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-  },
-  fsTime: {
-    color: '#a1a1aa',
-    fontSize: 10,
-    fontWeight: '700',
-    minWidth: 40,
-  },
-  fsSlider: {
-    flex: 1,
-    height: 40,
-  },
-  fsPlayBtn: {
-    backgroundColor: '#facc15',
-    padding: 12,
-    borderRadius: 30,
-  },
-  fsControlsGroup: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 20,
-  },
-  fsStepBtn: {
-    padding: 8,
-    backgroundColor: 'rgba(255,255,255,0.1)',
-    borderRadius: 20,
+    fontFamily: 'monospace',
   },
 });

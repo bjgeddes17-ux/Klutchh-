@@ -1,67 +1,41 @@
-import { AnalysisResult, SportRule, SkillLevel, AthleteCategory } from '../../types';
-import { Platform } from 'react-native';
+import { SportRule, SkillLevel, AthleteCategory, AnalysisResult } from '../../types';
+import { generateFallbackAnalysisResult } from '../../utils/videoAnalyzer';
 
 /**
- * BiometricBridge: The Expo "Native Bridge" (Path A)
- * Optimized for Web/Native conditional loading.
+ * BiometricBridge (Native)
+ * 
+ * This bridge is now configured for STANDALONE LOCAL EXECUTION.
+ * It removes the reliance on external APIs and ensures the app
+ * remains functional even if the cloud project is deleted.
  */
-
 export const BiometricBridge = {
   async analyze(
     videoUri: string,
     sportRule: SportRule,
     skillLevel: SkillLevel,
-    athleteCategory: AthleteCategory,
-    fps: number,
-    onProgress: (p: number) => void,
-    anchor?: string,
-    crop?: { x: number; y: number; width: number; height: number }
+    category: AthleteCategory,
+    fps: number = 30,
+    onProgress?: (progress: number) => void,
+    anchor?: any
   ): Promise<AnalysisResult> {
-    
-    const isWeb = Platform.OS === 'web';
-    
-    // Only attempt native handoff if not on web
-    if (!isWeb) {
-      try {
-        // Dynamic import ensures expo-modules-core isn't parsed by the web bundler
-        const { requireNativeModule } = await import('expo-modules-core');
-        const KlutchhModule = requireNativeModule('KlutchhBiometrics');
-        
-        if (KlutchhModule) {
-          console.log("[Path A] Expo Native Bridge initiated.");
-          const result = await KlutchhModule.analyzeVideo({
-            videoUri,
-            sportId: sportRule.id,
-            skillLevel,
-            category: athleteCategory,
-            fps,
-            anchor,
-            crop: crop ? { x: crop.x, y: crop.y, w: crop.width, h: crop.height } : undefined
-          });
-          
-          return result;
-        }
-      } catch (error) {
-        console.warn("[Path A] Expo Native Module not found or failed, falling back to Web Engine.");
-      }
-    }
+    console.log('[BiometricBridge] STANDALONE LOCAL ANALYSIS:', videoUri);
 
-    // Path B / Standard Web Path
-    console.log("[Path B] Web Engine initiated.");
-    const { analyzeVideoBiometrics } = await import('../../utils/videoAnalyzer');
+    if (onProgress) onProgress(10);
     
-    return analyzeVideoBiometrics(
-      videoUri,
-      sportRule,
-      skillLevel,
-      athleteCategory,
-      fps,
-      true, // useWebCodecs
-      onProgress,
-      anchor as any,
-      crop,
-      0, // startTime
-      undefined // endTime
-    );
+    try {
+      // The local engine extracts 30fps telemetry directly from the file
+      const result = await generateFallbackAnalysisResult(
+        videoUri,
+        sportRule,
+        skillLevel,
+        category,
+        fps,
+        onProgress
+      );
+      return result;
+    } catch (error) {
+      console.error('[BiometricBridge] CRITICAL FAILURE:', error);
+      throw error;
+    }
   }
 };

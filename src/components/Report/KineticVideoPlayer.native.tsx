@@ -22,27 +22,27 @@ export interface KineticVideoPlayerRef {
   seek: (time: number) => void;
 }
 
-const POSE_CONNECTIONS: [number, number][] = [
-  // Head / Neck
-  [0, 11], [0, 12],
-  // Shoulders & Torso
-  [11, 12], [11, 23], [12, 24], [23, 24],
-  // Arms
-  [11, 13], [13, 15],
-  [12, 14], [14, 16],
-  // Legs
-  [23, 25], [25, 27], [27, 29], [29, 31],
-  [24, 26], [26, 28], [28, 30], [30, 32],
+const POSE_CONNECTIONS: { points: [number, number], color: string }[] = [
+  // Head / Neck (Green)
+  { points: [0, 11], color: '#22c55e' }, { points: [0, 12], color: '#22c55e' },
+  // Shoulders & Torso (Green)
+  { points: [11, 12], color: '#22c55e' }, { points: [11, 23], color: '#22c55e' }, { points: [12, 24], color: '#22c55e' }, { points: [23, 24], color: '#22c55e' },
+  // Arms (Blue)
+  { points: [11, 13], color: '#3b82f6' }, { points: [13, 15], color: '#3b82f6' },
+  { points: [12, 14], color: '#3b82f6' }, { points: [14, 16], color: '#3b82f6' },
+  // Pelvis / Hips (Purple)
+  { points: [23, 24], color: '#a855f7' },
+  // Legs (Red)
+  { points: [23, 25], color: '#ef4444' }, { points: [25, 27], color: '#ef4444' }, { points: [27, 29], color: '#ef4444' }, { points: [29, 31], color: '#ef4444' },
+  { points: [24, 26], color: '#ef4444' }, { points: [26, 28], color: '#ef4444' }, { points: [28, 30], color: '#ef4444' }, { points: [30, 32], color: '#ef4444' },
 ];
 
-// High-impact status color mapping
-const getStatusColor = (status: string) => {
-  switch (status) {
-    case 'optimal': return '#22c55e'; // Signal-Green
-    case 'warning': return '#06b6d4'; // Cyber-Cyan
-    case 'error': return '#d946ef';   // Laser-Magenta
-    default: return '#3b82f6';        // Deep-Space-Blue
-  }
+const getJointColor = (index: number) => {
+  if (index === 0) return '#22c55e'; // Green head
+  if (index >= 11 && index <= 16) return '#3b82f6'; // Blue arms
+  if (index >= 23 && index <= 24) return '#a855f7'; // Purple hips
+  if (index >= 25 && index <= 32) return '#ef4444'; // Red legs
+  return '#22c55e'; // Default Green
 };
 
 export const KineticVideoPlayer = React.memo(forwardRef<KineticVideoPlayerRef, KineticVideoPlayerProps>(({
@@ -118,12 +118,15 @@ export const KineticVideoPlayer = React.memo(forwardRef<KineticVideoPlayerRef, K
     return { drawWidth, drawHeight, offsetX, offsetY };
   }, [containerSize, videoNaturalSize]);
 
-  // Binary search for exact current frame
-  const currentFrame = useMemo(() => {
+  // Binary search for exact current frame + Interpolation
+  const interpolatedFrame = useMemo(() => {
     if (!sortedFrames.length) return null;
+    
+    // Find the two frames surrounding localTime
     let low = 0;
     let high = sortedFrames.length - 1;
     let idx = 0;
+    
     while (low <= high) {
       const mid = (low + high) >> 1;
       if (sortedFrames[mid].timestamp <= localTime) {
@@ -133,8 +136,37 @@ export const KineticVideoPlayer = React.memo(forwardRef<KineticVideoPlayerRef, K
         high = mid - 1;
       }
     }
-    return sortedFrames[idx];
+    
+    const frameA = sortedFrames[idx];
+    const frameB = sortedFrames[idx + 1];
+    
+    if (!frameB) return frameA;
+    
+    // Calculate interpolation factor (0 to 1)
+    const timeA = frameA.timestamp;
+    const timeB = frameB.timestamp;
+    const factor = (localTime - timeA) / (timeB - timeA);
+    const safeFactor = Math.max(0, Math.min(1, factor));
+    
+    // Lerp landmarks
+    const interpolatedLandmarks = frameA.landmarks.map((lmA, i) => {
+      const lmB = frameB.landmarks[i];
+      if (!lmA || !lmB) return lmA;
+      return {
+        x: lmA.x + (lmB.x - lmA.x) * safeFactor,
+        y: lmA.y + (lmB.y - lmA.y) * safeFactor,
+        z: (lmA.z || 0) + ((lmB.z || 0) - (lmA.z || 0)) * safeFactor,
+        visibility: (lmA.visibility || 0) + ((lmB.visibility || 0) - (lmA.visibility || 0)) * safeFactor,
+      };
+    });
+    
+    return {
+      ...frameA,
+      landmarks: interpolatedLandmarks,
+    };
   }, [sortedFrames, localTime]);
+
+  const currentFrame = interpolatedFrame;
 
   const { drawWidth, drawHeight, offsetX, offsetY } = layoutMetrics;
 
@@ -209,14 +241,13 @@ export const KineticVideoPlayer = React.memo(forwardRef<KineticVideoPlayerRef, K
           {isDataReady && currentFrame?.landmarks && (
             <>
               {/* Enhanced Skeletal Bones */}
-              {POSE_CONNECTIONS.map(([i1, i2], connIdx) => {
+              {POSE_CONNECTIONS.map(({ points: [i1, i2], color: boneColor }, connIdx) => {
                 const p1 = currentFrame.landmarks[i1];
                 const p2 = currentFrame.landmarks[i2];
                 if (!p1 || !p2 || (p1.visibility && p1.visibility < 0.4) || (p2.visibility && p2.visibility < 0.4)) {
                   return null;
                 }
                 
-                // Landmarks are 0-1, drawWidth/drawHeight is the frame size
                 const x1 = p1.x * drawWidth;
                 const y1 = p1.y * drawHeight;
                 const x2 = p2.x * drawWidth;
@@ -226,12 +257,34 @@ export const KineticVideoPlayer = React.memo(forwardRef<KineticVideoPlayerRef, K
                 const point2 = vec(x2, y2);
                 
                 const status = getConnectionStatus(i1, i2);
-                const boneColor = getStatusColor(status);
+                const activeColor = status === 'error' ? '#ef4444' : status === 'warning' ? '#fbbf24' : boneColor;
 
                 return (
                   <React.Fragment key={`bone-${connIdx}`}>
-                    <Line p1={point1} p2={point2} color={boneColor} strokeWidth={8} opacity={0.15} />
-                    <Line p1={point1} p2={point2} color="#ffffff" strokeWidth={2} opacity={1} />
+                    {/* Outer Glow */}
+                    <Line 
+                      p1={point1} 
+                      p2={point2} 
+                      color={activeColor} 
+                      strokeWidth={14} 
+                      opacity={0.15} 
+                    />
+                    {/* Thematic Bone */}
+                    <Line 
+                      p1={point1} 
+                      p2={point2} 
+                      color={activeColor} 
+                      strokeWidth={5} 
+                      opacity={0.5} 
+                    />
+                    {/* Core High-Contrast Line */}
+                    <Line 
+                      p1={point1} 
+                      p2={point2} 
+                      color="#ffffff" 
+                      strokeWidth={2} 
+                      opacity={0.9} 
+                    />
                   </React.Fragment>
                 );
               })}
@@ -239,17 +292,36 @@ export const KineticVideoPlayer = React.memo(forwardRef<KineticVideoPlayerRef, K
               {/* Enhanced Joints */}
               {currentFrame.landmarks.map((lm, i) => {
                 if (lm.visibility && lm.visibility < 0.4) return null;
-                const isHighlight = i === 11 || i === 12 || i === 23 || i === 24 || i === 25 || i === 26;
+                const isHighlight = i === 11 || i === 12 || i === 23 || i === 24 || i === 25 || i === 26 || i === 0;
                 const cx = lm.x * drawWidth;
                 const cy = lm.y * drawHeight;
                 
-                const status = getConnectionStatus(i, i);
-                const jointColor = getStatusColor(status);
+                // Fix: Check if this joint is involved in any failing rule
+                const activeRules = sportRule.jointRules.filter(r => r.keypoints.includes(i));
+                const statuses = activeRules.map(r => currentFrame.ruleResults[r.id] || 'optimal');
+                let jointColor = getJointColor(i);
+                
+                if (statuses.includes('error')) jointColor = '#ef4444';
+                else if (statuses.includes('warning')) jointColor = '#fbbf24';
 
                 return (
                   <React.Fragment key={`joint-group-${i}`}>
-                    <Circle cx={cx} cy={cy} r={isHighlight ? 9 : 6} color={jointColor} opacity={0.25} />
-                    <Circle cx={cx} cy={cy} r={isHighlight ? 4 : 2.5} color="#ffffff" opacity={1} />
+                    {/* Joint Glow */}
+                    <Circle 
+                      cx={cx} 
+                      cy={cy} 
+                      r={isHighlight ? 14 : 9} 
+                      color={jointColor} 
+                      opacity={0.2} 
+                    />
+                    {/* High-Contrast Core */}
+                    <Circle 
+                      cx={cx} 
+                      cy={cy} 
+                      r={isHighlight ? 4 : 3} 
+                      color="#ffffff" 
+                      opacity={1} 
+                    />
                   </React.Fragment>
                 );
               })}
@@ -283,8 +355,8 @@ export const KineticVideoPlayer = React.memo(forwardRef<KineticVideoPlayerRef, K
                     styles.metricLabel,
                     {
                       left: isEven ? vx + 10 : vx - 130, // Alternate sides
-                      top: vy - 50 + (idx * 15), // Smaller stagger
-                      borderColor: getStatusColor(status),
+                      top: vy - 50 + (idx * 15), 
+                      borderColor: status === 'error' ? '#ef4444' : getJointColor(rule.keypoints[1]),
                       maxWidth: 120,
                     }
                   ]}
