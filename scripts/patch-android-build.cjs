@@ -24,22 +24,67 @@ function findFilesRecursive(dir, filename) {
 
 function patchExpoModulesCorePlugin() {
   const nodeModulesDir = path.join(rootDir, 'node_modules');
-  const pluginPaths = findFilesRecursive(nodeModulesDir, 'ExpoModulesCorePlugin.gradle');
+  const corePluginDir = path.join(nodeModulesDir, 'expo-modules-core/android');
+  const corePluginPath = path.join(corePluginDir, 'ExpoModulesCorePlugin.gradle');
 
-  for (const pluginPath of pluginPaths) {
-    let content = fs.readFileSync(pluginPath, 'utf8');
-    const startIdx = content.indexOf('ext.useExpoPublishing = {');
-    const endIdx = content.indexOf('ext.useCoreDependencies = {');
-    
-    if (startIdx !== -1 && endIdx !== -1) {
-      const replacement = `ext.useExpoPublishing = {\n  // No-op to avoid AGP 8+ DefaultSoftwareComponentContainer release publishing errors during APK compilation\n}\n\n`;
-      const updated = content.substring(0, startIdx) + replacement + content.substring(endIdx);
-      if (updated !== content) {
-        fs.writeFileSync(pluginPath, updated, 'utf8');
-        console.log(`[Patch] Successfully patched ExpoModulesCorePlugin at: ${pluginPath}`);
-      } else {
-        console.log(`[Patch] ExpoModulesCorePlugin already clean at: ${pluginPath}`);
+  if (!fs.existsSync(corePluginDir)) {
+    console.warn(`[Patch] Skip core plugin check: Directory not found at ${corePluginDir}`);
+    return;
+  }
+
+  const pluginTemplate = `class KotlinExpoModulesCorePlugin implements Plugin<Project> {
+  void apply(Project project) {
+    project.rootProject.ext.expoProvidesDefaultConfig = { true }
+    project.ext.safeExtGet = { prop, fallback ->
+      project.rootProject.ext.has(prop) ? project.rootProject.ext.get(prop) : fallback
+    }
+    project.buildscript {
+      project.ext.kotlinVersion = {
+        project.rootProject.ext.has("kotlinVersion") ? project.rootProject.ext.get("kotlinVersion") : "1.9.24"
       }
+    }
+  }
+}
+ext.applyKotlinExpoModulesCorePlugin = {
+  try { apply plugin: 'kotlin-android' } catch (e) {}
+  apply plugin: KotlinExpoModulesCorePlugin
+}
+ext.useDefaultAndroidSdkVersions = {
+  project.android {
+    compileSdkVersion project.ext.safeExtGet("compileSdkVersion", 34)
+    defaultConfig {
+      minSdkVersion project.ext.safeExtGet("minSdkVersion", 23)
+      targetSdkVersion project.ext.safeExtGet("targetSdkVersion", 34)
+    }
+  }
+}
+ext.useExpoPublishing = { }
+ext.useCoreDependencies = {
+  dependencies {
+    if (!project.project.name.startsWith("expo-modules-core")) {
+      implementation project.project(':expo-modules-core')
+    }
+    implementation "org.jetbrains.kotlin:kotlin-stdlib-jdk7:\${project.ext.kotlinVersion()}"
+  }
+}
+`;
+
+  if (!fs.existsSync(corePluginPath)) {
+    console.log(`[Patch] Recreating missing ExpoModulesCorePlugin at: ${corePluginPath}`);
+    fs.writeFileSync(corePluginPath, pluginTemplate, 'utf8');
+  } else {
+    let content = fs.readFileSync(corePluginPath, 'utf8');
+    if (content.includes('ext.useExpoPublishing = {') && !content.includes('// No-op')) {
+      const startIdx = content.indexOf('ext.useExpoPublishing = {');
+      const endIdx = content.indexOf('ext.useCoreDependencies = {');
+      if (startIdx !== -1 && endIdx !== -1) {
+        const replacement = `ext.useExpoPublishing = {\n  // No-op to avoid AGP 8+ DefaultSoftwareComponentContainer release publishing errors during APK compilation\n}\n\n`;
+        const updated = content.substring(0, startIdx) + replacement + content.substring(endIdx);
+        fs.writeFileSync(corePluginPath, updated, 'utf8');
+        console.log(`[Patch] Successfully patched existing ExpoModulesCorePlugin`);
+      }
+    } else {
+      console.log(`[Patch] ExpoModulesCorePlugin already clean or custom.`);
     }
   }
 }
