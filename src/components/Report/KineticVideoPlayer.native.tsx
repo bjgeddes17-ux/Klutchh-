@@ -243,7 +243,7 @@ export const KineticVideoPlayer = React.memo(forwardRef<KineticVideoPlayerRef, K
       )}
     </View>
   );
-}););
+});
 
 const styles = StyleSheet.create({
   container: {
