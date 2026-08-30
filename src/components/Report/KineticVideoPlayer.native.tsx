@@ -35,37 +35,7 @@ const POSE_CONNECTIONS: [number, number][] = [
   [24, 26], [26, 28], [28, 30], [30, 32],
 ];
 
-export const KineticVideoPlayer = React.memo(forwardRef<KineticVideoPlayerRef, KineticVideoPlayerProps>(({
-  videoUrl,
-  sportRule,
-  sortedFrames,
-  isPlaying,
-  currentTime,
-  onTimeUpdate,
-  onDurationChange,
-  playbackRate = 1,
-  isDataReady,
-}, ref) => {
-  const videoRef = useRef<Video>(null);
-  const [containerSize, setContainerSize] = useState<{ width: number; height: number }>({ width: 340, height: 220 });
-  const [videoNaturalSize, setVideoNaturalSize] = useState<{ width: number; height: number } | null>(null);
-
-  useImperativeHandle(ref, () => ({
-    seek: (time: number) => {
-      if (videoRef.current) {
-        videoRef.current.setPositionAsync(time * 1000);
-      }
-    }
-  }));
-
-  const handleLayout = (e: LayoutChangeEvent) => {
-    const { width, height } = e.nativeEvent.layout;
-    if (width > 0 && height > 0) {
-      setContainerSize({ width, height });
-    }
-  };
-
-  // High-impact status color mapping
+// High-impact status color mapping
 const getStatusColor = (status: string) => {
   switch (status) {
     case 'optimal': return '#22c55e'; // Signal-Green
