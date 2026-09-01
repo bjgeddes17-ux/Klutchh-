@@ -27,7 +27,15 @@ jobs:
       - name: 🟢 Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 22
+          node-version: 20
+          cache: 'npm'
+
+      - name: 🧹 Clean Artifacts & Lockfiles
+        run: |
+          echo "Cleaning conflicting lock files and machine directories..."
+          rm -rf .expo .expo-shared
+          rm -f bun.lock bun.lockb yarn.lock pnpm-lock.yaml
+          rm -rf android ios
 
       - name: 📦 Install EAS CLI
         run: npm install -g eas-cli@latest
@@ -38,6 +46,8 @@ jobs:
       - name: 🏗️ Trigger EAS Cloud Build (with Auto-Retry)
         env:
           EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+          EXPO_NO_DOCTOR: "1"
+          CI: "1"
         run: |
           BUILD_PROFILE="${{ github.event.inputs.profile || 'preview' }}"
           echo "🚀 Triggering EAS build for profile: $BUILD_PROFILE"
@@ -54,3 +64,4 @@ jobs:
             echo "⚠️ Expo GraphQL/API returned transient error. Retrying attempt ($RETRY_COUNT/$MAX_RETRIES) in 15 seconds..."
             sleep 15
           done
+

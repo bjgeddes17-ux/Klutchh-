@@ -6,3 +6,23 @@ coverage/
 *.log
 .env*
 !.env.example
+
+# Expo & Native build directories
+.expo/
+.expo-shared/
+android/
+ios/
+
+# Lock files to prevent multiple lockfile conflict in CI
+bun.lock
+bun.lockb
+yarn.lock
+pnpm-lock.yaml
+
+# Temporary scripts
+fix_*.cjs
+recover*.cjs
+replace_*.cjs
+test_*.cjs
+test.cjs
+
