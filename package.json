@@ -1,7 +1,7 @@
 {
   "name": "react-example",
   "private": true,
-  "version": "0.0.0",
+  "version": "1.0.1",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -9,7 +9,7 @@
     "android": "expo run:android",
     "ios": "expo run:ios",
     "web": "expo start --web --port 3000",
-    "build:apk": "eas build --platform android --profile preview",
+    "build:apk": "eas build --platform android --profile preview --non-interactive",
     "build": "vite build",
     "start": "vite preview",
     "preview": "vite preview",
