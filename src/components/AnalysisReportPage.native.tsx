@@ -1,147 +1,123 @@
-import React, { useState, useMemo, useRef } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import {
   View,
   Text,
+  StyleSheet,
   ScrollView,
   TouchableOpacity,
-  SafeAreaView,
-  StyleSheet,
-  StatusBar,
-  Dimensions,
-  Modal,
   TextInput,
+  Modal,
   Share,
   Alert,
+  StatusBar,
+  SafeAreaView,
 } from 'react-native';
-import { KineticVideoPlayer } from './Report/KineticVideoPlayer.native';
 import {
   ArrowLeft,
-  Download,
-  AlertCircle,
-  Activity,
-  Award,
-  Flame,
-  ShieldCheck,
-  ChevronRight,
-  Zap,
-  Target,
-  Layers,
-  Sparkles,
-  TrendingUp,
-  Clock,
-  RotateCcw,
-  CheckCircle2,
   Share2,
-  BookOpen,
-  Trophy,
+  Sparkles,
+  Flame,
   Dumbbell,
   FileText,
-  User,
-  Info,
-  X,
-  Play,
-  Check,
+  CheckCircle2,
+  Trophy,
+  ShieldCheck,
+  Zap,
+  Activity,
+  Layers,
   Bookmark,
+  Target,
+  Play,
+  RotateCcw,
+  X,
+  Plus,
+  Info,
+  Sliders,
+  ChevronDown,
+  ChevronUp,
 } from 'lucide-react-native';
-import { SportRule, FrameAnalysis, AICoachingReport, SavedReport } from '../types';
+import {
+  SportRule,
+  FrameAnalysis,
+  AICoachingReport,
+} from '../types';
+import { COMPREHENSIVE_DRILL_LIBRARY, DrillItem } from '../data/drillLibrary';
+import { KineticVideoPlayer } from './Report/KineticVideoPlayer.native';
+import { GhostCorrectionVisualizer } from './Report/GhostCorrectionVisualizer.native';
+import { KineticEnergyTransfer } from './Report/KineticEnergyTransfer.native';
+import { AnimatedDrillVisualizer } from './Report/AnimatedDrillVisualizer.native';
+import { calculateAngle } from '../utils/geometry';
 
 interface AnalysisReportPageProps {
   sportRule: SportRule;
-  videoUrl: string | null;
-  keyframeList: FrameAnalysis[];
+  videoUrl?: string;
+  keyframeList?: FrameAnalysis[];
   allFrames?: FrameAnalysis[];
-  aiReport: AICoachingReport | null;
-  dynamicMetrics?: {
-    peakAngularVelocity?: number;
-    estimatedPeakTorque?: number;
-    explosivenessScore?: number;
-    overallBiometricScore?: number;
-    overallSymmetry?: number;
-    overallKneeSafety?: number;
-    precisionScore?: number;
-    kineticFlowScore?: number;
-    jointArmorScore?: number;
-  } | null;
-  sequenceComparison?: {
-    ideal: string[];
-    actual: string[];
-    isCorrect: boolean;
-    feedback: string;
-  } | null;
-  kineticSequence?: {
-    steps: {
-      name: string;
-      timestamp: number;
-      score: number;
-      status: 'optimal' | 'good' | 'warning' | 'error';
-    }[];
-    firingOrder: {
-      joint: string;
-      peakTime: number;
-      peakVelocity: number;
-    }[];
-    isCorrectOrder: boolean;
-    sequenceEfficiency: number;
-  } | null;
+  aiReport?: AICoachingReport | null;
   overallSymmetry?: number;
   overallKneeSafety?: number;
+  kineticSequence?: any;
+  sequenceComparison?: any;
+  dynamicMetrics?: any;
   onBack: () => void;
   onSaveReport?: (reportData: any) => void;
 }
 
-const { width: SCREEN_WIDTH } = Dimensions.get('window');
-
 export const AnalysisReportPage: React.FC<AnalysisReportPageProps> = ({
   sportRule,
-  videoUrl,
+  videoUrl = '',
   keyframeList = [],
   allFrames = [],
-  aiReport,
-  dynamicMetrics,
-  sequenceComparison,
+  aiReport = null,
+  overallSymmetry = 88,
+  overallKneeSafety = 92,
   kineticSequence,
-  overallSymmetry = 92,
-  overallKneeSafety = 90,
+  sequenceComparison,
+  dynamicMetrics,
   onBack,
   onSaveReport,
 }) => {
-  const [isPlaying, setIsPlaying] = useState(false);
-  const [currentTime, setCurrentTime] = useState(0);
-  const [duration, setDuration] = useState(3.99);
-  const [activeTab, setActiveTab] = useState<'overview' | 'sequence' | 'corridors' | 'drills' | 'game' | 'card' | 'notes'>('overview');
-  const [selectedPhase, setSelectedPhase] = useState<string>('All');
-  
-  // Interactive Drill Progress
+  // Navigation & View State
+  const [activeTab, setActiveTab] = useState<
+    'corrections' | 'energy' | 'corridors' | 'drills' | 'quest' | 'card' | 'notes'
+  >('corrections');
+
+  const [currentTime, setCurrentTime] = useState<number>(0);
+  const [isPlaying, setIsPlaying] = useState<boolean>(false);
+  const [selectedPhaseFilter, setSelectedPhaseFilter] = useState<string>('All');
+  const [expandedDrillIdx, setExpandedDrillIdx] = useState<number | null>(0);
+
+  // Drill Progress State
   const [drillProgress, setDrillProgress] = useState<Record<number, 'pending' | 'completed' | 'mastered'>>({
-    0: 'completed',
+    0: 'pending',
     1: 'pending',
     2: 'pending',
   });
 
   // Rep Quest State
-  const [questReps, setQuestReps] = useState(0);
-  const [questGoal] = useState(8);
-  const [questXp, setQuestXp] = useState(0);
-  const [questVictory, setQuestVictory] = useState(false);
+  const [questReps, setQuestReps] = useState<number>(0);
+  const questGoal = 10;
+  const [questXp, setQuestXp] = useState<number>(150);
+  const [questVictory, setQuestVictory] = useState<boolean>(false);
 
-  // Explainer Modal State
-  const [activeExplainer, setActiveExplainer] = useState<{ title: string; score: number; desc: string; formula: string } | null>(null);
-
-  // Coach Notes & Athlete Card State
-  const [coachNotes, setCoachNotes] = useState(
-    aiReport?.coachEncouragement || `Athletic kinetic transfer is solid. Focus on knee tracking and deceleration stability for maximum peak power.`
+  // Trading Card & Notes State
+  const [athleteName, setAthleteName] = useState<string>('Alex Vance');
+  const [coachNotes, setCoachNotes] = useState<string>(
+    'Maintain low hip hinge during transition phase. Explosive hip-shoulder separation looks solid.'
   );
-  const [athleteName, setAthleteName] = useState('Athlete Prodigy');
-  const [saveModalOpen, setSaveModalOpen] = useState(false);
+  const [saveModalOpen, setSaveModalOpen] = useState<boolean>(false);
+  const [activeExplainer, setActiveExplainer] = useState<any | null>(null);
 
+  // Sorted Frames
   const sortedFrames = useMemo(() => {
     const list = allFrames && allFrames.length > 0 ? allFrames : keyframeList;
+    if (!list || list.length === 0) return [];
     return [...list].sort((a, b) => a.timestamp - b.timestamp);
   }, [allFrames, keyframeList]);
 
-  // Derive Titan Rating & Core Biomechanical Metrics
+  // Biomechanical Executive Ratings
   const titanRating = useMemo(() => {
-    if (dynamicMetrics?.overallBiometricScore && dynamicMetrics.overallBiometricScore > 0) {
+    if (dynamicMetrics?.overallBiometricScore) {
       return dynamicMetrics.overallBiometricScore;
     }
     if (aiReport?.overallGrade) {
@@ -150,67 +126,134 @@ export const AnalysisReportPage: React.FC<AnalysisReportPageProps> = ({
       if (g.startsWith('A')) return 9.1;
       if (g.startsWith('B+')) return 8.5;
       if (g.startsWith('B')) return 7.9;
-      if (g.startsWith('C+')) return 7.1;
-      if (g.startsWith('C')) return 6.3;
     }
-    return 8.6;
+    return 8.8;
   }, [dynamicMetrics, aiReport]);
 
   const explosivePower = useMemo(() => {
-    if (dynamicMetrics?.explosivenessScore && dynamicMetrics.explosivenessScore > 0) {
-      return dynamicMetrics.explosivenessScore;
-    }
+    if (dynamicMetrics?.explosivenessScore) return dynamicMetrics.explosivenessScore;
     return Math.min(99, Math.max(50, Math.round(titanRating * 9.8)));
   }, [dynamicMetrics, titanRating]);
 
   const jointArmor = useMemo(() => {
-    if (dynamicMetrics?.jointArmorScore && dynamicMetrics.jointArmorScore > 0) {
-      return dynamicMetrics.jointArmorScore;
-    }
-    if (aiReport?.injuryRiskAssessment?.level) {
-      return aiReport.injuryRiskAssessment.level === 'low' ? 94 : aiReport.injuryRiskAssessment.level === 'moderate' ? 78 : 60;
-    }
+    if (dynamicMetrics?.jointArmorScore) return dynamicMetrics.jointArmorScore;
     return Math.min(99, Math.max(60, overallKneeSafety));
-  }, [dynamicMetrics, aiReport, overallKneeSafety]);
+  }, [dynamicMetrics, overallKneeSafety]);
 
   const precision = useMemo(() => {
-    if (dynamicMetrics?.precisionScore && dynamicMetrics.precisionScore > 0) {
-      return dynamicMetrics.precisionScore;
-    }
+    if (dynamicMetrics?.precisionScore) return dynamicMetrics.precisionScore;
     return Math.min(99, Math.max(55, Math.round(titanRating * 10)));
   }, [dynamicMetrics, titanRating]);
 
   const kineticFlow = useMemo(() => {
-    if (dynamicMetrics?.kineticFlowScore && dynamicMetrics.kineticFlowScore > 0) {
-      return dynamicMetrics.kineticFlowScore;
-    }
-    if (kineticSequence?.sequenceEfficiency && kineticSequence.sequenceEfficiency > 0) {
-      return kineticSequence.sequenceEfficiency;
-    }
+    if (dynamicMetrics?.kineticFlowScore) return dynamicMetrics.kineticFlowScore;
     return Math.min(99, Math.max(60, overallSymmetry));
-  }, [dynamicMetrics, kineticSequence, overallSymmetry]);
+  }, [dynamicMetrics, overallSymmetry]);
 
-  // Top Diagnostic Keyframes with phase detection
-  const diagnosticKeyframes = useMemo(() => {
-    if (sortedFrames.length <= 4) return sortedFrames;
-    const step = Math.floor(sortedFrames.length / 4);
+  // Resolved Drills (From Comprehensive Library + AI Report)
+  const resolvedDrills = useMemo(() => {
+    const matched = COMPREHENSIVE_DRILL_LIBRARY.filter(
+      (d) => d.sportId === sportRule.id || d.sportName.toLowerCase().includes(sportRule.id.toLowerCase())
+    );
+
+    if (matched.length > 0) return matched;
+
+    if (aiReport?.funCorrectiveDrills && aiReport.funCorrectiveDrills.length > 0) {
+      return aiReport.funCorrectiveDrills.map((d: any, idx: number) => ({
+        id: `ai-drill-${idx}`,
+        sportId: sportRule.id,
+        sportName: sportRule.name,
+        title: d.name,
+        category: (idx === 0 ? 'Kinetic Chain' : idx === 1 ? 'Stability' : 'Injury Prevention') as any,
+        targetJoint: d.targetJoint || 'Kinetic Chain',
+        difficulty: (idx === 0 ? 'Elite' : 'Intermediate') as any,
+        reps: d.reps || '10 reps each side',
+        sets: '3 sets',
+        coachingCue: `Lock joint angles in strict target corridor throughout execution.`,
+        description: d.description || 'Isolates and reinforces optimal kinetic alignment under dynamic loads.',
+        steps: [
+          'Assume stable athletic posture with neutral spine.',
+          'Execute slow controlled movement through the target joint angle.',
+          'Hold peak contraction for 2 seconds before returning smoothly.',
+        ],
+        photoUrl: '',
+        biomechanicalBenefit: 'Maximizes force transfer efficiency and prevents joint shear.',
+      }));
+    }
+
     return [
-      sortedFrames[Math.min(sortedFrames.length - 1, Math.floor(step * 0.5))],
-      sortedFrames[Math.min(sortedFrames.length - 1, step * 1)],
-      sortedFrames[Math.min(sortedFrames.length - 1, step * 2)],
-      sortedFrames[Math.min(sortedFrames.length - 1, step * 3)],
-    ].filter(Boolean);
-  }, [sortedFrames]);
-
-  const handleSeekFrame = (time: number) => {
-    setCurrentTime(time);
-    setIsPlaying(false);
-  };
+      {
+        id: 'default-1',
+        sportId: sportRule.id,
+        sportName: sportRule.name,
+        title: `${sportRule.name} Low-Hip Kinetic Hinge`,
+        category: 'Kinetic Chain' as any,
+        targetJoint: 'Hip & Lumbar Spine',
+        difficulty: 'Elite' as any,
+        reps: '10 reps each side',
+        sets: '3 sets',
+        coachingCue: '"Sink hips below shoulders; keep flat neutral spine through the movement."',
+        description: 'Eliminates upright bending by locking the thoracic spine and driving power through explosive hip extension.',
+        steps: [
+          'Assume an athletic stance with feet shoulder-width apart.',
+          'Hinge at the hips keeping chest up and neutral spine.',
+          'Drive through heels back to starting position.',
+        ],
+        photoUrl: '',
+        biomechanicalBenefit: 'Increases ground force reaction by 35% and stabilizes lumbar spine.',
+      },
+      {
+        id: 'default-2',
+        sportId: sportRule.id,
+        sportName: sportRule.name,
+        title: 'Rotational Elastic Core Whip Snap',
+        category: 'Stability' as any,
+        targetJoint: 'Thoracic Spine & Shoulders',
+        difficulty: 'Intermediate' as any,
+        reps: '12 reps each side',
+        sets: '3 sets',
+        coachingCue: '"Initiate rotation from ground up through hips into the lead arm."',
+        description: 'Builds explosive rotational sequencing for maximum force transmission without drifting off-axis.',
+        steps: [
+          'Hold resistance band with two hands at chest height.',
+          'Rotate torso smoothly while keeping hips square.',
+          'Snap through the final 30 degrees of rotation with control.',
+        ],
+        photoUrl: '',
+        biomechanicalBenefit: 'Improves kinetic chain sequential firing efficiency by 28%.',
+      },
+      {
+        id: 'default-3',
+        sportId: sportRule.id,
+        sportName: sportRule.name,
+        title: 'Single-Leg Deceleration ACL Armor',
+        category: 'Injury Prevention' as any,
+        targetJoint: 'Knee & Ankle Complex',
+        difficulty: 'Elite' as any,
+        reps: '8 landings each leg',
+        sets: '3 sets',
+        coachingCue: '"Soft silent landing; knee tracks directly over 2nd toe with zero valgus collapse."',
+        description: 'Protects ACL and ankle ligaments by dissipating high ground reaction forces through deep knee flexion.',
+        steps: [
+          'Hop forward 1 meter landing on single leg.',
+          'Immediately absorb force into a controlled quarter squat.',
+          'Hold landing for 2 seconds ensuring knee does not buckle inward.',
+        ],
+        photoUrl: '',
+        biomechanicalBenefit: 'Reduces peak landing impact by 45% and eliminates knee valgus collapse vectors.',
+      },
+    ];
+  }, [sportRule, aiReport]);
 
   const cycleDrillStatus = (idx: number) => {
     const current = drillProgress[idx] || 'pending';
     const next = current === 'pending' ? 'completed' : current === 'completed' ? 'mastered' : 'pending';
     setDrillProgress((prev) => ({ ...prev, [idx]: next }));
+  };
+
+  const handleSeek = (time: number) => {
+    setCurrentTime(time);
+    setIsPlaying(false);
   };
 
   const handleAddRep = () => {
@@ -227,7 +270,7 @@ export const AnalysisReportPage: React.FC<AnalysisReportPageProps> = ({
   const handleShareCard = async () => {
     try {
       await Share.share({
-        message: `🏆 Klutchh Biomechanical Report for ${athleteName} - ${sportRule.name.toUpperCase()} Titan Rating: ${titanRating.toFixed(1)}/10! Power: ${explosivePower}%, Armor: ${jointArmor}%, Precision: ${precision}%.`,
+        message: `🏆 Klutchh Biomechanical Audit for ${athleteName} - ${sportRule.name.toUpperCase()}\nTitan Rating: ${titanRating.toFixed(1)}/10\n⚡ Power: ${explosivePower}%\n🛡️ Armor: ${jointArmor}%\n🎯 Precision: ${precision}%\n🔄 Flow: ${kineticFlow}%`,
       });
     } catch (e) {
       console.error(e);
@@ -247,253 +290,227 @@ export const AnalysisReportPage: React.FC<AnalysisReportPageProps> = ({
       });
     }
     setSaveModalOpen(false);
-    Alert.alert('Session Saved', `Report for ${athleteName} has been saved to your local athlete roster.`);
+    Alert.alert('Session Saved', `Biomechanical Audit for ${athleteName} saved to athlete profile.`);
   };
 
-  const resolvedDrills = aiReport?.funCorrectiveDrills && aiReport.funCorrectiveDrills.length > 0
-    ? aiReport.funCorrectiveDrills
-    : [
-        {
-          name: `${sportRule.name} Low-Hip Kinetic Hinge`,
-          description: 'Locks thoracic posture and enforces 110°-135° knee flexion under dynamic loads.',
-          reps: '3 sets x 10 reps',
-          targetJoint: 'Hip & Lumbar Spine',
-        },
-        {
-          name: 'Rotational Elastic Whip Extension',
-          description: 'Strengthens proximal-to-distal kinetic firing order from pelvis through lead arm.',
-          reps: '3 sets x 12 reps',
-          targetJoint: 'Thoracic Core & Shoulders',
-        },
-        {
-          name: 'Banded Deceleration Foot Plant',
-          description: 'Eliminates knee valgus inward deviation and improves unilateral ground absorption.',
-          reps: '3 sets x 8 reps each side',
-          targetJoint: 'Knee & Ankle Complex',
-        },
-      ];
+  // Phase options for Corridors filter
+  const allPhases = useMemo(() => {
+    const phases = ['All'];
+    if (sportRule.phases) {
+      sportRule.phases.forEach((p) => {
+        if (!phases.includes(p)) phases.push(p);
+      });
+    }
+    return phases;
+  }, [sportRule]);
 
-  const defaultSteps = [
-    { name: 'Stance & Coil', timestamp: 0.6, score: 92, status: 'optimal' as const },
-    { name: 'Kinetic Drive', timestamp: 1.6, score: 89, status: 'optimal' as const },
-    { name: 'Release & Follow-Through', timestamp: 2.8, score: 91, status: 'optimal' as const },
-  ];
-
-  const firingOrder = kineticSequence?.firingOrder || [
-    { joint: 'Pelvis / Hips', peakTime: 0.8, peakVelocity: 380 },
-    { joint: 'Torso / Spine', peakTime: 1.2, peakVelocity: 460 },
-    { joint: 'Lead Arm / Wrist', peakTime: 1.5, peakVelocity: 540 },
-  ];
+  const filteredRules = useMemo(() => {
+    if (selectedPhaseFilter === 'All') return sportRule.jointRules;
+    return sportRule.jointRules.filter(
+      (r) => r.phase === selectedPhaseFilter || !r.phase
+    );
+  }, [sportRule, selectedPhaseFilter]);
 
   return (
     <SafeAreaView style={styles.safeArea}>
       <StatusBar barStyle="light-content" backgroundColor="#09090b" />
 
-      {/* Top Bar */}
+      {/* Top App Header */}
       <View style={styles.header}>
         <TouchableOpacity onPress={onBack} style={styles.backButton}>
-          <ArrowLeft color="#fff" size={20} />
+          <ArrowLeft color="#ffffff" size={20} />
         </TouchableOpacity>
         <View style={styles.headerTitleGroup}>
           <View style={styles.sportBadgeRow}>
             <Text style={styles.sportTag}>{sportRule.name.toUpperCase()}</Text>
             <Text style={styles.headerSubtitle}>• BIOMETRIC AUDIT</Text>
           </View>
-          <Text style={styles.headerTitle}>EXECUTIVE REPORT</Text>
+          <Text style={styles.headerMainTitle}>{sportRule.name} Form Analysis</Text>
         </View>
-        <TouchableOpacity onPress={() => setSaveModalOpen(true)} style={styles.exportButton}>
-          <Bookmark color="#eab308" size={18} />
+        <TouchableOpacity onPress={() => setSaveModalOpen(true)} style={styles.saveHeaderBtn}>
+          <Bookmark color="#eab308" size={16} />
         </TouchableOpacity>
       </View>
 
-      <ScrollView style={styles.container} contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
-        
-        {/* 1. Volumetric & Broadcast Native Video Stage */}
-        <View style={styles.videoStage}>
-          <KineticVideoPlayer
-            videoUrl={videoUrl || ''}
-            sportRule={sportRule}
-            sortedFrames={sortedFrames}
-            isPlaying={isPlaying}
-            currentTime={currentTime}
-            onTimeUpdate={setCurrentTime}
-            onDurationChange={setDuration}
-            isDataReady={true}
-            viewMode="student"
-            onTogglePlay={() => setIsPlaying(!isPlaying)}
-          />
-        </View>
-
-        {/* 2. Interactive Phase Filter Chips */}
-        {sportRule.phases && sportRule.phases.length > 0 && (
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.phaseScroll}>
-            <TouchableOpacity
-              onPress={() => setSelectedPhase('All')}
-              style={[styles.phasePill, selectedPhase === 'All' && styles.phasePillActive]}
-            >
-              <Text style={[styles.phasePillText, selectedPhase === 'All' && styles.phasePillTextActive]}>
-                ⚡ Full Kinetic Chain
-              </Text>
-            </TouchableOpacity>
-            {sportRule.phases.map((ph, idx) => (
-              <TouchableOpacity
-                key={idx}
-                onPress={() => setSelectedPhase(ph)}
-                style={[styles.phasePill, selectedPhase === ph && styles.phasePillActive]}
-              >
-                <Text style={[styles.phasePillText, selectedPhase === ph && styles.phasePillTextActive]}>
-                  {ph}
-                </Text>
-              </TouchableOpacity>
-            ))}
-          </ScrollView>
-        )}
-
-        {/* 3. Executive Titan Performance Banner */}
-        <View style={styles.executiveBanner}>
-          <View style={styles.bannerGlow} />
-          <View style={styles.bannerContent}>
-            <View style={styles.bannerBadgeBox}>
-              <Text style={styles.bannerBadgeEmoji}>
-                {aiReport?.overallGrade?.startsWith('A') ? '🏆' : aiReport?.overallGrade?.startsWith('B') ? '🏅' : '🎖️'}
+      <ScrollView style={styles.contentScroll} showsVerticalScrollIndicator={false}>
+        {/* 1. Executive Titan Score Card */}
+        <View style={styles.executiveCard}>
+          <View style={styles.executiveTopRow}>
+            <View style={styles.gradeBox}>
+              <Text style={styles.gradeIcon}>
+                {aiReport?.overallGrade?.startsWith('A') ? '🏆' : '🏅'}
               </Text>
             </View>
-            <View style={styles.bannerMeta}>
-              <View style={styles.bannerPillRow}>
-                <View style={styles.championPill}>
-                  <Text style={styles.championText}>
-                    {aiReport?.overallGrade?.startsWith('A') ? 'ELITE CHAMPION' : 'PRODIGY ATHLETE'}
+            <View style={styles.executiveInfo}>
+              <View style={styles.tierPillRow}>
+                <View style={styles.tierPill}>
+                  <Text style={styles.tierPillText}>
+                    {aiReport?.overallGrade?.startsWith('A')
+                      ? 'ELITE CHAMPION'
+                      : 'ADVANCED ATHLETE'}
                   </Text>
                 </View>
                 <View style={styles.titanPill}>
-                  <Text style={styles.titanText}>⚡ TITAN: {titanRating.toFixed(1)}/10</Text>
+                  <Text style={styles.titanPillText}>
+                    ⚡ TITAN RATING: {titanRating.toFixed(1)} / 10
+                  </Text>
                 </View>
               </View>
-              <Text style={styles.bannerHeadline}>
-                {sportRule.name} {aiReport?.overallGrade?.startsWith('A') ? 'Titan Mastery' : 'Kinetic Analysis'}
+              <Text style={styles.athleteTitle}>
+                {sportRule.name}{' '}
+                {aiReport?.overallGrade?.startsWith('A') ? 'Titan' : 'Prodigy'}
               </Text>
             </View>
           </View>
 
-          {/* Core 4 Biomechanical Attributes Grid (Interactive Tap for Formulas) */}
-          <View style={styles.attrGrid}>
+          {/* 4 Biomechanical Attributes Grid */}
+          <View style={styles.attributesGrid}>
             <TouchableOpacity
-              style={styles.attrCard}
               onPress={() =>
                 setActiveExplainer({
                   title: 'Explosive Power',
                   score: explosivePower,
-                  desc: 'Evaluates rate of force development (RFD), ground reaction torque, and angular velocity across drive phases.',
-                  formula: 'RFD = ΔTorque / ΔTime + Angular Velocity Index (deg/s)',
+                  desc: 'Quantifies force output and velocity propagation through the kinetic chain.',
+                  formula: 'P = Force (Ground Reaction) × Angular Velocity (deg/s)',
                 })
               }
+              style={styles.attributeItem}
             >
-              <View style={styles.attrLabelRow}>
-                <Zap color="#f59e0b" size={14} />
-                <Text style={styles.attrLabel}>POWER</Text>
-                <Info color="#71717a" size={11} style={{ marginLeft: 'auto' }} />
+              <Text style={styles.attributeLabel}>⚡ POWER</Text>
+              <Text style={[styles.attributeValue, { color: '#f59e0b' }]}>
+                {explosivePower}%
+              </Text>
+              <View style={styles.attributeBarTrack}>
+                <View
+                  style={[
+                    styles.attributeBarFill,
+                    { width: `${explosivePower}%`, backgroundColor: '#f59e0b' },
+                  ]}
+                />
               </View>
-              <Text style={styles.attrScoreYellow}>{explosivePower}%</Text>
-              <View style={styles.attrBarTrack}>
-                <View style={[styles.attrBarFillYellow, { width: `${explosivePower}%` }]} />
-              </View>
-              <Text style={styles.attrDesc}>Kinetic energy transfer</Text>
             </TouchableOpacity>
 
             <TouchableOpacity
-              style={styles.attrCard}
               onPress={() =>
                 setActiveExplainer({
-                  title: 'Joint Armor & Safety',
+                  title: 'Joint Armor',
                   score: jointArmor,
-                  desc: 'Monitors knee valgus deviation, cervical spine angle, and deceleration load absorption to prevent ACL and ligament strain.',
-                  formula: 'Armor = 100 - (Valgus Inward ° × 3.5) - (Spine Hyperextension °)',
+                  desc: 'Quantifies ligament protection, knee valgus resistance, and shock absorption.',
+                  formula: 'Armor = 100 - Valgus Displacement Index - Shear Load Penalty',
                 })
               }
+              style={styles.attributeItem}
             >
-              <View style={styles.attrLabelRow}>
-                <ShieldCheck color="#22c55e" size={14} />
-                <Text style={styles.attrLabel}>ARMOR</Text>
-                <Info color="#71717a" size={11} style={{ marginLeft: 'auto' }} />
+              <Text style={styles.attributeLabel}>🛡️ ARMOR</Text>
+              <Text style={[styles.attributeValue, { color: '#22c55e' }]}>
+                {jointArmor}%
+              </Text>
+              <View style={styles.attributeBarTrack}>
+                <View
+                  style={[
+                    styles.attributeBarFill,
+                    { width: `${jointArmor}%`, backgroundColor: '#22c55e' },
+                  ]}
+                />
               </View>
-              <Text style={styles.attrScoreGreen}>{jointArmor}%</Text>
-              <View style={styles.attrBarTrack}>
-                <View style={[styles.attrBarFillGreen, { width: `${jointArmor}%` }]} />
-              </View>
-              <Text style={styles.attrDesc}>Ligament & valgus safety</Text>
             </TouchableOpacity>
 
             <TouchableOpacity
-              style={styles.attrCard}
               onPress={() =>
                 setActiveExplainer({
-                  title: 'Biomechanical Precision',
+                  title: 'Precision',
                   score: precision,
-                  desc: 'Compares measured joint angles in real-time against elite movement corridors established by sports medicine standards.',
-                  formula: 'Precision = Σ (100 - |Measured° - IdealMid°|) / N Joints',
+                  desc: 'Measures body alignment checkpoints against gold-standard joint corridors.',
+                  formula: 'Precision = Σ (1 - |Measured - Ideal| / Corridor_Width)',
                 })
               }
+              style={styles.attributeItem}
             >
-              <View style={styles.attrLabelRow}>
-                <Target color="#38bdf8" size={14} />
-                <Text style={styles.attrLabel}>PRECISION</Text>
-                <Info color="#71717a" size={11} style={{ marginLeft: 'auto' }} />
+              <Text style={styles.attributeLabel}>🎯 PRECISION</Text>
+              <Text style={[styles.attributeValue, { color: '#38bdf8' }]}>
+                {precision}%
+              </Text>
+              <View style={styles.attributeBarTrack}>
+                <View
+                  style={[
+                    styles.attributeBarFill,
+                    { width: `${precision}%`, backgroundColor: '#38bdf8' },
+                  ]}
+                />
               </View>
-              <Text style={styles.attrScoreCyan}>{precision}%</Text>
-              <View style={styles.attrBarTrack}>
-                <View style={[styles.attrBarFillCyan, { width: `${precision}%` }]} />
-              </View>
-              <Text style={styles.attrDesc}>Elite posture alignment</Text>
             </TouchableOpacity>
 
             <TouchableOpacity
-              style={styles.attrCard}
               onPress={() =>
                 setActiveExplainer({
-                  title: 'Kinetic Flow & Symmetry',
+                  title: 'Kinetic Flow',
                   score: kineticFlow,
-                  desc: 'Measures left-to-right bilateral load balance and smooth proximal-to-distal kinematic sequencing.',
-                  formula: 'Flow = 100 - (Bilateral Asymmetry % × 1.8) + Kinetic Timing Coherence',
+                  desc: 'Quantifies seamless energy transfer from ground contact through arms without leaks.',
+                  formula: 'Flow = Proximal_to_Distal Timing Index × Transfer Efficiency',
                 })
               }
+              style={styles.attributeItem}
             >
-              <View style={styles.attrLabelRow}>
-                <RotateCcw color="#c084fc" size={14} />
-                <Text style={styles.attrLabel}>FLOW</Text>
-                <Info color="#71717a" size={11} style={{ marginLeft: 'auto' }} />
+              <Text style={styles.attributeLabel}>🔄 FLOW</Text>
+              <Text style={[styles.attributeValue, { color: '#c084fc' }]}>
+                {kineticFlow}%
+              </Text>
+              <View style={styles.attributeBarTrack}>
+                <View
+                  style={[
+                    styles.attributeBarFill,
+                    { width: `${kineticFlow}%`, backgroundColor: '#c084fc' },
+                  ]}
+                />
               </View>
-              <Text style={styles.attrScorePurple}>{kineticFlow}%</Text>
-              <View style={styles.attrBarTrack}>
-                <View style={[styles.attrBarFillPurple, { width: `${kineticFlow}%` }]} />
-              </View>
-              <Text style={styles.attrDesc}>Bilateral symmetry flow</Text>
             </TouchableOpacity>
           </View>
         </View>
 
-        {/* 4. Full Dynamic Tab Switcher Navigation (Website Parity) */}
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.tabScroll}>
+        {/* 2. Kinetic Video Player with Dynamic Biomechanical Skeleton */}
+        <KineticVideoPlayer
+          videoUrl={videoUrl}
+          sportRule={sportRule}
+          sortedFrames={sortedFrames}
+          isPlaying={isPlaying}
+          currentTime={currentTime}
+          onTimeUpdate={setCurrentTime}
+          isDataReady={true}
+          onTogglePlay={() => setIsPlaying(!isPlaying)}
+        />
+
+        {/* 3. Navigation Tab Bar */}
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          style={styles.tabBarScroll}
+          contentContainerStyle={styles.tabBarContent}
+        >
           <TouchableOpacity
-            onPress={() => setActiveTab('overview')}
-            style={[styles.tabButton, activeTab === 'overview' && styles.tabButtonActive]}
+            onPress={() => setActiveTab('corrections')}
+            style={[styles.tabButton, activeTab === 'corrections' && styles.tabButtonActive]}
           >
-            <Activity color={activeTab === 'overview' ? '#000' : '#a1a1aa'} size={14} />
-            <Text style={[styles.tabText, activeTab === 'overview' && styles.tabTextActive]}>Overview</Text>
+            <Target color={activeTab === 'corrections' ? '#000' : '#a1a1aa'} size={14} />
+            <Text style={[styles.tabText, activeTab === 'corrections' && styles.tabTextActive]}>
+              Top 3 Corrections
+            </Text>
           </TouchableOpacity>
 
           <TouchableOpacity
-            onPress={() => setActiveTab('sequence')}
-            style={[styles.tabButton, activeTab === 'sequence' && styles.tabButtonActive]}
+            onPress={() => setActiveTab('energy')}
+            style={[styles.tabButton, activeTab === 'energy' && styles.tabButtonActive]}
           >
-            <Zap color={activeTab === 'sequence' ? '#000' : '#a1a1aa'} size={14} />
-            <Text style={[styles.tabText, activeTab === 'sequence' && styles.tabTextActive]}>Kinetic Chain</Text>
+            <Zap color={activeTab === 'energy' ? '#000' : '#a1a1aa'} size={14} />
+            <Text style={[styles.tabText, activeTab === 'energy' && styles.tabTextActive]}>
+              Energy Transfer & Leakage
+            </Text>
           </TouchableOpacity>
 
           <TouchableOpacity
             onPress={() => setActiveTab('corridors')}
             style={[styles.tabButton, activeTab === 'corridors' && styles.tabButtonActive]}
           >
-            <Target color={activeTab === 'corridors' ? '#000' : '#a1a1aa'} size={14} />
+            <Sliders color={activeTab === 'corridors' ? '#000' : '#a1a1aa'} size={14} />
             <Text style={[styles.tabText, activeTab === 'corridors' && styles.tabTextActive]}>
               Corridors ({sportRule.jointRules.length})
             </Text>
@@ -505,16 +522,18 @@ export const AnalysisReportPage: React.FC<AnalysisReportPageProps> = ({
           >
             <Flame color={activeTab === 'drills' ? '#000' : '#a1a1aa'} size={14} />
             <Text style={[styles.tabText, activeTab === 'drills' && styles.tabTextActive]}>
-              Drills ({resolvedDrills.length})
+              Drill Plan ({resolvedDrills.length})
             </Text>
           </TouchableOpacity>
 
           <TouchableOpacity
-            onPress={() => setActiveTab('game')}
-            style={[styles.tabButton, activeTab === 'game' && styles.tabButtonActive]}
+            onPress={() => setActiveTab('quest')}
+            style={[styles.tabButton, activeTab === 'quest' && styles.tabButtonActive]}
           >
-            <Dumbbell color={activeTab === 'game' ? '#000' : '#a1a1aa'} size={14} />
-            <Text style={[styles.tabText, activeTab === 'game' && styles.tabTextActive]}>Rep Quest</Text>
+            <Dumbbell color={activeTab === 'quest' ? '#000' : '#a1a1aa'} size={14} />
+            <Text style={[styles.tabText, activeTab === 'quest' && styles.tabTextActive]}>
+              Rep Quest
+            </Text>
           </TouchableOpacity>
 
           <TouchableOpacity
@@ -522,7 +541,9 @@ export const AnalysisReportPage: React.FC<AnalysisReportPageProps> = ({
             style={[styles.tabButton, activeTab === 'card' && styles.tabButtonActive]}
           >
             <Trophy color={activeTab === 'card' ? '#000' : '#a1a1aa'} size={14} />
-            <Text style={[styles.tabText, activeTab === 'card' && styles.tabTextActive]}>Trading Card</Text>
+            <Text style={[styles.tabText, activeTab === 'card' && styles.tabTextActive]}>
+              Trading Card
+            </Text>
           </TouchableOpacity>
 
           <TouchableOpacity
@@ -530,194 +551,188 @@ export const AnalysisReportPage: React.FC<AnalysisReportPageProps> = ({
             style={[styles.tabButton, activeTab === 'notes' && styles.tabButtonActive]}
           >
             <FileText color={activeTab === 'notes' ? '#000' : '#a1a1aa'} size={14} />
-            <Text style={[styles.tabText, activeTab === 'notes' && styles.tabTextActive]}>Coach Notes</Text>
+            <Text style={[styles.tabText, activeTab === 'notes' && styles.tabTextActive]}>
+              Coach Notes
+            </Text>
           </TouchableOpacity>
         </ScrollView>
 
-        {/* 5. Tab Content: OVERVIEW */}
-        {activeTab === 'overview' && (
+        {/* 4. Tab 1: TOP 3 BIOMECHANICAL CORRECTIONS */}
+        {activeTab === 'corrections' && (
           <View style={styles.tabSection}>
-            {/* Key Strengths & Coaching Highlights */}
-            <View style={styles.highlightCard}>
-              <View style={styles.highlightHeader}>
-                <Sparkles color="#eab308" size={18} />
-                <Text style={styles.highlightTitle}>KEY BIOMECHANICAL STRENGTHS</Text>
+            <GhostCorrectionVisualizer
+              keyframeList={keyframeList}
+              allFrames={allFrames}
+              sportRule={sportRule}
+              onSeekTimestamp={handleSeek}
+              onSelectDrill={() => setActiveTab('drills')}
+            />
+
+            {/* Key Strengths Banner */}
+            <View style={styles.strengthsCard}>
+              <View style={styles.strengthsHeader}>
+                <ShieldCheck color="#22c55e" size={16} />
+                <Text style={styles.strengthsTitle}>CONFIRMED BIOMECHANICAL STRENGTHS</Text>
               </View>
               {(aiReport?.keyStrengths || [
-                'Explosive ground force reaction through initial drive phase',
-                'Optimal torso lean maintained within safety corridor',
-                'High rotational velocity through hip-shoulder separation',
-              ]).map((str, idx) => {
-                const text = typeof str === 'string' ? str : `${str.title}: ${str.desc}`;
+                'Optimal ground reaction force generation through initial drive phase',
+                'Stable spine posture preserved within safe biomechanical limits',
+                'Clean proximal-to-distal segmental acceleration timing',
+              ]).map((s, idx) => {
+                const text = typeof s === 'string' ? s : `${s.title}: ${s.desc}`;
                 return (
-                  <View key={idx} style={styles.strengthItem}>
-                    <CheckCircle2 color="#22c55e" size={16} style={{ marginTop: 2 }} />
+                  <View key={idx} style={styles.strengthRow}>
+                    <CheckCircle2 color="#22c55e" size={14} style={{ marginTop: 2 }} />
                     <Text style={styles.strengthText}>{text}</Text>
                   </View>
                 );
               })}
             </View>
+          </View>
+        )}
 
-            {/* Injury Risk Assessment */}
-            <View style={styles.riskCard}>
-              <View style={styles.riskHeader}>
-                <ShieldCheck color="#22c55e" size={18} />
-                <Text style={styles.riskTitle}>JOINT SAFETY & RISK ASSESSMENT</Text>
-                <View style={styles.riskPillGreen}>
-                  <Text style={styles.riskPillText}>LOW RISK</Text>
-                </View>
-              </View>
-              <Text style={styles.riskDescription}>
-                {aiReport?.injuryRiskAssessment?.findings?.[0] ||
-                  'No acute valgus deviations or joint strain patterns detected. Kinetic loading is distributed evenly.'}
+        {/* 5. Tab 2: KINETIC ENERGY TRANSFER & LEAKAGE */}
+        {activeTab === 'energy' && (
+          <View style={styles.tabSection}>
+            <KineticEnergyTransfer
+              allFrames={sortedFrames}
+              kineticSequence={kineticSequence}
+              currentTime={currentTime}
+              onSeek={handleSeek}
+            />
+          </View>
+        )}
+
+        {/* 6. Tab 3: REVAMPED CORRIDORS (DEEP JOINT AUDIT) */}
+        {activeTab === 'corridors' && (
+          <View style={styles.tabSection}>
+            <View style={styles.corridorHeader}>
+              <Text style={styles.sectionTitle}>JOINT ANGLE CORRIDOR AUDIT</Text>
+              <Text style={styles.sectionSubtitle}>
+                Measured angles against gold-standard biomechanical corridors
               </Text>
             </View>
 
-            {/* Diagnostic Keyframes (Tap to Seek) */}
-            <View style={styles.keyframesSection}>
-              <Text style={styles.sectionTitle}>DIAGNOSTIC KEYFRAMES (TAP TO SEEK)</Text>
-              <View style={styles.keyframeGrid}>
-                {diagnosticKeyframes.map((kf, idx) => {
-                  const phaseName =
-                    kf?.detectedPhase ||
-                    (idx === 0
-                      ? 'Setup & Stance'
-                      : idx === 1
-                      ? 'Kinetic Coil'
-                      : idx === 2
-                      ? 'Explosive Release'
-                      : 'Follow-Through');
-                  const isSelected = Math.abs(currentTime - (kf?.timestamp || 0)) < 0.15;
-
-                  return (
-                    <TouchableOpacity
-                      key={idx}
-                      onPress={() => handleSeekFrame(kf?.timestamp || 0)}
-                      style={[styles.keyframeCardBig, isSelected && styles.keyframeCardSelected]}
-                    >
-                      <View style={styles.keyframeTopRow}>
-                        <View style={styles.keyframeIconBox}>
-                          <Activity color="#eab308" size={16} />
-                        </View>
-                        <Text style={styles.keyframeTimeBadge}>{kf?.timestamp?.toFixed(2) || '0.00'}s</Text>
-                      </View>
-                      <Text style={styles.keyframeBigPhase}>{phaseName}</Text>
-                      <Text style={styles.keyframeHint}>
-                        Knee: {Math.round(kf?.angles?.knee || 118)}° • Hip: {Math.round(kf?.angles?.hip || 135)}°
-                      </Text>
-                    </TouchableOpacity>
-                  );
-                })}
-              </View>
-            </View>
-          </View>
-        )}
-
-        {/* 6. Tab Content: KINETIC SEQUENCE & CHAIN MATRIX */}
-        {activeTab === 'sequence' && (
-          <View style={styles.tabSection}>
-            <View style={styles.matrixCard}>
-              <View style={styles.matrixHeader}>
-                <Zap color="#eab308" size={18} />
-                <View>
-                  <Text style={styles.matrixTitle}>KINEMATIC FIRING SEQUENCE</Text>
-                  <Text style={styles.matrixSubtitle}>Proximal-to-Distal Kinetic Chain Timing</Text>
-                </View>
-                <View style={styles.efficiencyBadge}>
-                  <Text style={styles.efficiencyText}>94% EFFICIENCY</Text>
-                </View>
-              </View>
-
-              {/* Firing Order Timeline */}
-              <View style={styles.firingList}>
-                {firingOrder.map((step, idx) => (
-                  <View key={idx} style={styles.firingItem}>
-                    <View style={styles.firingNumberBox}>
-                      <Text style={styles.firingNumber}>{idx + 1}</Text>
-                    </View>
-                    <View style={styles.firingInfo}>
-                      <Text style={styles.firingJoint}>{step.joint}</Text>
-                      <Text style={styles.firingTiming}>
-                        Peak Velocity at {step.peakTime.toFixed(2)}s • {step.peakVelocity} deg/s
-                      </Text>
-                    </View>
-                    <View style={styles.firingTag}>
-                      <Text style={styles.firingTagText}>OPTIMAL</Text>
-                    </View>
-                  </View>
-                ))}
-              </View>
-            </View>
-
-            {/* Sequence Comparison Matrix */}
-            <View style={styles.sequenceMatrixBox}>
-              <Text style={styles.sectionTitle}>PHASE VERIFICATION MATRIX</Text>
-              {(kineticSequence?.steps || defaultSteps).map((step, idx) => (
-                <View key={idx} style={styles.sequenceStepCard}>
-                  <View style={styles.stepStatusDot} />
-                  <View style={styles.stepInfo}>
-                    <Text style={styles.stepName}>{step.name}</Text>
-                    <Text style={styles.stepSub}>Timestamp: {step.timestamp.toFixed(2)}s</Text>
-                  </View>
-                  <View style={styles.stepScoreBadge}>
-                    <Text style={styles.stepScoreText}>{step.score}% ALIGNED</Text>
-                  </View>
-                </View>
+            {/* Phase Filter Chips */}
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              style={styles.phaseFilterScroll}
+              contentContainerStyle={styles.phaseFilterContent}
+            >
+              {allPhases.map((phase) => (
+                <TouchableOpacity
+                  key={phase}
+                  onPress={() => setSelectedPhaseFilter(phase)}
+                  style={[
+                    styles.phaseChip,
+                    selectedPhaseFilter === phase && styles.phaseChipActive,
+                  ]}
+                >
+                  <Text
+                    style={[
+                      styles.phaseChipText,
+                      selectedPhaseFilter === phase && styles.phaseChipTextActive,
+                    ]}
+                  >
+                    {phase}
+                  </Text>
+                </TouchableOpacity>
               ))}
-            </View>
-          </View>
-        )}
+            </ScrollView>
 
-        {/* 7. Tab Content: CORRIDORS (DEEP JOINT AUDIT) */}
-        {activeTab === 'corridors' && (
-          <View style={styles.tabSection}>
-            <Text style={styles.sectionTitle}>JOINT ANGLE CORRIDOR AUDIT</Text>
-            {sportRule.jointRules.map((rule, idx) => {
+            {/* Corridors List */}
+            {filteredRules.map((rule, idx) => {
               const minOpt = rule.idealMin;
               const maxOpt = rule.idealMax;
-              const measured = Math.round((minOpt + maxOpt) / 2);
+
+              // Calculate average measured angle from frames or midpoint
+              let measured = Math.round((minOpt + maxOpt) / 2);
+              if (sortedFrames.length > 0) {
+                const vals = sortedFrames
+                  .map((f) => {
+                    if (f.angles?.[rule.id] !== undefined) return f.angles[rule.id];
+                    if (f.landmarks && rule.keypoints?.length === 3) {
+                      const p1 = f.landmarks[rule.keypoints[0]];
+                      const p2 = f.landmarks[rule.keypoints[1]];
+                      const p3 = f.landmarks[rule.keypoints[2]];
+                      if (p1 && p2 && p3) return calculateAngle(p1, p2, p3);
+                    }
+                    return undefined;
+                  })
+                  .filter((v): v is number => v !== undefined && !isNaN(v));
+
+                if (vals.length > 0) {
+                  measured = Math.round(vals.reduce((a, b) => a + b, 0) / vals.length);
+                }
+              }
+
+              const isOptimal = measured >= minOpt && measured <= maxOpt;
+              const delta = isOptimal ? 0 : measured < minOpt ? minOpt - measured : measured - maxOpt;
+              const statusColor = isOptimal ? '#22c55e' : delta > 15 ? '#ef4444' : '#f59e0b';
 
               return (
-                <View key={rule.id || idx} style={styles.ruleCard}>
-                  <View style={styles.ruleTopRow}>
-                    <View style={styles.ruleTitleBox}>
-                      <View style={styles.ruleStatusDot} />
-                      <Text style={styles.ruleName}>{rule.name}</Text>
+                <View key={rule.id || idx} style={styles.corridorCard}>
+                  <View style={styles.corridorTopRow}>
+                    <View style={styles.corridorTitleBox}>
+                      <View style={[styles.statusDot, { backgroundColor: statusColor }]} />
+                      <Text style={styles.corridorName}>{rule.name}</Text>
                     </View>
-                    <View style={styles.ruleIdealBadge}>
-                      <Text style={styles.ruleIdealText}>
+                    <View style={[styles.targetPill, { borderColor: statusColor }]}>
+                      <Text style={[styles.targetPillText, { color: statusColor }]}>
                         Target: {minOpt}° - {maxOpt}°
                       </Text>
                     </View>
                   </View>
-                  <Text style={styles.ruleDesc}>{rule.description}</Text>
-                  
+
+                  <Text style={styles.corridorDesc}>{rule.description}</Text>
+
                   {/* Visual Corridor Bar */}
-                  <View style={styles.corridorBarContainer}>
-                    <View style={styles.corridorBarBackground}>
+                  <View style={styles.corridorBarBox}>
+                    <View style={styles.corridorBarTrack}>
+                      {/* Optimal Green Zone */}
                       <View
                         style={[
-                          styles.corridorBarOptimalZone,
-                          { left: `${(minOpt / 180) * 100}%`, width: `${((maxOpt - minOpt) / 180) * 100}%` },
+                          styles.optimalZone,
+                          {
+                            left: `${(minOpt / 180) * 100}%`,
+                            width: `${((maxOpt - minOpt) / 180) * 100}%`,
+                          },
                         ]}
                       />
+                      {/* Measured Marker */}
                       <View
                         style={[
-                          styles.corridorMarker,
-                          { left: `${Math.min(95, Math.max(5, (measured / 180) * 100))}%` },
+                          styles.measuredMarker,
+                          {
+                            left: `${Math.min(95, Math.max(5, (measured / 180) * 100))}%`,
+                            backgroundColor: statusColor,
+                          },
                         ]}
                       />
                     </View>
-                    <View style={styles.corridorBarLabels}>
-                      <Text style={styles.corridorLabel}>0°</Text>
-                      <Text style={styles.corridorCenterLabel}>Measured: {measured}° (Optimal)</Text>
-                      <Text style={styles.corridorLabel}>180°</Text>
+
+                    <View style={styles.corridorLabelsRow}>
+                      <Text style={styles.corridorLimitText}>0°</Text>
+                      <Text style={[styles.corridorMeasuredText, { color: statusColor }]}>
+                        Measured: {measured}° ({isOptimal ? 'Optimal' : `Δ ${delta}° Off`})
+                      </Text>
+                      <Text style={styles.corridorLimitText}>180°</Text>
                     </View>
                   </View>
 
-                  <View style={styles.rulePhaseRow}>
-                    <Text style={styles.rulePhaseTag}>PHASE: {rule.phase || 'Dynamic'}</Text>
-                    <Text style={styles.ruleJointTag}>JOINTS: #{rule.keypoints.join(' - #')}</Text>
+                  {/* Biomechanical Details Footer */}
+                  <View style={styles.corridorFooter}>
+                    {rule.phase && (
+                      <View style={styles.footerTag}>
+                        <Text style={styles.footerTagText}>PHASE: {rule.phase}</Text>
+                      </View>
+                    )}
+                    {rule.impactOnPerformance && (
+                      <Text style={styles.impactText} numberOfLines={2}>
+                        ⚡ {rule.impactOnPerformance}
+                      </Text>
+                    )}
                   </View>
                 </View>
               );
@@ -725,28 +740,40 @@ export const AnalysisReportPage: React.FC<AnalysisReportPageProps> = ({
           </View>
         )}
 
-        {/* 8. Tab Content: PRESCRIBED DRILLS */}
+        {/* 7. Tab 4: DRILL ACTION PLAN WITH STEP-BY-STEP INSTRUCTIONS & ANIMATIONS */}
         {activeTab === 'drills' && (
           <View style={styles.tabSection}>
             <View style={styles.drillsHeader}>
               <View>
                 <Text style={styles.sectionTitle}>CORRECTIVE DRILL ACTION PLAN</Text>
-                <Text style={styles.sectionSubtitle}>Tap status badge to log mastery progression</Text>
+                <Text style={styles.sectionSubtitle}>
+                  Step-by-step guidance and animated movement visualizers
+                </Text>
               </View>
             </View>
 
             {resolvedDrills.map((drill, idx) => {
               const status = drillProgress[idx] || 'pending';
+              const isExpanded = expandedDrillIdx === idx;
+
               return (
-                <View key={idx} style={styles.drillCardBig}>
-                  <View style={styles.drillTopRow}>
-                    <View style={styles.drillIconBoxBig}>
-                      <Flame color="#ef4444" size={20} />
+                <View key={drill.id || idx} style={styles.drillCardBig}>
+                  {/* Drill Header */}
+                  <TouchableOpacity
+                    onPress={() => setExpandedDrillIdx(isExpanded ? null : idx)}
+                    style={styles.drillHeaderRow}
+                  >
+                    <View style={styles.drillIconBox}>
+                      <Flame color="#ef4444" size={18} />
                     </View>
                     <View style={styles.drillTitleGroup}>
-                      <Text style={styles.drillTitleBig}>{drill.name}</Text>
-                      <Text style={styles.drillTargetText}>🎯 Target: {drill.targetJoint || 'Kinetic Chain'}</Text>
+                      <Text style={styles.drillTitleBig}>{drill.title}</Text>
+                      <Text style={styles.drillTargetText}>
+                        🎯 Target: {drill.targetJoint} • {drill.category}
+                      </Text>
                     </View>
+
+                    {/* Status Pill */}
                     <TouchableOpacity
                       onPress={() => cycleDrillStatus(idx)}
                       style={[
@@ -771,21 +798,53 @@ export const AnalysisReportPage: React.FC<AnalysisReportPageProps> = ({
                         {status.toUpperCase()}
                       </Text>
                     </TouchableOpacity>
-                  </View>
+                  </TouchableOpacity>
 
                   <Text style={styles.drillDescriptionBig}>{drill.description}</Text>
 
+                  {/* Animated Movement Visualizer */}
+                  <AnimatedDrillVisualizer
+                    drillTitle={drill.title}
+                    targetJoint={drill.targetJoint}
+                    category={drill.category}
+                    coachingCue={drill.coachingCue}
+                  />
+
+                  {/* Step-by-Step Instructions (Expandable) */}
+                  {isExpanded && drill.steps && drill.steps.length > 0 && (
+                    <View style={styles.stepsContainer}>
+                      <Text style={styles.stepsHeading}>STEP-BY-STEP INSTRUCTIONS</Text>
+                      {drill.steps.map((step, sIdx) => (
+                        <View key={sIdx} style={styles.stepItem}>
+                          <View style={styles.stepNumberBadge}>
+                            <Text style={styles.stepNumberText}>{sIdx + 1}</Text>
+                          </View>
+                          <Text style={styles.stepDescriptionText}>{step}</Text>
+                        </View>
+                      ))}
+
+                      {drill.biomechanicalBenefit ? (
+                        <View style={styles.benefitBox}>
+                          <Zap color="#eab308" size={14} />
+                          <Text style={styles.benefitText}>{drill.biomechanicalBenefit}</Text>
+                        </View>
+                      ) : null}
+                    </View>
+                  )}
+
+                  {/* Drill Footer Row */}
                   <View style={styles.drillFooterRow}>
                     <View style={styles.repBadge}>
                       <Text style={styles.repText}>{drill.reps || '3 sets x 10 reps'}</Text>
                     </View>
+
                     <TouchableOpacity
                       onPress={() => {
-                        setActiveTab('game');
+                        setActiveTab('quest');
                       }}
                       style={styles.startQuestBtn}
                     >
-                      <Play color="#000" size={12} />
+                      <Play color="#000000" size={12} />
                       <Text style={styles.startQuestBtnText}>START QUEST</Text>
                     </TouchableOpacity>
                   </View>
@@ -795,13 +854,13 @@ export const AnalysisReportPage: React.FC<AnalysisReportPageProps> = ({
           </View>
         )}
 
-        {/* 9. Tab Content: GAME ARENA & REP QUEST */}
-        {activeTab === 'game' && (
+        {/* 8. Tab 5: REP QUEST ARENA */}
+        {activeTab === 'quest' && (
           <View style={styles.tabSection}>
             <View style={styles.questCard}>
               <View style={styles.questHeader}>
                 <View style={styles.questTrophyBox}>
-                  <Award color="#eab308" size={28} />
+                  <Trophy color="#eab308" size={26} />
                 </View>
                 <View>
                   <Text style={styles.questTitle}>BIOMECHANICAL REP ARENA</Text>
@@ -816,7 +875,12 @@ export const AnalysisReportPage: React.FC<AnalysisReportPageProps> = ({
                   <Text style={styles.xpValue}>+{questXp} XP</Text>
                 </View>
                 <View style={styles.xpBarTrack}>
-                  <View style={[styles.xpBarFill, { width: `${(questReps / questGoal) * 100}%` }]} />
+                  <View
+                    style={[
+                      styles.xpBarFill,
+                      { width: `${Math.min(100, (questReps / questGoal) * 100)}%` },
+                    ]}
+                  />
                 </View>
               </View>
 
@@ -830,11 +894,13 @@ export const AnalysisReportPage: React.FC<AnalysisReportPageProps> = ({
                 <View style={styles.victoryCard}>
                   <Sparkles color="#eab308" size={24} />
                   <Text style={styles.victoryTitle}>DRILL QUEST MASTERED!</Text>
-                  <Text style={styles.victorySub}>+250 XP bonus credited to athlete profile.</Text>
+                  <Text style={styles.victorySub}>
+                    +250 XP bonus credited to athlete profile.
+                  </Text>
                 </View>
               ) : (
                 <TouchableOpacity onPress={handleAddRep} style={styles.logRepButton}>
-                  <PlusOneIcon />
+                  <Plus color="#000000" size={16} />
                   <Text style={styles.logRepButtonText}>LOG PERFECT FORM REP (+25 XP)</Text>
                 </TouchableOpacity>
               )}
@@ -842,24 +908,24 @@ export const AnalysisReportPage: React.FC<AnalysisReportPageProps> = ({
           </View>
         )}
 
-        {/* 10. Tab Content: TRADING CARD MAKER */}
+        {/* 9. Tab 6: TRADING CARD */}
         {activeTab === 'card' && (
           <View style={styles.tabSection}>
             <View style={styles.cardMakerBox}>
               <Text style={styles.sectionTitle}>ATHLETE DIGITAL TRADING CARD</Text>
-              
-              {/* Card Container */}
+
               <View style={styles.tradingCard}>
                 <View style={styles.cardHeaderRow}>
                   <View style={styles.cardSportTag}>
                     <Text style={styles.cardSportTagText}>{sportRule.name.toUpperCase()}</Text>
                   </View>
                   <View style={styles.cardGradeTag}>
-                    <Text style={styles.cardGradeTagText}>{aiReport?.overallGrade || 'A'}</Text>
+                    <Text style={styles.cardGradeTagText}>
+                      {aiReport?.overallGrade || 'A'}
+                    </Text>
                   </View>
                 </View>
 
-                {/* Athlete Avatar & Name */}
                 <View style={styles.cardCenter}>
                   <View style={styles.cardAvatar}>
                     <Text style={styles.cardAvatarText}>⚡</Text>
@@ -871,10 +937,11 @@ export const AnalysisReportPage: React.FC<AnalysisReportPageProps> = ({
                     placeholder="Enter Athlete Name"
                     placeholderTextColor="#71717a"
                   />
-                  <Text style={styles.cardTierText}>TITAN SCORE: {titanRating.toFixed(1)} / 10</Text>
+                  <Text style={styles.cardTierText}>
+                    TITAN SCORE: {titanRating.toFixed(1)} / 10
+                  </Text>
                 </View>
 
-                {/* 4 Attributes Pill in Card */}
                 <View style={styles.cardStatsGrid}>
                   <View style={styles.cardStatItem}>
                     <Text style={styles.cardStatLabel}>POWER</Text>
@@ -895,16 +962,15 @@ export const AnalysisReportPage: React.FC<AnalysisReportPageProps> = ({
                 </View>
               </View>
 
-              {/* Share / Export Button */}
               <TouchableOpacity onPress={handleShareCard} style={styles.shareCardBtn}>
-                <Share2 color="#000" size={18} />
+                <Share2 color="#000000" size={16} />
                 <Text style={styles.shareCardBtnText}>SHARE ATHLETE TRADING CARD</Text>
               </TouchableOpacity>
             </View>
           </View>
         )}
 
-        {/* 11. Tab Content: COACH NOTES */}
+        {/* 10. Tab 7: COACH NOTES */}
         {activeTab === 'notes' && (
           <View style={styles.tabSection}>
             <View style={styles.notesCard}>
@@ -917,17 +983,21 @@ export const AnalysisReportPage: React.FC<AnalysisReportPageProps> = ({
                 value={coachNotes}
                 onChangeText={setCoachNotes}
                 multiline
-                placeholder="Enter customized athlete coaching notes..."
+                placeholder="Enter customized coaching notes..."
                 placeholderTextColor="#71717a"
               />
-              <TouchableOpacity onPress={() => setSaveModalOpen(true)} style={styles.saveNotesBtn}>
-                <Bookmark color="#000" size={16} />
+              <TouchableOpacity
+                onPress={() => setSaveModalOpen(true)}
+                style={styles.saveNotesBtn}
+              >
+                <Bookmark color="#000000" size={16} />
                 <Text style={styles.saveNotesBtnText}>SAVE TO ATHLETE PROFILE</Text>
               </TouchableOpacity>
             </View>
           </View>
         )}
 
+        <View style={{ height: 40 }} />
       </ScrollView>
 
       {/* Metric Explainer Modal */}
@@ -936,8 +1006,11 @@ export const AnalysisReportPage: React.FC<AnalysisReportPageProps> = ({
           <View style={styles.modalContent}>
             <View style={styles.modalHeader}>
               <Text style={styles.modalTitle}>{activeExplainer?.title.toUpperCase()}</Text>
-              <TouchableOpacity onPress={() => setActiveExplainer(null)} style={styles.modalClose}>
-                <X color="#fff" size={18} />
+              <TouchableOpacity
+                onPress={() => setActiveExplainer(null)}
+                style={styles.modalClose}
+              >
+                <X color="#ffffff" size={18} />
               </TouchableOpacity>
             </View>
             <Text style={styles.modalScoreText}>Score: {activeExplainer?.score}%</Text>
@@ -950,41 +1023,38 @@ export const AnalysisReportPage: React.FC<AnalysisReportPageProps> = ({
         </View>
       </Modal>
 
-      {/* Save to Athlete Roster Modal */}
-      <Modal visible={saveModalOpen} transparent animationType="fade">
+      {/* Save to Roster Modal */}
+      <Modal visible={saveModalOpen} transparent animationType="slide">
         <View style={styles.modalOverlay}>
           <View style={styles.modalContent}>
             <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>SAVE SESSION TO ROSTER</Text>
-              <TouchableOpacity onPress={() => setSaveModalOpen(false)} style={styles.modalClose}>
-                <X color="#fff" size={18} />
+              <Text style={styles.modalTitle}>SAVE AUDIT TO ROSTER</Text>
+              <TouchableOpacity
+                onPress={() => setSaveModalOpen(false)}
+                style={styles.modalClose}
+              >
+                <X color="#ffffff" size={18} />
               </TouchableOpacity>
             </View>
-            <Text style={styles.inputLabel}>ATHLETE NAME</Text>
+            <Text style={styles.modalDesc}>
+              Confirm athlete name and diagnostic notes before storing in local profile.
+            </Text>
             <TextInput
-              style={styles.dialogInput}
+              style={styles.modalInput}
               value={athleteName}
               onChangeText={setAthleteName}
-              placeholder="e.g. Marcus Rashford"
+              placeholder="Athlete Name"
               placeholderTextColor="#71717a"
             />
-            <TouchableOpacity onPress={handleSaveToRoster} style={styles.confirmSaveBtn}>
-              <Check color="#000" size={18} />
-              <Text style={styles.confirmSaveBtnText}>CONFIRM & SAVE REPORT</Text>
+            <TouchableOpacity onPress={handleSaveToRoster} style={styles.modalSaveBtn}>
+              <Text style={styles.modalSaveBtnText}>CONFIRM & SAVE REPORT</Text>
             </TouchableOpacity>
           </View>
         </View>
       </Modal>
-
     </SafeAreaView>
   );
 };
-
-const PlusOneIcon = () => (
-  <View style={{ marginRight: 6 }}>
-    <Text style={{ color: '#000', fontWeight: '900', fontSize: 16 }}>+1</Text>
-  </View>
-);
 
 const styles = StyleSheet.create({
   safeArea: {
@@ -994,267 +1064,165 @@ const styles = StyleSheet.create({
   header: {
     flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'space-between',
     paddingHorizontal: 16,
     paddingVertical: 12,
     borderBottomWidth: 1,
-    borderBottomColor: 'rgba(255, 255, 255, 0.08)',
+    borderBottomColor: '#18181b',
   },
   backButton: {
-    padding: 10,
+    padding: 8,
     backgroundColor: '#18181b',
-    borderRadius: 12,
+    borderRadius: 10,
   },
   headerTitleGroup: {
+    flex: 1,
     marginLeft: 12,
   },
   sportBadgeRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 6,
+    gap: 4,
   },
   sportTag: {
     color: '#eab308',
-    fontSize: 10,
+    fontSize: 9,
     fontWeight: '900',
-    letterSpacing: 1,
+    letterSpacing: 0.8,
   },
   headerSubtitle: {
-    color: '#a1a1aa',
-    fontSize: 10,
-    fontWeight: '800',
-    letterSpacing: 1,
+    color: '#71717a',
+    fontSize: 9,
+    fontWeight: 'bold',
   },
-  headerTitle: {
-    color: '#fff',
-    fontSize: 15,
+  headerMainTitle: {
+    color: '#ffffff',
+    fontSize: 14,
     fontWeight: '900',
-    letterSpacing: 0.5,
+    marginTop: 1,
   },
-  exportButton: {
-    marginLeft: 'auto',
-    padding: 10,
+  saveHeaderBtn: {
+    padding: 8,
     backgroundColor: '#18181b',
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.1)',
+    borderRadius: 10,
   },
-  container: {
+  contentScroll: {
     flex: 1,
+    paddingHorizontal: 16,
+    paddingTop: 12,
   },
-  content: {
-    padding: 16,
-    gap: 16,
-    paddingBottom: 50,
-  },
-  videoStage: {
-    width: '100%',
-    height: 480,
-    backgroundColor: '#000',
-    borderRadius: 24,
-    overflow: 'hidden',
-    borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.12)',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 10 },
-    shadowOpacity: 0.6,
-    shadowRadius: 20,
-    elevation: 8,
-  },
-  phaseScroll: {
-    flexDirection: 'row',
-    gap: 8,
-    paddingVertical: 2,
-  },
-  phasePill: {
-    paddingHorizontal: 14,
-    paddingVertical: 8,
-    borderRadius: 12,
-    backgroundColor: '#18181b',
-    borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.08)',
-  },
-  phasePillActive: {
-    backgroundColor: '#eab308',
-    borderColor: '#eab308',
-  },
-  phasePillText: {
-    color: '#a1a1aa',
-    fontSize: 11,
-    fontWeight: '800',
-  },
-  phasePillTextActive: {
-    color: '#000',
-    fontWeight: '900',
-  },
-  executiveBanner: {
-    backgroundColor: '#121216',
-    borderRadius: 24,
-    padding: 18,
+  executiveCard: {
+    backgroundColor: '#121215',
+    borderRadius: 20,
     borderWidth: 1.5,
-    borderColor: 'rgba(234, 179, 8, 0.35)',
-    position: 'relative',
-    overflow: 'hidden',
-    gap: 16,
+    borderColor: 'rgba(245, 158, 11, 0.4)',
+    padding: 16,
+    marginBottom: 14,
   },
-  bannerGlow: {
-    position: 'absolute',
-    top: -40,
-    right: -40,
-    width: 140,
-    height: 140,
-    borderRadius: 70,
-    backgroundColor: 'rgba(234, 179, 8, 0.12)',
-  },
-  bannerContent: {
+  executiveTopRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 14,
+    gap: 12,
+    marginBottom: 14,
   },
-  bannerBadgeBox: {
-    width: 54,
-    height: 54,
-    borderRadius: 18,
-    backgroundColor: '#eab308',
+  gradeBox: {
+    width: 48,
+    height: 48,
+    borderRadius: 14,
+    backgroundColor: '#f59e0b',
     alignItems: 'center',
     justifyContent: 'center',
-    borderWidth: 2,
-    borderColor: '#fef08a',
   },
-  bannerBadgeEmoji: {
-    fontSize: 26,
+  gradeIcon: {
+    fontSize: 22,
   },
-  bannerMeta: {
+  executiveInfo: {
     flex: 1,
-    gap: 4,
   },
-  bannerPillRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  championPill: {
-    backgroundColor: 'rgba(234, 179, 8, 0.15)',
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: 999,
-    borderWidth: 1,
-    borderColor: 'rgba(234, 179, 8, 0.3)',
-  },
-  championText: {
-    color: '#eab308',
-    fontSize: 9,
-    fontWeight: '900',
-    letterSpacing: 0.5,
-  },
-  titanPill: {
-    backgroundColor: 'rgba(34, 197, 94, 0.15)',
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: 999,
-    borderWidth: 1,
-    borderColor: 'rgba(34, 197, 94, 0.3)',
-  },
-  titanText: {
-    color: '#22c55e',
-    fontSize: 9,
-    fontWeight: '900',
-    letterSpacing: 0.5,
-  },
-  bannerHeadline: {
-    color: '#fff',
-    fontSize: 16,
-    fontWeight: '900',
-    letterSpacing: 0.3,
-  },
-  attrGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 10,
-  },
-  attrCard: {
-    flex: 1,
-    minWidth: '46%',
-    backgroundColor: 'rgba(255, 255, 255, 0.03)',
-    borderRadius: 16,
-    padding: 12,
-    borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.06)',
-    gap: 4,
-  },
-  attrLabelRow: {
+  tierPillRow: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
+    marginBottom: 4,
   },
-  attrLabel: {
-    color: '#a1a1aa',
-    fontSize: 10,
-    fontWeight: '800',
-    letterSpacing: 0.5,
+  tierPill: {
+    backgroundColor: '#27272a',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 4,
   },
-  attrScoreYellow: {
-    color: '#f59e0b',
-    fontSize: 22,
+  tierPillText: {
+    color: '#eab308',
+    fontSize: 8,
     fontWeight: '900',
   },
-  attrScoreGreen: {
+  titanPill: {
+    backgroundColor: 'rgba(34, 197, 94, 0.15)',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 4,
+  },
+  titanPillText: {
     color: '#22c55e',
-    fontSize: 22,
+    fontSize: 8,
     fontWeight: '900',
   },
-  attrScoreCyan: {
-    color: '#38bdf8',
-    fontSize: 22,
+  athleteTitle: {
+    color: '#ffffff',
+    fontSize: 16,
     fontWeight: '900',
+    fontStyle: 'italic',
   },
-  attrScorePurple: {
-    color: '#c084fc',
-    fontSize: 22,
-    fontWeight: '900',
-  },
-  attrBarTrack: {
-    height: 4,
-    backgroundColor: 'rgba(255, 255, 255, 0.1)',
-    borderRadius: 2,
-    overflow: 'hidden',
-    marginVertical: 2,
-  },
-  attrBarFillYellow: {
-    height: '100%',
-    backgroundColor: '#f59e0b',
-  },
-  attrBarFillGreen: {
-    height: '100%',
-    backgroundColor: '#22c55e',
-  },
-  attrBarFillCyan: {
-    height: '100%',
-    backgroundColor: '#38bdf8',
-  },
-  attrBarFillPurple: {
-    height: '100%',
-    backgroundColor: '#c084fc',
-  },
-  attrDesc: {
-    color: '#71717a',
-    fontSize: 9,
-    fontWeight: '600',
-  },
-  tabScroll: {
+  attributesGrid: {
     flexDirection: 'row',
     gap: 8,
-    paddingVertical: 4,
+  },
+  attributeItem: {
+    flex: 1,
+    backgroundColor: '#09090b',
+    borderRadius: 12,
+    padding: 8,
+    borderWidth: 1,
+    borderColor: '#27272a',
+  },
+  attributeLabel: {
+    color: '#71717a',
+    fontSize: 8,
+    fontWeight: '900',
+    marginBottom: 2,
+  },
+  attributeValue: {
+    fontSize: 14,
+    fontWeight: '900',
+    fontFamily: 'monospace',
+    marginBottom: 4,
+  },
+  attributeBarTrack: {
+    height: 3,
+    backgroundColor: '#27272a',
+    borderRadius: 2,
+    overflow: 'hidden',
+  },
+  attributeBarFill: {
+    height: '100%',
+  },
+  tabBarScroll: {
+    marginBottom: 14,
+  },
+  tabBarContent: {
+    gap: 8,
+    paddingRight: 16,
   },
   tabButton: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
-    paddingHorizontal: 14,
-    paddingVertical: 10,
-    borderRadius: 14,
     backgroundColor: '#18181b',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 12,
     borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.08)',
+    borderColor: '#27272a',
   },
   tabButtonActive: {
     backgroundColor: '#eab308',
@@ -1262,390 +1230,221 @@ const styles = StyleSheet.create({
   },
   tabText: {
     color: '#a1a1aa',
-    fontSize: 12,
-    fontWeight: '800',
+    fontSize: 11,
+    fontWeight: 'bold',
   },
   tabTextActive: {
-    color: '#000',
+    color: '#000000',
     fontWeight: '900',
   },
   tabSection: {
-    gap: 16,
-  },
-  highlightCard: {
-    backgroundColor: '#121216',
-    borderRadius: 20,
-    padding: 16,
-    borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.08)',
     gap: 12,
   },
-  highlightHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
+  strengthsCard: {
+    backgroundColor: '#121215',
+    borderRadius: 16,
+    padding: 14,
+    borderWidth: 1,
+    borderColor: '#27272a',
     gap: 8,
   },
-  highlightTitle: {
-    color: '#eab308',
-    fontSize: 12,
+  strengthsHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginBottom: 4,
+  },
+  strengthsTitle: {
+    color: '#22c55e',
+    fontSize: 10,
     fontWeight: '900',
     letterSpacing: 0.5,
   },
-  strengthItem: {
+  strengthRow: {
     flexDirection: 'row',
     alignItems: 'flex-start',
-    gap: 10,
+    gap: 8,
   },
   strengthText: {
-    color: '#e4e4e7',
-    fontSize: 13,
-    fontWeight: '600',
+    color: '#d4d4d8',
+    fontSize: 11,
     flex: 1,
-    lineHeight: 18,
-  },
-  riskCard: {
-    backgroundColor: 'rgba(34, 197, 94, 0.08)',
-    borderRadius: 20,
-    padding: 16,
-    borderWidth: 1,
-    borderColor: 'rgba(34, 197, 94, 0.25)',
-    gap: 8,
-  },
-  riskHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  riskTitle: {
-    color: '#22c55e',
-    fontSize: 12,
-    fontWeight: '900',
-    letterSpacing: 0.5,
-    flex: 1,
-  },
-  riskPillGreen: {
-    backgroundColor: 'rgba(34, 197, 94, 0.2)',
-    paddingHorizontal: 8,
-    paddingVertical: 2,
-    borderRadius: 999,
-  },
-  riskPillText: {
-    color: '#22c55e',
-    fontSize: 9,
-    fontWeight: '900',
-  },
-  riskDescription: {
-    color: '#a1a1aa',
-    fontSize: 12,
-    fontWeight: '600',
     lineHeight: 16,
   },
-  keyframesSection: {
-    gap: 12,
+  corridorHeader: {
+    marginBottom: 6,
   },
   sectionTitle: {
-    color: '#fff',
-    fontSize: 13,
+    color: '#ffffff',
+    fontSize: 12,
     fontWeight: '900',
-    letterSpacing: 0.5,
+    letterSpacing: 0.8,
   },
   sectionSubtitle: {
     color: '#71717a',
-    fontSize: 11,
-    fontWeight: '600',
+    fontSize: 10,
+    marginTop: 1,
   },
-  keyframeGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 10,
+  phaseFilterScroll: {
+    marginBottom: 8,
   },
-  keyframeCardBig: {
-    flex: 1,
-    minWidth: '46%',
-    backgroundColor: '#121216',
-    borderRadius: 18,
-    padding: 14,
-    borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.08)',
+  phaseFilterContent: {
     gap: 6,
   },
-  keyframeCardSelected: {
-    borderColor: '#eab308',
-    backgroundColor: 'rgba(234, 179, 8, 0.1)',
-  },
-  keyframeTopRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-  },
-  keyframeIconBox: {
-    padding: 6,
-    backgroundColor: 'rgba(234, 179, 8, 0.15)',
-    borderRadius: 8,
-  },
-  keyframeTimeBadge: {
-    color: '#eab308',
-    fontSize: 11,
-    fontWeight: '900',
-  },
-  keyframeBigPhase: {
-    color: '#fff',
-    fontSize: 13,
-    fontWeight: '900',
-  },
-  keyframeHint: {
-    color: '#71717a',
-    fontSize: 10,
-    fontWeight: '600',
-  },
-  matrixCard: {
-    backgroundColor: '#121216',
-    borderRadius: 20,
-    padding: 16,
-    borderWidth: 1,
-    borderColor: 'rgba(234, 179, 8, 0.25)',
-    gap: 14,
-  },
-  matrixHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-  },
-  matrixTitle: {
-    color: '#fff',
-    fontSize: 13,
-    fontWeight: '900',
-    letterSpacing: 0.5,
-  },
-  matrixSubtitle: {
-    color: '#71717a',
-    fontSize: 10,
-    fontWeight: '600',
-  },
-  efficiencyBadge: {
-    marginLeft: 'auto',
-    backgroundColor: 'rgba(234, 179, 8, 0.15)',
-    paddingHorizontal: 8,
-    paddingVertical: 4,
+  phaseChip: {
+    backgroundColor: '#18181b',
+    paddingHorizontal: 10,
+    paddingVertical: 5,
     borderRadius: 8,
     borderWidth: 1,
-    borderColor: 'rgba(234, 179, 8, 0.3)',
+    borderColor: '#27272a',
   },
-  efficiencyText: {
-    color: '#eab308',
-    fontSize: 9,
-    fontWeight: '900',
-  },
-  firingList: {
-    gap: 10,
-  },
-  firingItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: 'rgba(255, 255, 255, 0.03)',
-    borderRadius: 12,
-    padding: 10,
-    gap: 10,
-  },
-  firingNumberBox: {
-    width: 24,
-    height: 24,
-    borderRadius: 12,
+  phaseChipActive: {
     backgroundColor: '#eab308',
-    alignItems: 'center',
-    justifyContent: 'center',
+    borderColor: '#eab308',
   },
-  firingNumber: {
-    color: '#000',
-    fontWeight: '900',
-    fontSize: 11,
-  },
-  firingInfo: {
-    flex: 1,
-  },
-  firingJoint: {
-    color: '#fff',
-    fontSize: 12,
-    fontWeight: '800',
-  },
-  firingTiming: {
-    color: '#71717a',
+  phaseChipText: {
+    color: '#a1a1aa',
     fontSize: 10,
-    fontWeight: '600',
+    fontWeight: 'bold',
   },
-  firingTag: {
-    backgroundColor: 'rgba(34, 197, 94, 0.15)',
-    paddingHorizontal: 8,
-    paddingVertical: 2,
-    borderRadius: 6,
-  },
-  firingTagText: {
-    color: '#22c55e',
-    fontSize: 9,
+  phaseChipTextActive: {
+    color: '#000000',
     fontWeight: '900',
   },
-  sequenceMatrixBox: {
-    gap: 10,
-  },
-  sequenceStepCard: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#121216',
-    borderRadius: 14,
-    padding: 12,
-    borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.06)',
-    gap: 12,
-  },
-  stepStatusDot: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-    backgroundColor: '#22c55e',
-  },
-  stepInfo: {
-    flex: 1,
-  },
-  stepName: {
-    color: '#fff',
-    fontSize: 12,
-    fontWeight: '800',
-  },
-  stepSub: {
-    color: '#71717a',
-    fontSize: 10,
-    fontWeight: '600',
-  },
-  stepScoreBadge: {
-    backgroundColor: 'rgba(234, 179, 8, 0.12)',
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: 6,
-  },
-  stepScoreText: {
-    color: '#eab308',
-    fontSize: 10,
-    fontWeight: '900',
-  },
-  ruleCard: {
-    backgroundColor: '#121216',
-    borderRadius: 18,
+  corridorCard: {
+    backgroundColor: '#121215',
+    borderRadius: 16,
     padding: 14,
     borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.08)',
-    gap: 8,
+    borderColor: '#27272a',
+    marginBottom: 10,
   },
-  ruleTopRow: {
+  corridorTopRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
+    marginBottom: 6,
   },
-  ruleTitleBox: {
+  corridorTitleBox: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
+    gap: 6,
+    flex: 1,
   },
-  ruleStatusDot: {
+  statusDot: {
     width: 8,
     height: 8,
     borderRadius: 4,
-    backgroundColor: '#22c55e',
   },
-  ruleName: {
-    color: '#fff',
-    fontSize: 13,
-    fontWeight: '900',
+  corridorName: {
+    color: '#ffffff',
+    fontSize: 12,
+    fontWeight: 'bold',
   },
-  ruleIdealBadge: {
-    backgroundColor: 'rgba(234, 179, 8, 0.15)',
+  targetPill: {
+    borderWidth: 1,
     paddingHorizontal: 8,
     paddingVertical: 2,
     borderRadius: 6,
   },
-  ruleIdealText: {
-    color: '#eab308',
-    fontSize: 10,
+  targetPillText: {
+    fontSize: 9,
     fontWeight: '900',
+    fontFamily: 'monospace',
   },
-  ruleDesc: {
+  corridorDesc: {
     color: '#a1a1aa',
-    fontSize: 11,
-    lineHeight: 16,
+    fontSize: 10.5,
+    lineHeight: 15,
+    marginBottom: 10,
   },
-  corridorBarContainer: {
-    marginVertical: 4,
-    gap: 4,
+  corridorBarBox: {
+    backgroundColor: '#09090b',
+    borderRadius: 10,
+    padding: 10,
+    marginBottom: 10,
   },
-  corridorBarBackground: {
+  corridorBarTrack: {
     height: 8,
     backgroundColor: '#27272a',
     borderRadius: 4,
     position: 'relative',
-    overflow: 'hidden',
+    marginBottom: 6,
   },
-  corridorBarOptimalZone: {
+  optimalZone: {
     position: 'absolute',
     top: 0,
     bottom: 0,
-    backgroundColor: 'rgba(34, 197, 94, 0.35)',
+    backgroundColor: 'rgba(34, 197, 94, 0.4)',
     borderRadius: 4,
   },
-  corridorMarker: {
+  measuredMarker: {
     position: 'absolute',
-    top: 0,
-    bottom: 0,
-    width: 4,
-    backgroundColor: '#eab308',
-    borderRadius: 2,
+    top: -3,
+    width: 14,
+    height: 14,
+    borderRadius: 7,
+    borderWidth: 2,
+    borderColor: '#ffffff',
   },
-  corridorBarLabels: {
+  corridorLabelsRow: {
     flexDirection: 'row',
+    alignItems: 'center',
     justifyContent: 'space-between',
   },
-  corridorLabel: {
-    color: '#52525b',
-    fontSize: 9,
-    fontWeight: '700',
+  corridorLimitText: {
+    color: '#71717a',
+    fontSize: 8.5,
+    fontFamily: 'monospace',
   },
-  corridorCenterLabel: {
-    color: '#22c55e',
-    fontSize: 9,
-    fontWeight: '800',
+  corridorMeasuredText: {
+    fontSize: 9.5,
+    fontWeight: 'bold',
+    fontFamily: 'monospace',
   },
-  rulePhaseRow: {
+  corridorFooter: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginTop: 2,
+    alignItems: 'center',
+    gap: 8,
+    borderTopWidth: 1,
+    borderTopColor: '#18181b',
+    paddingTop: 8,
   },
-  rulePhaseTag: {
-    color: '#71717a',
-    fontSize: 9,
-    fontWeight: '800',
+  footerTag: {
+    backgroundColor: '#18181b',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 4,
   },
-  ruleJointTag: {
+  footerTagText: {
     color: '#71717a',
-    fontSize: 9,
-    fontWeight: '800',
+    fontSize: 8,
+    fontWeight: '900',
+  },
+  impactText: {
+    color: '#d4d4d8',
+    fontSize: 9.5,
+    flex: 1,
   },
   drillsHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
+    marginBottom: 6,
   },
   drillCardBig: {
-    backgroundColor: '#121216',
-    borderRadius: 20,
-    padding: 16,
+    backgroundColor: '#121215',
+    borderRadius: 18,
+    padding: 14,
     borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.08)',
-    gap: 10,
+    borderColor: '#27272a',
+    marginBottom: 12,
   },
-  drillTopRow: {
+  drillHeaderRow: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 10,
+    marginBottom: 8,
   },
-  drillIconBoxBig: {
+  drillIconBox: {
     width: 36,
     height: 36,
     borderRadius: 10,
@@ -1657,69 +1456,118 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   drillTitleBig: {
-    color: '#fff',
+    color: '#ffffff',
     fontSize: 13,
     fontWeight: '900',
   },
   drillTargetText: {
     color: '#71717a',
-    fontSize: 10,
-    fontWeight: '700',
+    fontSize: 9.5,
+    marginTop: 1,
   },
   statusPill: {
-    paddingHorizontal: 10,
+    paddingHorizontal: 8,
     paddingVertical: 4,
-    borderRadius: 8,
-  },
-  statusPillText: {
-    fontSize: 9,
-    fontWeight: '900',
+    borderRadius: 6,
   },
   statusPending: {
-    backgroundColor: 'rgba(113, 113, 122, 0.2)',
-  },
-  statusPendingText: {
-    color: '#a1a1aa',
-    fontSize: 9,
-    fontWeight: '900',
+    backgroundColor: '#27272a',
   },
   statusCompleted: {
-    backgroundColor: 'rgba(234, 179, 8, 0.2)',
-  },
-  statusCompletedText: {
-    color: '#eab308',
-    fontSize: 9,
-    fontWeight: '900',
+    backgroundColor: 'rgba(56, 189, 248, 0.2)',
   },
   statusMastered: {
     backgroundColor: 'rgba(34, 197, 94, 0.2)',
   },
-  statusMasteredText: {
-    color: '#22c55e',
-    fontSize: 9,
+  statusPillText: {
+    fontSize: 8.5,
     fontWeight: '900',
   },
-  drillDescriptionBig: {
+  statusPendingText: {
     color: '#a1a1aa',
+  },
+  statusCompletedText: {
+    color: '#38bdf8',
+  },
+  statusMasteredText: {
+    color: '#22c55e',
+  },
+  drillDescriptionBig: {
+    color: '#d4d4d8',
     fontSize: 11,
     lineHeight: 16,
+    marginBottom: 8,
+  },
+  stepsContainer: {
+    backgroundColor: '#09090b',
+    borderRadius: 12,
+    padding: 10,
+    marginVertical: 8,
+    gap: 6,
+  },
+  stepsHeading: {
+    color: '#eab308',
+    fontSize: 9,
+    fontWeight: '900',
+    letterSpacing: 0.8,
+    marginBottom: 2,
+  },
+  stepItem: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 8,
+  },
+  stepNumberBadge: {
+    width: 18,
+    height: 18,
+    borderRadius: 9,
+    backgroundColor: '#27272a',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  stepNumberText: {
+    color: '#ffffff',
+    fontSize: 9,
+    fontWeight: 'bold',
+  },
+  stepDescriptionText: {
+    color: '#e4e4e7',
+    fontSize: 10.5,
+    flex: 1,
+    lineHeight: 15,
+  },
+  benefitBox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: '#18181b',
+    padding: 6,
+    borderRadius: 6,
+    marginTop: 4,
+  },
+  benefitText: {
+    color: '#eab308',
+    fontSize: 9.5,
+    flex: 1,
+    fontStyle: 'italic',
   },
   drillFooterRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    marginTop: 4,
+    marginTop: 6,
   },
   repBadge: {
-    backgroundColor: 'rgba(255, 255, 255, 0.05)',
+    backgroundColor: '#18181b',
     paddingHorizontal: 8,
     paddingVertical: 4,
     borderRadius: 6,
   },
   repText: {
-    color: '#e4e4e7',
+    color: '#a1a1aa',
     fontSize: 10,
-    fontWeight: '800',
+    fontFamily: 'monospace',
+    fontWeight: 'bold',
   },
   startQuestBtn: {
     flexDirection: 'row',
@@ -1731,59 +1579,61 @@ const styles = StyleSheet.create({
     borderRadius: 8,
   },
   startQuestBtnText: {
-    color: '#000',
-    fontSize: 10,
+    color: '#000000',
+    fontSize: 9.5,
     fontWeight: '900',
   },
   questCard: {
-    backgroundColor: '#121216',
-    borderRadius: 24,
-    padding: 18,
+    backgroundColor: '#121215',
+    borderRadius: 20,
+    padding: 16,
     borderWidth: 1.5,
-    borderColor: 'rgba(234, 179, 8, 0.35)',
-    gap: 16,
+    borderColor: 'rgba(245, 158, 11, 0.4)',
+    alignItems: 'center',
   },
   questHeader: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 12,
+    marginBottom: 16,
   },
   questTrophyBox: {
     width: 48,
     height: 48,
-    borderRadius: 16,
-    backgroundColor: 'rgba(234, 179, 8, 0.15)',
+    borderRadius: 14,
+    backgroundColor: 'rgba(245, 158, 11, 0.15)',
     alignItems: 'center',
     justifyContent: 'center',
   },
   questTitle: {
-    color: '#fff',
-    fontSize: 14,
+    color: '#ffffff',
+    fontSize: 13,
     fontWeight: '900',
   },
   questSubtitle: {
     color: '#71717a',
-    fontSize: 11,
-    fontWeight: '600',
+    fontSize: 10,
   },
   xpBox: {
-    backgroundColor: 'rgba(255, 255, 255, 0.03)',
-    borderRadius: 14,
+    width: '100%',
+    backgroundColor: '#09090b',
+    borderRadius: 12,
     padding: 12,
-    gap: 6,
+    marginBottom: 16,
   },
   xpRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
+    marginBottom: 6,
   },
   xpLabel: {
-    color: '#a1a1aa',
-    fontSize: 10,
-    fontWeight: '800',
+    color: '#71717a',
+    fontSize: 9,
+    fontWeight: '900',
   },
   xpValue: {
     color: '#eab308',
-    fontSize: 12,
+    fontSize: 10,
     fontWeight: '900',
   },
   xpBarTrack: {
@@ -1798,289 +1648,292 @@ const styles = StyleSheet.create({
   },
   repDisplayBox: {
     alignItems: 'center',
-    paddingVertical: 10,
+    marginBottom: 16,
   },
   repCountBig: {
-    color: '#fff',
+    color: '#ffffff',
     fontSize: 48,
     fontWeight: '900',
+    fontFamily: 'monospace',
   },
   repTotalText: {
     color: '#71717a',
-    fontSize: 12,
-    fontWeight: '800',
+    fontSize: 10,
+    fontWeight: '900',
+    letterSpacing: 0.8,
   },
   logRepButton: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
+    gap: 6,
     backgroundColor: '#eab308',
-    borderRadius: 14,
-    paddingVertical: 14,
+    paddingHorizontal: 20,
+    paddingVertical: 12,
+    borderRadius: 12,
+    width: '100%',
+    justifyContent: 'center',
   },
   logRepButtonText: {
-    color: '#000',
-    fontSize: 12,
+    color: '#000000',
+    fontSize: 11,
     fontWeight: '900',
-    letterSpacing: 0.5,
   },
   victoryCard: {
-    backgroundColor: 'rgba(234, 179, 8, 0.15)',
-    borderRadius: 16,
-    padding: 16,
     alignItems: 'center',
+    backgroundColor: 'rgba(34, 197, 94, 0.15)',
+    padding: 16,
+    borderRadius: 12,
+    width: '100%',
     gap: 4,
-    borderWidth: 1,
-    borderColor: '#eab308',
   },
   victoryTitle: {
-    color: '#eab308',
-    fontSize: 14,
+    color: '#22c55e',
+    fontSize: 13,
     fontWeight: '900',
   },
   victorySub: {
-    color: '#fef08a',
-    fontSize: 11,
-    fontWeight: '700',
+    color: '#d4d4d8',
+    fontSize: 10,
   },
   cardMakerBox: {
-    gap: 14,
+    backgroundColor: '#121215',
+    borderRadius: 20,
+    padding: 16,
+    borderWidth: 1,
+    borderColor: '#27272a',
+    alignItems: 'center',
   },
   tradingCard: {
-    backgroundColor: '#121216',
-    borderRadius: 24,
-    padding: 18,
-    borderWidth: 2,
+    width: '100%',
+    backgroundColor: '#09090b',
+    borderRadius: 16,
+    borderWidth: 1.5,
     borderColor: '#eab308',
-    gap: 16,
-    shadowColor: '#eab308',
-    shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.25,
-    shadowRadius: 16,
-    elevation: 6,
+    padding: 14,
+    marginVertical: 12,
   },
   cardHeaderRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    alignItems: 'center',
+    marginBottom: 12,
   },
   cardSportTag: {
-    backgroundColor: '#eab308',
+    backgroundColor: '#27272a',
     paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: 6,
+    paddingVertical: 2,
+    borderRadius: 4,
   },
   cardSportTagText: {
-    color: '#000',
-    fontSize: 10,
+    color: '#eab308',
+    fontSize: 9,
     fontWeight: '900',
   },
   cardGradeTag: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    backgroundColor: '#22c55e',
-    alignItems: 'center',
-    justifyContent: 'center',
+    backgroundColor: '#eab308',
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 4,
   },
   cardGradeTagText: {
-    color: '#000',
-    fontSize: 14,
+    color: '#000000',
+    fontSize: 9,
     fontWeight: '900',
   },
   cardCenter: {
     alignItems: 'center',
-    gap: 6,
+    marginBottom: 12,
   },
   cardAvatar: {
-    width: 68,
-    height: 68,
-    borderRadius: 34,
-    backgroundColor: '#27272a',
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: '#18181b',
     alignItems: 'center',
     justifyContent: 'center',
-    borderWidth: 2,
-    borderColor: '#eab308',
+    marginBottom: 6,
   },
   cardAvatarText: {
-    fontSize: 32,
+    fontSize: 20,
   },
   cardNameInput: {
-    color: '#fff',
-    fontSize: 18,
+    color: '#ffffff',
+    fontSize: 14,
     fontWeight: '900',
     textAlign: 'center',
     borderBottomWidth: 1,
-    borderBottomColor: 'rgba(255, 255, 255, 0.2)',
-    paddingVertical: 4,
-    minWidth: 180,
+    borderBottomColor: '#27272a',
+    paddingBottom: 2,
+    minWidth: 140,
   },
   cardTierText: {
-    color: '#eab308',
-    fontSize: 12,
-    fontWeight: '800',
+    color: '#22c55e',
+    fontSize: 9,
+    fontWeight: '900',
+    fontFamily: 'monospace',
+    marginTop: 4,
   },
   cardStatsGrid: {
     flexDirection: 'row',
-    justifyContent: 'space-around',
-    backgroundColor: 'rgba(255, 255, 255, 0.03)',
-    borderRadius: 14,
-    padding: 10,
+    gap: 6,
   },
   cardStatItem: {
+    flex: 1,
+    backgroundColor: '#18181b',
+    borderRadius: 8,
+    padding: 6,
     alignItems: 'center',
   },
   cardStatLabel: {
     color: '#71717a',
-    fontSize: 9,
-    fontWeight: '800',
+    fontSize: 7.5,
+    fontWeight: '900',
   },
   cardStatVal: {
-    color: '#fff',
-    fontSize: 14,
+    color: '#ffffff',
+    fontSize: 10.5,
     fontWeight: '900',
+    fontFamily: 'monospace',
+    marginTop: 1,
   },
   shareCardBtn: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
-    gap: 8,
+    gap: 6,
     backgroundColor: '#eab308',
-    borderRadius: 14,
-    paddingVertical: 14,
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderRadius: 10,
+    width: '100%',
+    justifyContent: 'center',
   },
   shareCardBtnText: {
-    color: '#000',
-    fontSize: 12,
+    color: '#000000',
+    fontSize: 10.5,
     fontWeight: '900',
-    letterSpacing: 0.5,
   },
   notesCard: {
-    backgroundColor: '#121216',
-    borderRadius: 20,
+    backgroundColor: '#121215',
+    borderRadius: 18,
     padding: 16,
     borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.08)',
-    gap: 12,
+    borderColor: '#27272a',
   },
   notesHeader: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
+    marginBottom: 10,
   },
   notesTitle: {
-    color: '#fff',
-    fontSize: 13,
+    color: '#ffffff',
+    fontSize: 12,
     fontWeight: '900',
   },
   notesInput: {
-    backgroundColor: 'rgba(255, 255, 255, 0.03)',
+    backgroundColor: '#09090b',
     borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#27272a',
     padding: 12,
-    color: '#e4e4e7',
+    color: '#ffffff',
     fontSize: 12,
-    lineHeight: 18,
-    minHeight: 120,
+    minHeight: 100,
     textAlignVertical: 'top',
+    marginBottom: 12,
   },
   saveNotesBtn: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
     gap: 6,
     backgroundColor: '#eab308',
-    borderRadius: 12,
-    paddingVertical: 12,
+    paddingVertical: 10,
+    borderRadius: 10,
+    justifyContent: 'center',
   },
   saveNotesBtnText: {
-    color: '#000',
-    fontSize: 11,
+    color: '#000000',
+    fontSize: 10.5,
     fontWeight: '900',
   },
   modalOverlay: {
     flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.75)',
+    backgroundColor: 'rgba(0, 0, 0, 0.85)',
     justifyContent: 'center',
-    alignItems: 'center',
     padding: 20,
   },
   modalContent: {
-    width: '100%',
-    maxWidth: 380,
-    backgroundColor: '#18181b',
-    borderRadius: 24,
-    padding: 20,
+    backgroundColor: '#121215',
+    borderRadius: 20,
+    padding: 18,
     borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.12)',
-    gap: 12,
+    borderColor: '#27272a',
   },
   modalHeader: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
+    marginBottom: 10,
   },
   modalTitle: {
-    color: '#fff',
-    fontSize: 14,
+    color: '#ffffff',
+    fontSize: 13,
     fontWeight: '900',
-    letterSpacing: 0.5,
+    letterSpacing: 0.8,
   },
   modalClose: {
     padding: 4,
   },
   modalScoreText: {
     color: '#eab308',
-    fontSize: 16,
+    fontSize: 14,
     fontWeight: '900',
+    fontFamily: 'monospace',
+    marginBottom: 6,
   },
   modalDesc: {
-    color: '#a1a1aa',
-    fontSize: 12,
-    lineHeight: 18,
+    color: '#d4d4d8',
+    fontSize: 11.5,
+    lineHeight: 16,
+    marginBottom: 12,
   },
   formulaBox: {
-    backgroundColor: 'rgba(0, 0, 0, 0.4)',
-    borderRadius: 12,
-    padding: 12,
-    gap: 4,
+    backgroundColor: '#09090b',
+    borderRadius: 10,
+    padding: 10,
+    borderWidth: 1,
+    borderColor: '#27272a',
   },
   formulaLabel: {
     color: '#71717a',
-    fontSize: 9,
-    fontWeight: '800',
+    fontSize: 8,
+    fontWeight: '900',
+    letterSpacing: 0.8,
+    marginBottom: 4,
   },
   formulaText: {
     color: '#38bdf8',
-    fontSize: 11,
-    fontWeight: '700',
-  },
-  inputLabel: {
-    color: '#a1a1aa',
     fontSize: 10,
-    fontWeight: '800',
-    letterSpacing: 0.5,
+    fontFamily: 'monospace',
   },
-  dialogInput: {
-    backgroundColor: 'rgba(255, 255, 255, 0.05)',
-    borderRadius: 12,
-    padding: 12,
-    color: '#fff',
-    fontSize: 13,
-    fontWeight: '700',
-  },
-  confirmSaveBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 6,
-    backgroundColor: '#eab308',
-    borderRadius: 12,
-    paddingVertical: 12,
-    marginTop: 6,
-  },
-  confirmSaveBtnText: {
-    color: '#000',
+  modalInput: {
+    backgroundColor: '#09090b',
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: '#27272a',
+    padding: 10,
+    color: '#ffffff',
     fontSize: 12,
+    marginBottom: 14,
+  },
+  modalSaveBtn: {
+    backgroundColor: '#eab308',
+    paddingVertical: 10,
+    borderRadius: 10,
+    alignItems: 'center',
+  },
+  modalSaveBtnText: {
+    color: '#000000',
+    fontSize: 10.5,
     fontWeight: '900',
   },
 });

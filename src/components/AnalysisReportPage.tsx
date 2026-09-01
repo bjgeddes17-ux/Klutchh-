@@ -360,6 +360,19 @@ export const AnalysisReportPage: React.FC<AnalysisReportPageProps> = ({
     }
   }, [videoError, activeReportId, onVideoSelected]);
 
+  // Listen to fullscreen changes to keep UI state in sync
+  useEffect(() => {
+    const handleFullscreenChange = () => {
+      setIsFullscreen(!!document.fullscreenElement);
+    };
+    document.addEventListener('fullscreenchange', handleFullscreenChange);
+    document.addEventListener('webkitfullscreenchange', handleFullscreenChange);
+    return () => {
+      document.removeEventListener('fullscreenchange', handleFullscreenChange);
+      document.removeEventListener('webkitfullscreenchange', handleFullscreenChange);
+    };
+  }, []);
+
   const toggleFullscreen = () => {
     if (!stageContainerRef.current) return;
     if (!document.fullscreenElement) {
@@ -567,6 +580,8 @@ export const AnalysisReportPage: React.FC<AnalysisReportPageProps> = ({
           isDataReady={isDataReady}
           viewMode={viewMode}
           onTogglePlay={togglePlay}
+          onToggleFullscreen={toggleFullscreen}
+          isFullscreen={isFullscreen}
           onError={setVideoError}
         />
         <div className="absolute inset-x-0 bottom-0 z-30">

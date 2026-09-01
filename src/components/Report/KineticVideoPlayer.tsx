@@ -1,4 +1,5 @@
 import React, { useRef, useEffect, useState, useMemo } from 'react';
+import { Maximize, Minimize } from 'lucide-react';
 import { SportRule, FrameAnalysis, MediaPipeLandmark } from '../../types';
 import { drawPoseSkeleton } from '../../utils/geometry';
 import { KineticHeatmapOverlay } from '../KineticHeatmapOverlay';
@@ -16,6 +17,8 @@ interface KineticVideoPlayerProps {
   isDataReady: boolean;
   viewMode?: 'student' | 'coach';
   onTogglePlay?: () => void;
+  onToggleFullscreen?: () => void;
+  isFullscreen?: boolean;
   onError?: (error: boolean) => void;
 }
 
@@ -32,6 +35,8 @@ export const KineticVideoPlayer: React.FC<KineticVideoPlayerProps> = ({
   isDataReady,
   viewMode = 'coach',
   onTogglePlay,
+  onToggleFullscreen,
+  isFullscreen = false,
   onError
 }) => {
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -273,6 +278,28 @@ export const KineticVideoPlayer: React.FC<KineticVideoPlayerProps> = ({
         </div>
       )}
       
+      {/* Overlay Fullscreen Toggle Button */}
+      {onToggleFullscreen && (
+        <button
+          onClick={(e) => {
+            e.stopPropagation();
+            onToggleFullscreen();
+          }}
+          title={isFullscreen ? 'Exit Full Screen' : 'Full Screen'}
+          aria-label={isFullscreen ? 'Exit Full Screen' : 'Full Screen'}
+          className="absolute top-3 right-3 z-30 bg-zinc-950/80 hover:bg-zinc-900 border border-zinc-700/80 hover:border-amber-400 text-white hover:text-amber-400 p-2 rounded-xl backdrop-blur-md transition-all shadow-lg shadow-black/60 flex items-center gap-1.5 group/fs active:scale-95"
+        >
+          {isFullscreen ? (
+            <Minimize className="w-4 h-4 text-amber-400" />
+          ) : (
+            <Maximize className="w-4 h-4 group-hover/fs:text-amber-400 transition-colors" />
+          )}
+          <span className="hidden sm:inline text-[10px] font-black uppercase tracking-wider pr-1">
+            {isFullscreen ? 'Exit Fullscreen' : 'Fullscreen'}
+          </span>
+        </button>
+      )}
+
       {videoError && (
         <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/80 text-white p-6 text-center z-50">
           <div className="text-red-500 mb-4 text-4xl">⚠️</div>

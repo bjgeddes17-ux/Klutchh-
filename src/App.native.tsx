@@ -83,7 +83,7 @@ export default function App() {
 
   const currentSportRule: SportRule = SPORTS_RULES.find((s) => s.id === selectedSportId) || SPORTS_RULES[0];
 
-  // Video Pickers
+  // Video Pickers (Limited to Upload and 30s Live Camera Record)
   const handlePickFromGallery = async () => {
     try {
       setIsPickingVideo(true);
@@ -97,11 +97,17 @@ export default function App() {
       const result = await ImagePicker.launchImageLibraryAsync({
         mediaTypes: ImagePicker.MediaTypeOptions.Videos,
         allowsEditing: false,
+        videoMaxDuration: 30,
         quality: 1,
       });
 
       if (!result.canceled && result.assets && result.assets.length > 0) {
         const asset = result.assets[0];
+        if (asset.duration && asset.duration > 30500) {
+          Alert.alert('Video Too Long', 'Please select a video clip that is 30 seconds or shorter.');
+          setIsPickingVideo(false);
+          return;
+        }
         setCustomVideoUri(asset.uri);
         setCustomVideoName(asset.fileName || `Athlete_${currentSportRule.name}_Clip.mp4`);
         if (asset.fileSize) {
@@ -134,13 +140,19 @@ export default function App() {
       const result = await ImagePicker.launchCameraAsync({
         mediaTypes: ImagePicker.MediaTypeOptions.Videos,
         allowsEditing: false,
+        videoMaxDuration: 30,
         quality: 1,
       });
 
       if (!result.canceled && result.assets && result.assets.length > 0) {
         const asset = result.assets[0];
+        if (asset.duration && asset.duration > 30500) {
+          Alert.alert('Recording Too Long', 'Video recording must be 30 seconds or less.');
+          setIsPickingVideo(false);
+          return;
+        }
         setCustomVideoUri(asset.uri);
-        setCustomVideoName(asset.fileName || `Live_${currentSportRule.name}_Capture.mp4`);
+        setCustomVideoName(asset.fileName || `Live_${currentSportRule.name}_30s_Capture.mp4`);
         if (asset.fileSize) {
           setCustomVideoSize(`${(asset.fileSize / (1024 * 1024)).toFixed(1)} MB`);
         }
@@ -151,30 +163,6 @@ export default function App() {
     } catch (e) {
       console.error('Camera record error:', e);
       Alert.alert('Camera Error', 'Failed to capture camera footage. Please try again.');
-    } finally {
-      setIsPickingVideo(false);
-    }
-  };
-
-  const handlePickDocument = async () => {
-    try {
-      setIsPickingVideo(true);
-      const result = await DocumentPicker.getDocumentAsync({
-        type: 'video/*',
-        copyToCacheDirectory: true,
-      });
-
-      if (!result.canceled && result.assets && result.assets.length > 0) {
-        const asset = result.assets[0];
-        setCustomVideoUri(asset.uri);
-        setCustomVideoName(asset.name || `Video_File_${currentSportRule.name}.mp4`);
-        if (asset.size) {
-          setCustomVideoSize(`${(asset.size / (1024 * 1024)).toFixed(1)} MB`);
-        }
-      }
-    } catch (e) {
-      console.error('Document picker error:', e);
-      Alert.alert('File Error', 'Failed to load video file.');
     } finally {
       setIsPickingVideo(false);
     }
@@ -383,7 +371,10 @@ export default function App() {
         kineticSequence={analysisResult.kineticSequence}
         overallSymmetry={analysisResult.overallSymmetry}
         overallKneeSafety={analysisResult.overallKneeSafety}
-        onBack={() => setAnalysisResult(null)}
+        onBack={() => {
+          setAnalysisResult(null);
+          handleClearSelectedVideo();
+        }}
         onSaveReport={(reportData) => {
           setSavedReports((prev) => [
             {
@@ -566,7 +557,7 @@ export default function App() {
                 </View>
               ) : null}
 
-              {/* Video Selection Grid Options */}
+              {/* Video Selection Grid Options: Upload & Live Camera (Max 30s) */}
               <View style={styles.uploadButtonsGrid}>
                 <TouchableOpacity
                   style={styles.uploadOptionBtn}
@@ -574,7 +565,7 @@ export default function App() {
                   disabled={isPickingVideo}
                 >
                   <FileVideo color="#eab308" size={20} />
-                  <Text style={styles.uploadOptionText}>CHOOSE FROM GALLERY</Text>
+                  <Text style={styles.uploadOptionText}>UPLOAD VIDEO (MAX 30S)</Text>
                 </TouchableOpacity>
 
                 <TouchableOpacity
@@ -583,16 +574,7 @@ export default function App() {
                   disabled={isPickingVideo}
                 >
                   <Camera color="#38bdf8" size={20} />
-                  <Text style={styles.uploadOptionText}>RECORD WITH CAMERA</Text>
-                </TouchableOpacity>
-
-                <TouchableOpacity
-                  style={styles.uploadOptionBtn}
-                  onPress={handlePickDocument}
-                  disabled={isPickingVideo}
-                >
-                  <UploadCloud color="#c084fc" size={20} />
-                  <Text style={styles.uploadOptionText}>SELECT VIDEO FILE</Text>
+                  <Text style={styles.uploadOptionText}>LIVE CAMERA (MAX 30S)</Text>
                 </TouchableOpacity>
               </View>
 

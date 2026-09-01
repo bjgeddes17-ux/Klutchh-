@@ -4,13 +4,18 @@ on:
   workflow_dispatch:
     inputs:
       profile:
-        description: 'EAS Build Profile (preview = APK, production = AAB)'
+        description: 'EAS Build Profile (preview = direct installable APK, production = AAB)'
         required: true
         default: 'preview'
         type: choice
         options:
           - preview
           - production
+      wait:
+        description: 'Wait for Expo Cloud build to complete & output QR code/APK URL'
+        required: false
+        default: true
+        type: boolean
   push:
     branches:
       - main
@@ -18,7 +23,7 @@ on:
 
 jobs:
   build:
-    name: 📱 Build Android with Expo EAS
+    name: 📱 Build Android APK via Expo EAS Cloud
     runs-on: ubuntu-latest
     steps:
       - name: ⬇️ Checkout Repository
@@ -30,7 +35,7 @@ jobs:
           node-version: 20
           cache: 'npm'
 
-      - name: 🧹 Clean Artifacts & Lockfiles
+      - name: 🧹 Clean Local Machine Artifacts & Lockfiles
         run: |
           echo "Cleaning conflicting lock files and machine directories..."
           rm -rf .expo .expo-shared
@@ -43,25 +48,25 @@ jobs:
       - name: 📦 Install Project Dependencies
         run: npm install --legacy-peer-deps
 
-      - name: 🏗️ Trigger EAS Cloud Build (with Auto-Retry)
+      - name: 🚀 Dispatch Build to Expo EAS Cloud
         env:
           EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
           EXPO_NO_DOCTOR: "1"
           CI: "1"
         run: |
           BUILD_PROFILE="${{ github.event.inputs.profile || 'preview' }}"
-          echo "🚀 Triggering EAS build for profile: $BUILD_PROFILE"
+          SHOULD_WAIT="${{ github.event.inputs.wait != 'false' }}"
           
-          MAX_RETRIES=3
-          RETRY_COUNT=0
+          echo "========================================================"
+          echo "🚀 Dispatching Android Build to Expo Cloud (EAS)"
+          echo "Profile: $BUILD_PROFILE (preview = standalone APK)"
+          echo "========================================================"
           
-          until eas build --platform android --profile "$BUILD_PROFILE" --non-interactive --no-wait; do
-            RETRY_COUNT=$((RETRY_COUNT + 1))
-            if [ $RETRY_COUNT -ge $MAX_RETRIES ]; then
-              echo "❌ EAS build request failed after $MAX_RETRIES attempts."
-              exit 1
-            fi
-            echo "⚠️ Expo GraphQL/API returned transient error. Retrying attempt ($RETRY_COUNT/$MAX_RETRIES) in 15 seconds..."
-            sleep 15
-          done
+          WAIT_FLAG=""
+          if [ "$SHOULD_WAIT" = "false" ]; then
+            WAIT_FLAG="--no-wait"
+          fi
+          
+          eas build --platform android --profile "$BUILD_PROFILE" --non-interactive $WAIT_FLAG
+
 

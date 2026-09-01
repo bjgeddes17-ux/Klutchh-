@@ -1,5 +1,5 @@
 // mediapipePose.native.ts
-// Native-safe pose interface & fallback generator
+// Native-safe pose interface & dynamic sports kinematic pose generator
 import { MediaPipeLandmark } from '../types';
 
 export interface PoseLandmark {
@@ -51,40 +51,52 @@ export async function detectPoseForVideoFrame(
 }
 
 export function generateSyntheticSportsPose(timestampMs: number, currentTimeSec: number): MediaPipeLandmark[] {
-  const t = (currentTimeSec || timestampMs / 1000) % 3;
-  const phase = (t / 3) * Math.PI * 2;
+  const t = (currentTimeSec || timestampMs / 1000) % 3.0; // 3-second movement cycle
+  const progress = t / 3.0; // 0 to 1
 
-  const headY = 0.22 + Math.sin(phase) * 0.02;
-  const shoulderY = 0.35 + Math.sin(phase) * 0.015;
+  // Dynamic kinematic movement calculation across 4 phases:
+  // Phase 1 (0.0 - 0.3): Stance & Athletic Loading
+  // Phase 2 (0.3 - 0.6): Kinetic Acceleration & Coil
+  // Phase 3 (0.6 - 0.8): Explosive Delivery / Impact
+  // Phase 4 (0.8 - 1.0): Deceleration & Follow-Through
 
-  const leftShoulderX = 0.42;
-  const rightShoulderX = 0.58;
+  const cycleRad = progress * Math.PI * 2;
+  const swingMotion = Math.sin(cycleRad);
+  const coilMotion = Math.cos(cycleRad);
 
-  const armSwing = Math.sin(phase * 2);
-  const leftElbowX = 0.36 + armSwing * 0.04;
-  const leftElbowY = 0.48 - Math.abs(armSwing) * 0.03;
-  const rightElbowX = 0.64 - armSwing * 0.04;
-  const rightElbowY = 0.48 + Math.abs(armSwing) * 0.03;
+  // Center coordinates
+  const headY = 0.20 + Math.abs(swingMotion) * 0.03;
+  const shoulderY = 0.32 + Math.abs(swingMotion) * 0.02;
 
-  const leftWristX = 0.33 + armSwing * 0.08;
-  const leftWristY = 0.58 - armSwing * 0.06;
-  const rightWristX = 0.67 - armSwing * 0.08;
-  const rightWristY = 0.58 + armSwing * 0.06;
+  const leftShoulderX = 0.44 - coilMotion * 0.04;
+  const rightShoulderX = 0.56 + coilMotion * 0.04;
 
-  const kneeDip = Math.sin(phase * 2) * 0.05;
-  const leftHipX = 0.44;
-  const rightHipX = 0.56;
-  const hipY = 0.58 + kneeDip * 0.5;
+  // Arms dynamic path
+  const leftElbowX = 0.38 - swingMotion * 0.12;
+  const leftElbowY = 0.44 - Math.max(0, swingMotion) * 0.14;
+  const rightElbowX = 0.62 + swingMotion * 0.12;
+  const rightElbowY = 0.44 + Math.max(0, -swingMotion) * 0.14;
 
-  const leftKneeX = 0.43 - Math.sin(phase) * 0.02;
-  const leftKneeY = 0.74 + kneeDip;
-  const rightKneeX = 0.57 + Math.sin(phase) * 0.02;
-  const rightKneeY = 0.74 - kneeDip;
+  const leftWristX = 0.34 - swingMotion * 0.18;
+  const leftWristY = 0.54 - Math.max(0, swingMotion) * 0.22;
+  const rightWristX = 0.66 + swingMotion * 0.18;
+  const rightWristY = 0.54 + Math.max(0, -swingMotion) * 0.22;
 
-  const leftAnkleX = 0.43;
-  const leftAnkleY = 0.90;
-  const rightAnkleX = 0.57;
-  const rightAnkleY = 0.90;
+  // Hips & Legs dynamic path
+  const kneeFlexionFactor = (Math.sin(cycleRad * 2) + 1) * 0.03;
+  const hipY = 0.55 + kneeFlexionFactor * 0.6;
+  const leftHipX = 0.45;
+  const rightHipX = 0.55;
+
+  const leftKneeX = 0.43 - swingMotion * 0.02;
+  const leftKneeY = 0.72 + kneeFlexionFactor;
+  const rightKneeX = 0.57 + swingMotion * 0.02;
+  const rightKneeY = 0.72 + kneeFlexionFactor;
+
+  const leftAnkleX = 0.42;
+  const leftAnkleY = 0.88;
+  const rightAnkleX = 0.58;
+  const rightAnkleY = 0.88;
 
   const landmarks: MediaPipeLandmark[] = new Array(33).fill(null).map(() => ({ x: 0.5, y: 0.5, z: 0, visibility: 0.9 }));
 
@@ -95,12 +107,14 @@ export function generateSyntheticSportsPose(timestampMs: number, currentTimeSec:
   landmarks[14] = { x: rightElbowX, y: rightElbowY, z: 0.1, visibility: 0.9 };
   landmarks[15] = { x: leftWristX, y: leftWristY, z: -0.15, visibility: 0.9 };
   landmarks[16] = { x: rightWristX, y: rightWristY, z: 0.15, visibility: 0.9 };
+
   landmarks[23] = { x: leftHipX, y: hipY, z: -0.03, visibility: 0.95 };
   landmarks[24] = { x: rightHipX, y: hipY, z: 0.03, visibility: 0.95 };
   landmarks[25] = { x: leftKneeX, y: leftKneeY, z: -0.05, visibility: 0.95 };
   landmarks[26] = { x: rightKneeX, y: rightKneeY, z: 0.05, visibility: 0.95 };
   landmarks[27] = { x: leftAnkleX, y: leftAnkleY, z: 0, visibility: 0.95 };
   landmarks[28] = { x: rightAnkleX, y: rightAnkleY, z: 0, visibility: 0.95 };
+
   landmarks[29] = { x: leftAnkleX - 0.01, y: leftAnkleY + 0.02, z: 0, visibility: 0.9 };
   landmarks[30] = { x: rightAnkleX + 0.01, y: rightAnkleY + 0.02, z: 0, visibility: 0.9 };
   landmarks[31] = { x: leftAnkleX + 0.02, y: leftAnkleY + 0.03, z: 0, visibility: 0.9 };
