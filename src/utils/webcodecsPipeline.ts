@@ -5,10 +5,8 @@ function createMP4BoxFile(): any {
   if (typeof MP4Box.createFile === 'function') {
     return MP4Box.createFile();
   }
-  // Use bracket notation to avoid static analysis errors during build
-  const mp4boxAny = MP4Box as any;
-  if (mp4boxAny['default'] && typeof mp4boxAny['default'].createFile === 'function') {
-    return mp4boxAny['default'].createFile();
+  if ((MP4Box as any).default && typeof (MP4Box as any).default.createFile === 'function') {
+    return (MP4Box as any).default.createFile();
   }
   throw new Error('MP4Box.createFile function is not available.');
 }

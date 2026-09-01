@@ -262,10 +262,10 @@ export const KineticVideoPlayer: React.FC<KineticVideoPlayerProps> = ({
       {viewMode === 'student' && (
         <div className="absolute inset-0 pointer-events-none z-20 flex flex-col justify-between p-4 mix-blend-screen">
           <div className="flex justify-between w-full">
-            <div className="bg-yellow-500 text-black font-black text-xs px-3 py-1 rounded-full animate-pulse border border-yellow-200 shadow-[0_0_15px_rgba(250,204,21,0.5)] italic">
+            <div className="bg-gradient-to-r from-red-600 to-amber-500 text-white font-black text-xs px-3 py-1 rounded-full animate-pulse border border-white/20 shadow-[0_0_15px_rgba(220,38,38,0.5)]">
               ⚡ COMBO: x{Math.floor(currentTime * 2) + 1}
             </div>
-            <div className="bg-white/10 text-white font-black text-xs px-3 py-1 rounded-full border border-white/20">
+            <div className="bg-gradient-to-r from-emerald-500 to-teal-400 text-white font-black text-xs px-3 py-1 rounded-full border border-white/20 shadow-[0_0_15px_rgba(16,185,129,0.5)]">
               🛡️ ARMOR: 100%
             </div>
           </div>

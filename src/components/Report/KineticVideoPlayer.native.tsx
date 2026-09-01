@@ -1,9 +1,32 @@
-import React, { useRef, useState, useMemo, useImperativeHandle, forwardRef } from 'react';
-import { View, StyleSheet, LayoutChangeEvent, Text } from 'react-native';
-import { Video, ResizeMode } from 'expo-av';
-import { Canvas, Line, Circle, vec } from '@shopify/react-native-skia';
-import { SportRule, FrameAnalysis } from '../../types';
-import { mapLandmarkToPixels } from '../../shared/geometry';
+import React, { useRef, useState, useMemo } from 'react';
+import {
+  View,
+  Text,
+  StyleSheet,
+  TouchableOpacity,
+  LayoutChangeEvent,
+  Platform
+} from 'react-native';
+import { Video, ResizeMode, AVPlaybackStatus } from 'expo-av';
+import Svg, {
+  Line,
+  Circle,
+  Polygon,
+  Rect,
+  Text as SvgText,
+  Path as SvgPath,
+  G
+} from 'react-native-svg';
+import {
+  Play,
+  Pause,
+  SkipBack,
+  SkipForward,
+  Maximize,
+  Zap,
+  ShieldCheck
+} from 'lucide-react-native';
+import { SportRule, FrameAnalysis, MediaPipeLandmark } from '../../types';
 
 interface KineticVideoPlayerProps {
   videoUrl: string;
@@ -16,400 +39,605 @@ interface KineticVideoPlayerProps {
   playbackRate?: number;
   isDataReady: boolean;
   viewMode?: 'student' | 'coach';
-  showSkeleton?: boolean;
+  onTogglePlay?: () => void;
 }
 
-export interface KineticVideoPlayerRef {
-  seek: (time: number) => void;
-}
-
-const POSE_CONNECTIONS: { points: [number, number], color: string }[] = [
-  // Head / Neck (Green)
-  { points: [0, 11], color: '#22c55e' }, { points: [0, 12], color: '#22c55e' },
-  // Shoulders & Torso (Green)
-  { points: [11, 12], color: '#22c55e' }, { points: [11, 23], color: '#22c55e' }, { points: [12, 24], color: '#22c55e' }, { points: [23, 24], color: '#22c55e' },
-  // Arms (Blue)
-  { points: [11, 13], color: '#3b82f6' }, { points: [13, 15], color: '#3b82f6' },
-  { points: [12, 14], color: '#3b82f6' }, { points: [14, 16], color: '#3b82f6' },
-  // Pelvis / Hips (Purple)
-  { points: [23, 24], color: '#a855f7' },
-  // Legs (Red)
-  { points: [23, 25], color: '#ef4444' }, { points: [25, 27], color: '#ef4444' }, { points: [27, 29], color: '#ef4444' }, { points: [29, 31], color: '#ef4444' },
-  { points: [24, 26], color: '#ef4444' }, { points: [26, 28], color: '#ef4444' }, { points: [28, 30], color: '#ef4444' }, { points: [30, 32], color: '#ef4444' },
-];
-
-const getJointColor = (index: number) => {
-  if (index === 0) return '#22c55e'; // Green head
-  if (index >= 11 && index <= 16) return '#3b82f6'; // Blue arms
-  if (index >= 23 && index <= 24) return '#a855f7'; // Purple hips
-  if (index >= 25 && index <= 32) return '#ef4444'; // Red legs
-  return '#22c55e'; // Default Green
-};
-
-export const KineticVideoPlayer = React.memo(forwardRef<KineticVideoPlayerRef, KineticVideoPlayerProps>(({
+export const KineticVideoPlayer: React.FC<KineticVideoPlayerProps> = ({
   videoUrl,
   sportRule,
   sortedFrames,
   isPlaying,
-  currentTime: externalTime,
+  currentTime,
   onTimeUpdate,
   onDurationChange,
   playbackRate = 1,
   isDataReady,
-  showSkeleton = true,
-}, ref) => {
+  viewMode = 'student',
+  onTogglePlay
+}) => {
   const videoRef = useRef<Video>(null);
-  const [containerSize, setContainerSize] = useState<{ width: number; height: number }>({ width: 340, height: 220 });
-  const [videoNaturalSize, setVideoNaturalSize] = useState<{ width: number; height: number } | null>(null);
-
-  // Use local time for high-frequency skeleton updates to avoid React render lag from parent
-  const [localTime, setLocalTime] = useState(0);
-
-  useImperativeHandle(ref, () => ({
-    seek: (time: number) => {
-      setLocalTime(time);
-      if (videoRef.current) {
-        videoRef.current.setPositionAsync(time * 1000);
-      }
-    }
-  }));
-
-  // Sync internal time with external time only when it's a significant jump (e.g. seek from parent)
-  React.useEffect(() => {
-    if (Math.abs(localTime - externalTime) > 0.1) {
-      setLocalTime(externalTime);
-    }
-  }, [externalTime]);
+  const [layout, setLayout] = useState({ width: 360, height: 640 });
+  const [selectedSpeed, setSelectedSpeed] = useState<number>(playbackRate);
+  const [duration, setDuration] = useState<number>(3.99);
 
   const handleLayout = (e: LayoutChangeEvent) => {
     const { width, height } = e.nativeEvent.layout;
     if (width > 0 && height > 0) {
-      setContainerSize({ width, height });
+      setLayout({ width, height });
     }
   };
 
-  // Calculate pixel-perfect letterboxed video placement
-  const layoutMetrics = useMemo(() => {
-    const { width: cw, height: ch } = containerSize;
-    if (!videoNaturalSize || videoNaturalSize.width <= 0 || videoNaturalSize.height <= 0) {
-      return { drawWidth: cw, drawHeight: ch, offsetX: 0, offsetY: 0 };
-    }
-    
-    // We must handle potential orientation issues. MediaPipe landmarks are normalized to the video buffer.
-    // If the video is vertical (natural height > natural width), but container is horizontal.
-    const videoAspect = videoNaturalSize.width / videoNaturalSize.height;
-    const containerAspect = cw / ch;
-
-    let drawWidth = cw;
-    let drawHeight = ch;
-    let offsetX = 0;
-    let offsetY = 0;
-
-    if (containerAspect > videoAspect) {
-      // Pillarbox (bars on sides)
-      drawHeight = ch;
-      drawWidth = ch * videoAspect;
-      offsetX = (cw - drawWidth) / 2;
-    } else {
-      // Letterbox (bars on top/bottom)
-      drawWidth = cw;
-      drawHeight = cw / videoAspect;
-      offsetY = (ch - drawHeight) / 2;
-    }
-
-    return { drawWidth, drawHeight, offsetX, offsetY };
-  }, [containerSize, videoNaturalSize]);
-
-  // Binary search for exact current frame + Interpolation
-  const interpolatedFrame = useMemo(() => {
+  // Find the closest analyzed frame based on currentTime (Binary Search)
+  const currentFrame = useMemo(() => {
     if (!sortedFrames.length) return null;
-    
-    // Find the two frames surrounding localTime
     let low = 0;
     let high = sortedFrames.length - 1;
     let idx = 0;
-    
     while (low <= high) {
       const mid = (low + high) >> 1;
-      if (sortedFrames[mid].timestamp <= localTime) {
+      if (sortedFrames[mid].timestamp <= currentTime) {
         idx = mid;
         low = mid + 1;
       } else {
         high = mid - 1;
       }
     }
-    
-    const frameA = sortedFrames[idx];
-    const frameB = sortedFrames[idx + 1];
-    
-    if (!frameB) return frameA;
-    
-    // Calculate interpolation factor (0 to 1)
-    const timeA = frameA.timestamp;
-    const timeB = frameB.timestamp;
-    const factor = (localTime - timeA) / (timeB - timeA);
-    const safeFactor = Math.max(0, Math.min(1, factor));
-    
-    // Lerp landmarks
-    const interpolatedLandmarks = frameA.landmarks.map((lmA, i) => {
-      const lmB = frameB.landmarks[i];
-      if (!lmA || !lmB) return lmA;
+    return sortedFrames[idx];
+  }, [sortedFrames, currentTime]);
+
+  const handlePlaybackStatusUpdate = (status: AVPlaybackStatus) => {
+    if (status.isLoaded) {
+      const posSec = status.positionMillis / 1000;
+      onTimeUpdate(posSec);
+      if (status.durationMillis) {
+        const durSec = status.durationMillis / 1000;
+        setDuration(durSec);
+        onDurationChange?.(durSec);
+      }
+    }
+  };
+
+  const handleSeek = (ratio: number) => {
+    const targetMs = Math.max(0, Math.min(duration, ratio * duration)) * 1000;
+    videoRef.current?.setPositionAsync(targetMs);
+  };
+
+  const handleStep = (direction: 'back' | 'forward') => {
+    const stepTime = 0.05; // 50ms per step
+    const target = direction === 'back'
+      ? Math.max(0, currentTime - stepTime)
+      : Math.min(duration, currentTime + stepTime);
+    videoRef.current?.setPositionAsync(target * 1000);
+  };
+
+  const handleChangeSpeed = (speed: number) => {
+    setSelectedSpeed(speed);
+    videoRef.current?.setRateAsync(speed, true);
+  };
+
+  // Extract landmarks & compute clean visual geometry
+  const landmarks = currentFrame?.landmarks;
+  const { width: W, height: H } = layout;
+
+  // Render Biometric Rules Callouts (Matching Picture 1 with non-colliding staggered positioning)
+  const visibleRuleCallouts = useMemo(() => {
+    if (!landmarks || landmarks.length === 0 || !sportRule?.jointRules) return [];
+
+    const activePhase = currentFrame?.detectedPhase || sportRule.phases?.[0];
+    const rules = sportRule.jointRules.filter((r) => {
+      if (!activePhase || activePhase === 'Auto-Detect' || activePhase === 'All') return true;
+      return r.phase === activePhase || currentFrame?.ruleResults?.[r.id] !== 'optimal';
+    });
+
+    const selected = (rules.length > 4 ? rules.slice(0, 4) : rules).map((rule, index) => {
+      const [, vertexIdx] = rule.keypoints;
+      const vertex = landmarks[vertexIdx];
+      const vx = vertex ? vertex.x * W : W * 0.5;
+      const vy = vertex ? vertex.y * H : H * 0.3 + index * 45;
+
+      const angleVal = currentFrame?.angles?.[rule.id] ?? 90;
+      const status = currentFrame?.ruleResults?.[rule.id] || 'optimal';
+
+      const cleanName = rule.name
+        .replace(/ Biometric Rule$/i, '')
+        .replace(/ Rule$/i, '')
+        .trim();
+
+      const displayAngle = typeof angleVal === 'number' ? angleVal.toFixed(1) : angleVal;
+      const labelText = `${cleanName}: ${displayAngle}${rule.unit || '°'}`;
+
+      // Staggered Y positioning so callouts never collide
+      const targetY = Math.max(80, Math.min(H - 120, vy - 10 + (index % 2 === 0 ? -12 : 12)));
+      const pillX = Math.min(W - 220, Math.max(20, vx + 16));
+
       return {
-        x: lmA.x + (lmB.x - lmA.x) * safeFactor,
-        y: lmA.y + (lmB.y - lmA.y) * safeFactor,
-        z: (lmA.z || 0) + ((lmB.z || 0) - (lmA.z || 0)) * safeFactor,
-        visibility: (lmA.visibility || 0) + ((lmB.visibility || 0) - (lmA.visibility || 0)) * safeFactor,
+        id: rule.id,
+        labelText,
+        vx,
+        vy,
+        pillX,
+        pillY: targetY,
+        status,
+        color: status === 'error' ? '#ef4444' : status === 'warning' ? '#f59e0b' : '#22c55e'
       };
     });
-    
-    return {
-      ...frameA,
-      landmarks: interpolatedLandmarks,
-    };
-  }, [sortedFrames, localTime]);
 
-  const currentFrame = interpolatedFrame;
-
-  const { drawWidth, drawHeight, offsetX, offsetY } = layoutMetrics;
-
-  // Helper to get status for a connection
-  const getConnectionStatus = (p1: number, p2: number) => {
-    if (!currentFrame) return 'optimal';
-    
-    // Find all rules that involve either of these points
-    // Rules are usually defined as an angle at keypoints[1] (the vertex)
-    const activeRules = sportRule.jointRules.filter(r => 
-      r.keypoints[1] === p1 || r.keypoints[1] === p2 || 
-      (r.keypoints.includes(p1) && r.keypoints.includes(p2))
-    );
-    
-    if (activeRules.length === 0) return 'optimal';
-    
-    // Prioritize 'error' > 'warning' > 'good' > 'optimal'
-    const statuses = activeRules.map(r => currentFrame.ruleResults[r.id] || 'optimal');
-    if (statuses.includes('error')) return 'error';
-    if (statuses.includes('warning')) return 'warning';
-    return 'optimal';
-  };
+    return selected;
+  }, [landmarks, currentFrame, sportRule, W, H]);
 
   return (
     <View style={styles.container} onLayout={handleLayout}>
+      {/* Video Surface */}
       <Video
         ref={videoRef}
         source={{ uri: videoUrl }}
-        rate={playbackRate}
+        rate={selectedSpeed}
         isMuted={true}
         resizeMode={ResizeMode.CONTAIN}
         shouldPlay={isPlaying}
-        isLooping={false}
-        progressUpdateIntervalMillis={16} // 60fps updates for smooth skeleton
-        onPlaybackStatusUpdate={(status) => {
-          if (status.isLoaded) {
-            const time = status.positionMillis / 1000;
-            setLocalTime(time);
-            onTimeUpdate(time);
-            if (status.durationMillis && onDurationChange) {
-              onDurationChange(status.durationMillis / 1000);
-            }
-            if ((status as any).naturalSize && (status as any).naturalSize.width > 0) {
-              const { width, height } = (status as any).naturalSize;
-              // Only update if dimensions actually changed
-              if (!videoNaturalSize || videoNaturalSize.width !== width || videoNaturalSize.height !== height) {
-                setVideoNaturalSize({ width, height });
-              }
-            }
-          }
-        }}
+        isLooping={true}
+        onPlaybackStatusUpdate={handlePlaybackStatusUpdate}
         style={styles.video}
       />
 
-      {/* 
-        NEW: The Canvas and Metrics View are now precisely sized and positioned 
-        to match the "CONTAIN"ed video frame. This eliminates drift and 
-        ensures the skeleton is never "Giant".
-      */}
-      <View 
-        pointerEvents="none"
-        style={{
-          position: 'absolute',
-          left: offsetX,
-          top: offsetY,
-          width: drawWidth,
-          height: drawHeight,
-          zIndex: 10,
-        }}
-      >
-        <Canvas style={StyleSheet.absoluteFill}>
-          {showSkeleton && isDataReady && currentFrame?.landmarks && (
-            <>
-              {/* Enhanced Skeletal Bones */}
-              {POSE_CONNECTIONS.map(({ points: [i1, i2], color: boneColor }, connIdx) => {
-                const p1 = currentFrame.landmarks[i1];
-                const p2 = currentFrame.landmarks[i2];
-                if (!p1 || !p2 || (p1.visibility && p1.visibility < 0.4) || (p2.visibility && p2.visibility < 0.4)) {
-                  return null;
-                }
-                
-                const x1 = p1.x * drawWidth;
-                const y1 = p1.y * drawHeight;
-                const x2 = p2.x * drawWidth;
-                const y2 = p2.y * drawHeight;
-                
-                const point1 = vec(x1, y1);
-                const point2 = vec(x2, y2);
-                
-                const status = getConnectionStatus(i1, i2);
-                const activeColor = status === 'error' ? '#ef4444' : status === 'warning' ? '#fbbf24' : boneColor;
-
-                return (
-                  <React.Fragment key={`bone-${connIdx}`}>
-                    {/* Outer Glow */}
-                    <Line 
-                      p1={point1} 
-                      p2={point2} 
-                      color={activeColor} 
-                      strokeWidth={14} 
-                      opacity={0.15} 
-                    />
-                    {/* Thematic Bone */}
-                    <Line 
-                      p1={point1} 
-                      p2={point2} 
-                      color={activeColor} 
-                      strokeWidth={5} 
-                      opacity={0.5} 
-                    />
-                    {/* Core High-Contrast Line */}
-                    <Line 
-                      p1={point1} 
-                      p2={point2} 
-                      color="#ffffff" 
-                      strokeWidth={2} 
-                      opacity={0.9} 
-                    />
-                  </React.Fragment>
-                );
-              })}
-
-              {/* Enhanced Joints */}
-              {currentFrame.landmarks.map((lm, i) => {
-                if (lm.visibility && lm.visibility < 0.4) return null;
-                const isHighlight = i === 11 || i === 12 || i === 23 || i === 24 || i === 25 || i === 26 || i === 0;
-                const cx = lm.x * drawWidth;
-                const cy = lm.y * drawHeight;
-                
-                // Fix: Check if this joint is involved in any failing rule
-                const activeRules = sportRule.jointRules.filter(r => r.keypoints.includes(i));
-                const statuses = activeRules.map(r => currentFrame.ruleResults[r.id] || 'optimal');
-                let jointColor = getJointColor(i);
-                
-                if (statuses.includes('error')) jointColor = '#ef4444';
-                else if (statuses.includes('warning')) jointColor = '#fbbf24';
-
-                return (
-                  <React.Fragment key={`joint-group-${i}`}>
-                    {/* Joint Glow */}
-                    <Circle 
-                      cx={cx} 
-                      cy={cy} 
-                      r={isHighlight ? 14 : 9} 
-                      color={jointColor} 
-                      opacity={0.2} 
-                    />
-                    {/* High-Contrast Core */}
-                    <Circle 
-                      cx={cx} 
-                      cy={cy} 
-                      r={isHighlight ? 4 : 3} 
-                      color="#ffffff" 
-                      opacity={1} 
-                    />
-                  </React.Fragment>
-                );
-              })}
-            </>
+      {/* Svg High-Fidelity Biomechanical Overlay (Matching Picture 1) */}
+      {landmarks && landmarks.length > 0 && (
+        <Svg style={styles.svgOverlay} width={W} height={H}>
+          {/* 1. Torso Volume Polygon */}
+          {landmarks[11] && landmarks[12] && landmarks[24] && landmarks[23] && (
+            <Polygon
+              points={`
+                ${landmarks[11].x * W},${landmarks[11].y * H}
+                ${landmarks[12].x * W},${landmarks[12].y * H}
+                ${landmarks[24].x * W},${landmarks[24].y * H}
+                ${landmarks[23].x * W},${landmarks[23].y * H}
+              `}
+              fill="rgba(56, 189, 248, 0.08)"
+              stroke="rgba(56, 189, 248, 0.25)"
+              strokeWidth={1.5}
+            />
           )}
-        </Canvas>
 
-        {/* Biometric Metric Labels - Now also precisely positioned within the frame */}
-        {currentFrame && (
-          <View style={StyleSheet.absoluteFill}>
-            {sportRule.jointRules.map((rule, idx) => {
-              const vertex = currentFrame.landmarks[rule.keypoints[1]];
-              if (!vertex) return null;
-              
-              const angleVal = currentFrame.angles[rule.id] ?? 0;
-              const status = currentFrame.ruleResults[rule.id] || 'optimal';
-              
-              // Map vertex to pixels within this relative frame
-              const vx = vertex.x * drawWidth;
-              const vy = vertex.y * drawHeight;
-              
-              // Collision avoidance: Stagger and alternate sides if needed
-              // We'll alternate left/right to reduce overlap
-              const isEven = idx % 2 === 0;
-              const staggerY = idx * 22;
-              
-              return (
-                <View 
-                  key={rule.id}
+          {/* 2. Head / Helmet Oval */}
+          {landmarks[0] && (
+            <Circle
+              cx={landmarks[0].x * W}
+              cy={landmarks[0].y * H - 6}
+              r={12}
+              fill="rgba(56, 189, 248, 0.12)"
+              stroke="rgba(56, 189, 248, 0.4)"
+              strokeWidth={1.5}
+            />
+          )}
+
+          {/* 3. Left Limbs (Purple - Lead Side) */}
+          {[
+            [11, 13], [13, 15], // Left Arm
+            [23, 25], [25, 27], [27, 31], [27, 29], // Left Leg & Foot
+            [11, 23] // Left Torso
+          ].map(([i1, i2], idx) => {
+            const p1 = landmarks[i1];
+            const p2 = landmarks[i2];
+            if (!p1 || !p2 || (p1.visibility && p1.visibility < 0.25)) return null;
+            return (
+              <Line
+                key={`left-limb-${idx}`}
+                x1={p1.x * W}
+                y1={p1.y * H}
+                x2={p2.x * W}
+                y2={p2.y * H}
+                stroke="#c084fc"
+                strokeWidth={3}
+                strokeLinecap="round"
+              />
+            );
+          })}
+
+          {/* 4. Right Limbs (Neon Green - Trail Side) */}
+          {[
+            [12, 14], [14, 16], // Right Arm
+            [24, 26], [26, 28], [28, 32], [28, 30], // Right Leg & Foot
+            [12, 24] // Right Torso
+          ].map(([i1, i2], idx) => {
+            const p1 = landmarks[i1];
+            const p2 = landmarks[i2];
+            if (!p1 || !p2 || (p1.visibility && p1.visibility < 0.25)) return null;
+            return (
+              <Line
+                key={`right-limb-${idx}`}
+                x1={p1.x * W}
+                y1={p1.y * H}
+                x2={p2.x * W}
+                y2={p2.y * H}
+                stroke="#22c55e"
+                strokeWidth={3}
+                strokeLinecap="round"
+              />
+            );
+          })}
+
+          {/* 5. Center Shoulders & Hips Connections */}
+          {landmarks[11] && landmarks[12] && (
+            <Line
+              x1={landmarks[11].x * W}
+              y1={landmarks[11].y * H}
+              x2={landmarks[12].x * W}
+              y2={landmarks[12].y * H}
+              stroke="#38bdf8"
+              strokeWidth={2.5}
+            />
+          )}
+          {landmarks[23] && landmarks[24] && (
+            <Line
+              x1={landmarks[23].x * W}
+              y1={landmarks[23].y * H}
+              x2={landmarks[24].x * W}
+              y2={landmarks[24].y * H}
+              stroke="#38bdf8"
+              strokeWidth={2.5}
+            />
+          )}
+
+          {/* 6. Joint Pivot Circles */}
+          {landmarks.map((lm, i) => {
+            if (!lm || (lm.visibility && lm.visibility < 0.25)) return null;
+            if (i > 0 && i < 11) return null; // skip facial clutter
+
+            const isLeft = [11, 13, 15, 23, 25, 27, 29, 31].includes(i);
+            const ringColor = isLeft ? '#c084fc' : '#22c55e';
+
+            return (
+              <G key={`joint-${i}`}>
+                <Circle
+                  cx={lm.x * W}
+                  cy={lm.y * H}
+                  r={5}
+                  fill="rgba(0,0,0,0.6)"
+                  stroke={ringColor}
+                  strokeWidth={1.5}
+                />
+                <Circle
+                  cx={lm.x * W}
+                  cy={lm.y * H}
+                  r={2.5}
+                  fill="#ffffff"
+                />
+              </G>
+            );
+          })}
+
+          {/* 7. Biometric Angle Callouts (Clean Floating Pills with Leader Lines) */}
+          {visibleRuleCallouts.map((callout, idx) => {
+            const textLength = callout.labelText.length;
+            const pillW = Math.min(220, Math.max(140, textLength * 7.2 + 24));
+
+            return (
+              <G key={`callout-${idx}`}>
+                {/* Thin leader line from joint vertex to pill */}
+                <Line
+                  x1={callout.vx}
+                  y1={callout.vy}
+                  x2={callout.pillX}
+                  y2={callout.pillY + 9}
+                  stroke={callout.color}
+                  strokeWidth={1}
+                  strokeDasharray="2,2"
+                  opacity={0.8}
+                />
+
+                {/* Dark translucent pill card */}
+                <Rect
+                  x={callout.pillX}
+                  y={callout.pillY}
+                  width={pillW}
+                  height={18}
+                  rx={9}
+                  fill="rgba(9, 9, 11, 0.92)"
+                  stroke={callout.color}
+                  strokeWidth={1}
+                />
+
+                {/* Status Dot */}
+                <Circle
+                  cx={callout.pillX + 8}
+                  cy={callout.pillY + 9}
+                  r={3}
+                  fill={callout.color}
+                />
+
+                {/* Label Text */}
+                <SvgText
+                  x={callout.pillX + 16}
+                  y={callout.pillY + 13}
+                  fill="#ffffff"
+                  fontSize="9.5"
+                  fontWeight="bold"
+                  fontFamily="system-ui"
+                >
+                  {callout.labelText}
+                </SvgText>
+              </G>
+            );
+          })}
+        </Svg>
+      )}
+
+      {/* Top Gamified HUD Badges (Matching Picture 1) */}
+      <View style={styles.topHudContainer}>
+        <View style={styles.comboBadge}>
+          <Zap color="#f59e0b" size={14} />
+          <Text style={styles.comboText}>COMBO: x{Math.floor(currentTime * 2) + 1}</Text>
+        </View>
+
+        <View style={styles.armorBadge}>
+          <ShieldCheck color="#38bdf8" size={14} />
+          <Text style={styles.armorText}>ARMOR: 100%</Text>
+        </View>
+      </View>
+
+      {/* Bottom Floating Transport Controls (Matching Picture 1) */}
+      <View style={styles.bottomControlBar}>
+        {/* Amber Scrubber Bar */}
+        <TouchableOpacity
+          activeOpacity={1}
+          onPress={(e) => {
+            const touchX = e.nativeEvent.locationX;
+            const scrubberW = W - 32;
+            const ratio = Math.max(0, Math.min(1, touchX / scrubberW));
+            handleSeek(ratio);
+          }}
+          style={styles.scrubberTrack}
+        >
+          <View
+            style={[
+              styles.scrubberProgress,
+              { width: `${Math.min(100, (currentTime / (duration || 1)) * 100)}%` }
+            ]}
+          />
+          <View
+            style={[
+              styles.scrubberThumb,
+              { left: `${Math.min(97, (currentTime / (duration || 1)) * 100)}%` }
+            ]}
+          />
+        </TouchableOpacity>
+
+        {/* Buttons Row */}
+        <View style={styles.transportRow}>
+          {/* Play/Pause Button */}
+          <TouchableOpacity
+            onPress={onTogglePlay}
+            style={styles.playButton}
+          >
+            {isPlaying ? <Pause color="#000" size={16} /> : <Play color="#000" size={16} />}
+            <Text style={styles.playButtonText}>{isPlaying ? 'PAUSE' : 'PLAY'}</Text>
+          </TouchableOpacity>
+
+          {/* Step Backward */}
+          <TouchableOpacity
+            onPress={() => handleStep('back')}
+            style={styles.iconButton}
+          >
+            <SkipBack color="#fff" size={16} />
+          </TouchableOpacity>
+
+          {/* Step Forward */}
+          <TouchableOpacity
+            onPress={() => handleStep('forward')}
+            style={styles.iconButton}
+          >
+            <SkipForward color="#fff" size={16} />
+          </TouchableOpacity>
+
+          {/* Timestamp Pill */}
+          <View style={styles.timePill}>
+            <Text style={styles.timeText}>
+              {currentTime.toFixed(2)}s / {duration.toFixed(2)}s
+            </Text>
+          </View>
+        </View>
+
+        {/* Speed Pills and Fullscreen */}
+        <View style={styles.secondaryControlsRow}>
+          <View style={styles.speedGroup}>
+            {[0.25, 0.5, 1].map((spd) => (
+              <TouchableOpacity
+                key={spd}
+                onPress={() => handleChangeSpeed(spd)}
+                style={[
+                  styles.speedPill,
+                  selectedSpeed === spd && styles.speedPillActive
+                ]}
+              >
+                <Text
                   style={[
-                    styles.metricLabel,
-                    {
-                      left: isEven ? vx + 10 : vx - 130, // Alternate sides
-                      top: vy - 50 + (idx * 15), 
-                      borderColor: status === 'error' ? '#ef4444' : getJointColor(rule.keypoints[1]),
-                      maxWidth: 120,
-                    }
+                    styles.speedPillText,
+                    selectedSpeed === spd && styles.speedPillTextActive
                   ]}
                 >
-                  <Text style={styles.metricText} numberOfLines={1}>
-                    {rule.name.split(' ')[0]}: {angleVal.toFixed(1)}°
-                  </Text>
-                </View>
-              );
-            })}
+                  {spd}x
+                </Text>
+              </TouchableOpacity>
+            ))}
           </View>
-        )}
+
+          <TouchableOpacity style={styles.fullscreenButton}>
+            <Maximize color="#fff" size={16} />
+          </TouchableOpacity>
+        </View>
       </View>
     </View>
   );
-}));
+};
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#000',
+    position: 'relative',
     borderRadius: 24,
     overflow: 'hidden',
-    position: 'relative',
   },
   video: {
-    position: 'absolute',
-    left: 0,
-    right: 0,
-    top: 0,
-    bottom: 0,
+    ...StyleSheet.absoluteFillObject,
   },
-  canvas: {
-    position: 'absolute',
-    left: 0,
-    right: 0,
-    top: 0,
-    bottom: 0,
+  svgOverlay: {
+    ...StyleSheet.absoluteFillObject,
     zIndex: 10,
   },
-  metricLabel: {
+  topHudContainer: {
     position: 'absolute',
-    backgroundColor: 'rgba(0, 0, 0, 0.8)',
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 6,
-    borderWidth: 1,
+    top: 16,
+    left: 16,
+    right: 16,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    zIndex: 20,
   },
-  metricText: {
+  comboBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: '#eab308',
+    paddingHorizontal: 14,
+    paddingVertical: 6,
+    borderRadius: 999,
+    shadowColor: '#eab308',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.5,
+    shadowRadius: 6,
+    elevation: 5,
+  },
+  comboText: {
+    color: '#000',
+    fontWeight: '900',
+    fontSize: 12,
+    fontStyle: 'italic',
+    letterSpacing: 0.5,
+  },
+  armorBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: 'rgba(24, 24, 27, 0.85)',
+    paddingHorizontal: 14,
+    paddingVertical: 6,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: 'rgba(56, 189, 248, 0.4)',
+  },
+  armorText: {
     color: '#fff',
-    fontSize: 10,
+    fontWeight: '900',
+    fontSize: 12,
+    letterSpacing: 0.5,
+  },
+  bottomControlBar: {
+    position: 'absolute',
+    bottom: 12,
+    left: 12,
+    right: 12,
+    zIndex: 20,
+    gap: 10,
+  },
+  scrubberTrack: {
+    height: 8,
+    backgroundColor: 'rgba(255, 255, 255, 0.2)',
+    borderRadius: 4,
+    position: 'relative',
+    justifyContent: 'center',
+  },
+  scrubberProgress: {
+    height: '100%',
+    backgroundColor: '#eab308',
+    borderRadius: 4,
+  },
+  scrubberThumb: {
+    position: 'absolute',
+    width: 16,
+    height: 16,
+    borderRadius: 8,
+    backgroundColor: '#f59e0b',
+    top: -4,
+    borderWidth: 2,
+    borderColor: '#fff',
+  },
+  transportRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  playButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: '#eab308',
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 12,
+  },
+  playButtonText: {
+    color: '#000',
+    fontWeight: '900',
+    fontSize: 12,
+    fontStyle: 'italic',
+  },
+  iconButton: {
+    backgroundColor: 'rgba(24, 24, 27, 0.8)',
+    padding: 8,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.1)',
+  },
+  timePill: {
+    backgroundColor: 'rgba(24, 24, 27, 0.8)',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.1)',
+  },
+  timeText: {
+    color: '#fff',
+    fontSize: 12,
+    fontWeight: '700',
+    fontFamily: Platform.OS === 'ios' ? 'Courier' : 'monospace',
+  },
+  secondaryControlsRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  speedGroup: {
+    flexDirection: 'row',
+    backgroundColor: 'rgba(24, 24, 27, 0.8)',
+    borderRadius: 10,
+    padding: 2,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.1)',
+  },
+  speedPill: {
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 8,
+  },
+  speedPillActive: {
+    backgroundColor: '#eab308',
+  },
+  speedPillText: {
+    color: '#71717a',
+    fontSize: 11,
     fontWeight: 'bold',
+  },
+  speedPillTextActive: {
+    color: '#000',
+    fontWeight: '900',
+  },
+  fullscreenButton: {
+    backgroundColor: 'rgba(24, 24, 27, 0.8)',
+    padding: 8,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.1)',
   },
 });

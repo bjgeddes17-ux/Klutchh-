@@ -1,7 +1,139 @@
 import { MediaPipeLandmark, SportRule } from '../types';
-import { calculateAngle, POSE_CONNECTIONS } from '../shared/biomechanics';
 
-export { calculateAngle, POSE_CONNECTIONS };
+/**
+ * Calculates the angle (in degrees 0-180) at vertex point p2 formed by lines p1-p2 and p3-p2.
+ */
+export function calculateAngle(
+  p1: MediaPipeLandmark,
+  p2: MediaPipeLandmark,
+  p3: MediaPipeLandmark
+): number {
+  if (!p1 || !p2 || !p3) return 0;
+
+  // Vectors from vertex p2 to p1 and p3 (supporting 3D coordinates x, y, z)
+  const v1x = p1.x - p2.x;
+  const v1y = p1.y - p2.y;
+  const v1z = (p1.z || 0) - (p2.z || 0);
+
+  const v2x = p3.x - p2.x;
+  const v2y = p3.y - p2.y;
+  const v2z = (p3.z || 0) - (p2.z || 0);
+
+  // Dot product and magnitudes for Law of Cosines
+  const dotProduct = v1x * v2x + v1y * v2y + v1z * v2z;
+  const mag1 = Math.sqrt(v1x * v1x + v1y * v1y + v1z * v1z);
+  const mag2 = Math.sqrt(v2x * v2x + v2y * v2y + v2z * v2z);
+
+  if (mag1 === 0 || mag2 === 0) return 0;
+
+  let cosTheta = dotProduct / (mag1 * mag2);
+  cosTheta = Math.max(-1, Math.min(1, cosTheta));
+
+  const angleRad = Math.acos(cosTheta);
+  const angleDeg = (angleRad * 180.0) / Math.PI;
+
+  return Math.round(angleDeg * 10) / 10;
+}
+
+/**
+ * Evaluates left-right symmetry (0 - 100%) across shoulders, elbows, hips, and knees.
+ */
+export function calculateSymmetry(landmarks: MediaPipeLandmark[]): number {
+  if (!landmarks || landmarks.length < 29) return 90;
+
+  // Key pairs: Left Shoulder (11) vs Right Shoulder (12)
+  // Left Elbow (13) vs Right Elbow (14)
+  // Left Hip (23) vs Right Hip (24)
+  // Left Knee (25) vs Right Knee (26)
+  const leftShoulder = landmarks[11];
+  const rightShoulder = landmarks[12];
+  const leftElbow = landmarks[13];
+  const rightElbow = landmarks[14];
+  const leftHip = landmarks[23];
+  const rightHip = landmarks[24];
+  const leftKnee = landmarks[25];
+  const rightKnee = landmarks[26];
+
+  if (!leftShoulder || !rightShoulder || !leftHip || !rightHip) return 88;
+
+  // Levelness of shoulder axis
+  const shoulderTilt = Math.abs(leftShoulder.y - rightShoulder.y);
+  // Levelness of hip axis
+  const hipTilt = Math.abs(leftHip.y - rightHip.y);
+
+  // Arm flex balance if available
+  let armDiff = 0;
+  if (leftElbow && rightElbow && landmarks[15] && landmarks[16]) {
+    const leftArmAngle = calculateAngle(leftShoulder, leftElbow, landmarks[15]);
+    const rightArmAngle = calculateAngle(rightShoulder, rightElbow, landmarks[16]);
+    armDiff = Math.abs(leftArmAngle - rightArmAngle) / 180;
+  }
+
+  const tiltPenalty = (shoulderTilt + hipTilt) * 150;
+  const score = Math.max(50, Math.min(100, Math.round(100 - tiltPenalty - armDiff * 25)));
+
+  return score;
+}
+
+/**
+ * Calculates Knee Valgus Safety Index (0-100%).
+ * Valgus occurs when knees buckle inward relative to the line connecting hip and ankle.
+ */
+export function calculateKneeValgusScore(landmarks: MediaPipeLandmark[]): number {
+  if (!landmarks || landmarks.length < 29) return 92;
+
+  const leftHip = landmarks[23];
+  const rightHip = landmarks[24];
+  const leftKnee = landmarks[25];
+  const rightKnee = landmarks[26];
+  const leftAnkle = landmarks[27];
+  const rightAnkle = landmarks[28];
+
+  if (!leftHip || !rightHip || !leftKnee || !rightKnee || !leftAnkle || !rightAnkle) return 90;
+
+  // Check inward displacement ratio
+  // Normal stance: knee X is between hip X and ankle X (or close to midpoint)
+  const leftMidX = (leftHip.x + leftAnkle.x) / 2;
+  const rightMidX = (rightHip.x + rightAnkle.x) / 2;
+
+  // Left knee buckling inward towards center (towards right)
+  const leftInward = leftKnee.x - leftMidX; 
+  // Right knee buckling inward towards center (towards left)
+  const rightInward = rightMidX - rightKnee.x;
+
+  const maxInward = Math.max(0, leftInward, rightInward);
+  const penalty = maxInward * 300;
+
+  return Math.max(40, Math.min(100, Math.round(100 - penalty)));
+}
+
+// MediaPipe Pose Skeleton Connection Indices with associated joint keys
+export const POSE_CONNECTIONS: { points: [number, number]; jointName?: string }[] = [
+  // Torso & Shoulders
+  { points: [11, 12] },
+  { points: [11, 23], jointName: 'shoulder_hip' },
+  { points: [12, 24], jointName: 'shoulder_hip' },
+  { points: [23, 24] },
+  // Left Arm
+  { points: [11, 13], jointName: 'elbow' },
+  { points: [13, 15], jointName: 'elbow' },
+  // Right Arm
+  { points: [12, 14], jointName: 'elbow' },
+  { points: [14, 16], jointName: 'elbow' },
+  // Left Leg
+  { points: [23, 25], jointName: 'hip' },
+  { points: [25, 27], jointName: 'knee' },
+  { points: [27, 29], jointName: 'ankle' },
+  { points: [29, 31] },
+  // Right Leg
+  { points: [24, 26], jointName: 'hip' },
+  { points: [26, 28], jointName: 'knee' },
+  { points: [28, 30], jointName: 'ankle' },
+  { points: [30, 32] },
+  // Face & Neck
+  { points: [0, 1] }, { points: [1, 2] }, { points: [2, 3] }, { points: [3, 7] },
+  { points: [0, 4] }, { points: [4, 5] }, { points: [5, 6] }, { points: [6, 8] }, { points: [9, 10] }
+];
 
 /**
  * Draws pose skeleton and biometric annotations on 2D canvas.
@@ -27,8 +159,11 @@ export function drawPoseSkeleton(
 
   if (!landmarks || landmarks.length === 0) return;
 
-  // 1. Draw stylized torso polygon frame (11=L Shoulder, 12=R Shoulder, 24=R Hip, 23=L Hip)
-  const activeThemeColor = 'rgba(250, 204, 21, 0.3)'; // High-tech electric yellow
+  // HIGH-TECH BIOMECHANICAL VOLUMETRIC ATHLETE SILHOUETTE UNDERLAY
+  const sportId = (sportRule?.id as string) || 'rugby';
+  const activeThemeColor = sportId === 'rugby' ? 'rgba(239, 68, 68, 0.3)' 
+                        : sportId === 'swim' ? 'rgba(56, 189, 248, 0.3)' 
+                        : 'rgba(245, 158, 11, 0.3)'; // fallback to gold
 
   ctx.save();
   ctx.lineJoin = 'round';
@@ -79,17 +214,8 @@ export function drawPoseSkeleton(
       ctx.moveTo(pt1.x * width, pt1.y * height);
       ctx.lineTo(pt2.x * width, pt2.y * height);
       ctx.strokeStyle = '#ffffff';
-      ctx.globalAlpha = 0.05;
-      ctx.lineWidth = 4;
-      ctx.stroke();
-
-      // Sharp HUD Core
-      ctx.beginPath();
-      ctx.moveTo(pt1.x * width, pt1.y * height);
-      ctx.lineTo(pt2.x * width, pt2.y * height);
-      ctx.strokeStyle = '#facc15';
-      ctx.globalAlpha = 0.8;
-      ctx.lineWidth = 1.5;
+      ctx.globalAlpha = 0.04;
+      ctx.lineWidth = 3;
       ctx.stroke();
       ctx.globalAlpha = 1.0;
     }
@@ -140,22 +266,37 @@ export function drawPoseSkeleton(
     }
   };
 
-  // 1. Draw Skeleton Connection Lines (2.5px width)
+  // 1. Draw Skeleton Connection Lines with Dual-Tone (Purple Left, Neon Green Right, Cyan Core)
+  const leftJoints = new Set([11, 13, 15, 23, 25, 27, 29, 31]);
+  const rightJoints = new Set([12, 14, 16, 24, 26, 28, 30, 32]);
+
   POSE_CONNECTIONS.forEach(({ points: [i1, i2] }) => {
     const pt1 = landmarks[i1];
     const pt2 = landmarks[i2];
 
-    if (pt1 && pt2 && (pt1.visibility === undefined || pt1.visibility > 0.35)) {
+    if (pt1 && pt2 && (pt1.visibility === undefined || pt1.visibility > 0.25)) {
       ctx.beginPath();
       ctx.moveTo(pt1.x * width, pt1.y * height);
       ctx.lineTo(pt2.x * width, pt2.y * height);
+
+      const isLeftLimb = leftJoints.has(i1) && leftJoints.has(i2);
+      const isRightLimb = rightJoints.has(i1) && rightJoints.has(i2);
 
       const s1 = issueKeypointMap[i1] || 'optimal';
       const s2 = issueKeypointMap[i2] || 'optimal';
       const lineStatus = statusPriority[s1] > statusPriority[s2] ? s1 : s2;
 
-      ctx.strokeStyle = getColorForStatus(lineStatus);
-      ctx.lineWidth = 2.5;
+      if (lineStatus === 'error' || lineStatus === 'warning') {
+        ctx.strokeStyle = getColorForStatus(lineStatus);
+      } else if (isLeftLimb) {
+        ctx.strokeStyle = '#c084fc'; // Vibrant Purple (Lead side)
+      } else if (isRightLimb) {
+        ctx.strokeStyle = '#22c55e'; // Vibrant Neon Green (Trail side)
+      } else {
+        ctx.strokeStyle = '#38bdf8'; // Cyan (Torso / Core)
+      }
+
+      ctx.lineWidth = 2.8;
       ctx.lineCap = 'round';
       ctx.stroke();
     }
@@ -163,12 +304,16 @@ export function drawPoseSkeleton(
 
   // 2. Draw Keypoint Joint Dots & Target Rings
   landmarks.forEach((pt, idx) => {
-    if (pt && (pt.visibility === undefined || pt.visibility > 0.35)) {
+    if (pt && (pt.visibility === undefined || pt.visibility > 0.25)) {
+      if (idx > 0 && idx < 11) return; // Skip facial keypoint clutter
+
       const cx = pt.x * width;
       const cy = pt.y * height;
 
+      const isLeft = leftJoints.has(idx);
+      const defaultColor = isLeft ? '#c084fc' : '#22c55e';
       const jointStatus = issueKeypointMap[idx] || 'optimal';
-      const color = getColorForStatus(jointStatus);
+      const color = jointStatus === 'error' || jointStatus === 'warning' ? getColorForStatus(jointStatus) : defaultColor;
 
       if (jointStatus === 'error' || jointStatus === 'warning') {
         // Glowing target ring for warning/error joints
@@ -183,20 +328,24 @@ export function drawPoseSkeleton(
         ctx.fillStyle = color;
         ctx.fill();
       } else {
-        // Solid dot for optimal / good joints
+        // Solid dot with inner white core (matching Picture 1)
         ctx.beginPath();
-        ctx.arc(cx, cy, 3.5, 0, 2 * Math.PI);
-        ctx.fillStyle = color;
+        ctx.arc(cx, cy, 4.5, 0, 2 * Math.PI);
+        ctx.fillStyle = 'rgba(0, 0, 0, 0.6)';
         ctx.fill();
-
-        ctx.lineWidth = 1;
-        ctx.strokeStyle = 'rgba(0,0,0,0.4)';
+        ctx.lineWidth = 1.5;
+        ctx.strokeStyle = color;
         ctx.stroke();
+
+        ctx.beginPath();
+        ctx.arc(cx, cy, 2, 0, 2 * Math.PI);
+        ctx.fillStyle = '#ffffff';
+        ctx.fill();
       }
     }
   });
 
-  // 3. Draw Angle Arcs & Biometric Labels
+  // 3. Draw Angle Arcs & Clean Non-Colliding Biometric Callouts (Matching Picture 1)
   if (sportRule && sportRule.jointRules) {
     let visibleRules = sportRule.jointRules.filter((rule) => {
       if (!activePhase || activePhase === 'Auto-Detect' || activePhase === 'All') return true;
@@ -209,7 +358,9 @@ export function drawPoseSkeleton(
       visibleRules = visibleRules.slice(0, 4);
     }
 
-    visibleRules.forEach((rule) => {
+    const renderedPills: { x: number; y: number; w: number; h: number }[] = [];
+
+    visibleRules.forEach((rule, idx) => {
       const [kp1, kp2, kp3] = rule.keypoints;
       const p1 = landmarks[kp1];
       const vertex = landmarks[kp2];
@@ -222,7 +373,7 @@ export function drawPoseSkeleton(
         const status = ruleResults[rule.id] || 'optimal';
         const statusColor = getColorForStatus(status);
 
-        // Draw Arc
+        // Draw Angle Arc
         ctx.beginPath();
         const startAngle = Math.atan2((p1.y - vertex.y) * height, (p1.x - vertex.x) * width);
         const endAngle = Math.atan2((p3.y - vertex.y) * height, (p3.x - vertex.x) * width);
@@ -231,19 +382,45 @@ export function drawPoseSkeleton(
         ctx.lineWidth = 2;
         ctx.stroke();
 
-        // Draw Biometric Angle Pill Label
-        const displayAngle = typeof angleVal === 'number' ? angleVal.toFixed(1) : angleVal;
-        const labelText = `${rule.name}: ${displayAngle}${rule.unit}`;
-        ctx.font = 'bold 11px Inter, system-ui, sans-serif';
-        const textWidth = ctx.measureText(labelText).width;
+        // Clean rule name (remove redundant suffixes)
+        const cleanName = rule.name
+          .replace(/ Biometric Rule$/i, '')
+          .replace(/ Rule$/i, '')
+          .trim();
 
-        const pillX = vx + 8;
-        const pillY = vy - 12;
+        const displayAngle = typeof angleVal === 'number' ? angleVal.toFixed(1) : angleVal;
+        const labelText = `${cleanName}: ${displayAngle}${rule.unit || '°'}`;
+        ctx.font = 'bold 10px system-ui, sans-serif';
+        const textWidth = ctx.measureText(labelText).width;
+        const pillWidth = textWidth + 24;
+        const pillHeight = 18;
+
+        // Collision-avoidance staggering
+        let pillX = Math.min(width - pillWidth - 10, Math.max(10, vx + 16));
+        let pillY = vy - 10 + (idx % 2 === 0 ? -10 : 12);
+
+        // Ensure vertical separation from already drawn pills
+        for (const prev of renderedPills) {
+          if (Math.abs(pillY - prev.y) < 22 && Math.abs(pillX - prev.x) < pillWidth) {
+            pillY = prev.y + 24;
+          }
+        }
+        renderedPills.push({ x: pillX, y: pillY, w: pillWidth, h: pillHeight });
+
+        // Thin leader line from vertex to pill
+        ctx.beginPath();
+        ctx.moveTo(vx, vy);
+        ctx.lineTo(pillX, pillY + pillHeight / 2);
+        ctx.strokeStyle = statusColor;
+        ctx.lineWidth = 1;
+        ctx.setLineDash([2, 2]);
+        ctx.stroke();
+        ctx.setLineDash([]);
 
         // Background pill
-        ctx.fillStyle = 'rgba(9, 9, 11, 0.9)';
+        ctx.fillStyle = 'rgba(9, 9, 11, 0.92)';
         ctx.beginPath();
-        ctx.roundRect(pillX - 4, pillY - 11, textWidth + 16, 18, 5);
+        ctx.roundRect(pillX, pillY, pillWidth, pillHeight, 9);
         ctx.fill();
         ctx.strokeStyle = statusColor;
         ctx.lineWidth = 1;
@@ -251,13 +428,13 @@ export function drawPoseSkeleton(
 
         // Indicator dot
         ctx.beginPath();
-        ctx.arc(pillX + 2, pillY - 2, 3, 0, 2 * Math.PI);
+        ctx.arc(pillX + 8, pillY + pillHeight / 2, 3, 0, 2 * Math.PI);
         ctx.fillStyle = statusColor;
         ctx.fill();
 
         // Text
         ctx.fillStyle = '#ffffff';
-        ctx.fillText(labelText, pillX + 9, pillY + 1);
+        ctx.fillText(labelText, pillX + 16, pillY + 12.5);
       }
     });
   }

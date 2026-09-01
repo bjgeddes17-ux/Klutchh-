@@ -1,0 +1,45 @@
+name: 🚀 EAS Android APK Cloud Build
+
+on:
+  workflow_dispatch:
+    inputs:
+      profile:
+        description: 'EAS Build Profile (preview = APK, production = AAB)'
+        required: true
+        default: 'preview'
+        type: choice
+        options:
+          - preview
+          - production
+  push:
+    branches:
+      - main
+      - master
+
+jobs:
+  build:
+    name: 📱 Build Android with Expo EAS
+    runs-on: ubuntu-latest
+    steps:
+      - name: ⬇️ Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: 🟢 Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+
+      - name: 📦 Setup Expo and EAS CLI
+        uses: expo/expo-github-action@v8
+        with:
+          eas-version: latest
+          token: ${{ secrets.EXPO_TOKEN }}
+
+      - name: 📦 Install Project Dependencies
+        run: npm install --legacy-peer-deps
+
+      - name: 🏗️ Trigger EAS Cloud Build
+        run: |
+          BUILD_PROFILE="${{ github.event.inputs.profile || 'preview' }}"
+          eas build --platform android --profile "$BUILD_PROFILE" --non-interactive --no-wait

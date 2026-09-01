@@ -47,7 +47,6 @@ export interface Drill {
   howToExecute?: string[];
   coachingCue?: string;
   targetJoint?: string;
-  timestamp?: number;
 }
 
 export type CorrectiveDrill = Drill;

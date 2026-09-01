@@ -1,9 +1,0 @@
-{
-  "platforms": ["ios", "android"],
-  "ios": {
-    "modules": ["KlutchhBiometricsModule"]
-  },
-  "android": {
-    "modules": ["com.klutchh.biometrics.KlutchhBiometricsModule"]
-  }
-}

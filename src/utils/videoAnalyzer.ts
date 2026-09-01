@@ -1,12 +1,12 @@
 import { SportRule, SkillLevel, AthleteCategory, FrameAnalysis, AICoachingReport, AnalysisResult, CorrectiveDrill, MediaPipeLandmark } from '../types';
 import { detectPoseForVideoFrame, resetPoseCache } from './mediapipePose';
-import { calculateSymmetry, calculateKneeValgusScore, calculateAngle } from '../shared/biomechanics';
-import { drawPoseSkeleton } from './geometry';
+import { calculateSymmetry, calculateKneeValgusScore, calculateAngle, drawPoseSkeleton } from './geometry';
 import { calculateBiometricScore, matchBiomechanicalArchetype } from './rulesEngine';
 import { extractFramesPipelined, getFrame } from './frameExtractor';
 import { getBiomechanicalSequence, calculateKlutchhScore } from './klutchhAnalysis';
 import { validateKinematicSportFit } from './antiTrollValidator';
 import { PoseLandmarkSmoother } from './oneEuroFilter';
+import { KinematicBoneStabilizer } from './boneStabilizer';
 import { generateDeterministicBiomechanicalReport } from './biomechanicsEngine';
 
 // Device Capability Detector
@@ -71,6 +71,7 @@ export async function analyzeVideoBiometrics(
       let totalKneeSafety = 0;
       let validFrames = 0;
       const landmarkSmoother = new PoseLandmarkSmoother(1.2, 0.008);
+      const boneStabilizer = new KinematicBoneStabilizer();
       let lastRootPos: { x: number; y: number } | null = null;
       const pendingTasks: Promise<void>[] = [];
       const MAX_CONCURRENT_TASKS = 2; // Allow small parallelism on main thread for efficiency
@@ -197,19 +198,22 @@ export async function analyzeVideoBiometrics(
             lastRootPos = currentRoot;
           }
 
-          // Apply One-Euro Adaptive Filter to remove landmark jitter on fast swings without adding lag
+          // 1. Apply One-Euro Adaptive Filter to remove landmark jitter on fast swings without adding lag
           const smoothedLandmarks = landmarkSmoother.smooth(landmarks, frameData.timestamp);
+
+          // 2. Apply Anatomical Inverse Kinematics Bone Stabilization (prevents joint stretching and giant skeletons)
+          const biomechanicLandmarks = boneStabilizer.stabilize(smoothedLandmarks);
 
           let bestPhase = sportRule.phases[0] || 'Movement';
           let bestPhaseScore = -1;
           const phaseScores: Record<string, any> = {};
           
           sportRule.phases.forEach(phase => {
-            const res = calculateBiometricScore(smoothedLandmarks, sportRule, skillLevel, phase, undefined, undefined, athleteCategory);
+            const res = calculateBiometricScore(biomechanicLandmarks, sportRule, skillLevel, phase, undefined, undefined, athleteCategory);
             
             // Apply Archetype Framework weighting (X=Angles, Y=Velocity, Z=Forces)
             // If the frame matches the archetype "blueprint", we boost its phase probability
-            const archetypeRes = matchBiomechanicalArchetype(smoothedLandmarks, sportRule, phase);
+            const archetypeRes = matchBiomechanicalArchetype(biomechanicLandmarks, sportRule, phase);
             const weightedScore = (res.score * 0.7) + ((archetypeRes.matchScore / 10) * 0.3);
             
             phaseScores[phase] = { ...res, score: weightedScore, matchScore: archetypeRes.matchScore };
@@ -220,13 +224,13 @@ export async function analyzeVideoBiometrics(
           });
 
           const biometricResult = phaseScores[bestPhase];
-          const sym = calculateSymmetry(smoothedLandmarks);
-          const knee = calculateKneeValgusScore(smoothedLandmarks);
+          const sym = calculateSymmetry(biomechanicLandmarks);
+          const knee = calculateKneeValgusScore(biomechanicLandmarks);
           
           const frame: FrameAnalysis = {
             timestamp: frameData.timestamp,
             frameNumber: frameData.index,
-            landmarks: smoothedLandmarks,
+            landmarks: biomechanicLandmarks,
             angles: biometricResult.angles,
             ruleResults: biometricResult.results,
             symmetryScore: sym,

@@ -3,12 +3,8 @@ const path = require('path');
 
 const config = getDefaultConfig(__dirname);
 
-// Ensure we keep default extensions but can add/remove specific ones if needed
-// MediaPipe's web bundle uses dynamic imports that Metro can't handle, 
-// but for native we should be careful.
-if (process.env.EXPO_PUBLIC_PLATFORM !== 'web') {
-  config.resolver.sourceExts = [...config.resolver.sourceExts];
-}
+// MediaPipe's web bundle uses dynamic imports that Metro can't handle.
+config.resolver.sourceExts = config.resolver.sourceExts.filter(ext => ext !== 'mjs');
 
 config.resolver.extraNodeModules = {
   ...config.resolver.extraNodeModules,
