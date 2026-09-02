@@ -115,6 +115,31 @@ export const AnalysisReportPage: React.FC<AnalysisReportPageProps> = ({
     return [...list].sort((a, b) => a.timestamp - b.timestamp);
   }, [allFrames, keyframeList]);
 
+  const isLowConfidence = useMemo(() => {
+    const list = allFrames && allFrames.length > 0 ? allFrames : keyframeList;
+    if (!list || list.length === 0) return false;
+    let totalVis = 0;
+    let count = 0;
+    for (const f of list) {
+      if (f.landmarks) {
+        for (const lm of f.landmarks) {
+          if (lm.visibility !== undefined) {
+            totalVis += lm.visibility;
+            count++;
+          }
+        }
+      }
+    }
+    const avgVis = count > 0 ? totalVis / count : 0.9;
+    return avgVis < 0.35 || (dynamicMetrics?.overallBiometricScore !== undefined && dynamicMetrics.overallBiometricScore < 4.0);
+  }, [allFrames, keyframeList, dynamicMetrics]);
+
+  useEffect(() => {
+    if (isLowConfidence && activeTab === 'corrections') {
+      setActiveTab('energy');
+    }
+  }, [isLowConfidence]);
+
   // Biomechanical Executive Ratings
   const titanRating = useMemo(() => {
     if (dynamicMetrics?.overallBiometricScore) {
@@ -467,18 +492,32 @@ export const AnalysisReportPage: React.FC<AnalysisReportPageProps> = ({
           </View>
         </View>
 
-        {/* 2. Kinetic Video Player with Dynamic Biomechanical Skeleton */}
-        <KineticVideoPlayer
-          videoUrl={videoUrl}
-          sportRule={sportRule}
-          sortedFrames={sortedFrames}
-          isPlaying={isPlaying}
-          currentTime={currentTime}
-          onTimeUpdate={setCurrentTime}
-          isDataReady={true}
-          onTogglePlay={() => setIsPlaying(!isPlaying)}
-          onPause={() => setIsPlaying(false)}
-        />
+        {/* 2. Kinetic Video Player with Dynamic Biomechanical Skeleton or Low Confidence Warning */}
+        {isLowConfidence ? (
+          <View style={{ backgroundColor: '#18181b', borderRadius: 20, padding: 24, alignItems: 'center', justifyContent: 'center', marginVertical: 10, borderWidth: 1, borderColor: 'rgba(245, 158, 11, 0.3)' }}>
+            <View style={{ width: 50, height: 50, borderRadius: 16, backgroundColor: 'rgba(245, 158, 11, 0.1)', alignItems: 'center', justifyContent: 'center', marginBottom: 12, borderWidth: 1, borderColor: 'rgba(245, 158, 11, 0.3)' }}>
+              <Info color="#f59e0b" size={24} />
+            </View>
+            <Text style={{ color: '#fff', fontWeight: '900', fontSize: 14, textAlign: 'center', marginBottom: 6, textTransform: 'uppercase' }}>
+              Can't Render Skeletons with High Confidence
+            </Text>
+            <Text style={{ color: '#a1a1aa', fontSize: 11, textAlign: 'center', lineHeight: 16 }}>
+              Video tracking confidence is below optimal threshold. Skeletons are disabled to prevent drift; review the verified telemetry report and raw data points below.
+            </Text>
+          </View>
+        ) : (
+          <KineticVideoPlayer
+            videoUrl={videoUrl}
+            sportRule={sportRule}
+            sortedFrames={sortedFrames}
+            isPlaying={isPlaying}
+            currentTime={currentTime}
+            onTimeUpdate={setCurrentTime}
+            isDataReady={true}
+            onTogglePlay={() => setIsPlaying(!isPlaying)}
+            onPause={() => setIsPlaying(false)}
+          />
+        )}
 
         {/* 3. Navigation Tab Bar */}
         <ScrollView
@@ -487,15 +526,17 @@ export const AnalysisReportPage: React.FC<AnalysisReportPageProps> = ({
           style={styles.tabBarScroll}
           contentContainerStyle={styles.tabBarContent}
         >
-          <TouchableOpacity
-            onPress={() => setActiveTab('corrections')}
-            style={[styles.tabButton, activeTab === 'corrections' && styles.tabButtonActive]}
-          >
-            <Target color={activeTab === 'corrections' ? '#000' : '#a1a1aa'} size={14} />
-            <Text style={[styles.tabText, activeTab === 'corrections' && styles.tabTextActive]}>
-              Top 3 Corrections
-            </Text>
-          </TouchableOpacity>
+          {!isLowConfidence && (
+            <TouchableOpacity
+              onPress={() => setActiveTab('corrections')}
+              style={[styles.tabButton, activeTab === 'corrections' && styles.tabButtonActive]}
+            >
+              <Target color={activeTab === 'corrections' ? '#000' : '#a1a1aa'} size={14} />
+              <Text style={[styles.tabText, activeTab === 'corrections' && styles.tabTextActive]}>
+                Top 3 Corrections
+              </Text>
+            </TouchableOpacity>
+          )}
 
           <TouchableOpacity
             onPress={() => setActiveTab('energy')}

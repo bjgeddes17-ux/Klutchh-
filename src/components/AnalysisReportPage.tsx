@@ -412,6 +412,32 @@ export const AnalysisReportPage: React.FC<AnalysisReportPageProps> = ({
     return [...list].sort((a, b) => a.timestamp - b.timestamp);
   }, [allFrames, keyframeList]);
 
+  const isLowConfidence = useMemo(() => {
+    const list = allFrames && allFrames.length > 0 ? allFrames : keyframeList;
+    if (!list || list.length === 0) return false;
+    let totalVis = 0;
+    let count = 0;
+    for (const f of list) {
+      if (f.landmarks) {
+        for (const lm of f.landmarks) {
+          if (lm.visibility !== undefined) {
+            totalVis += lm.visibility;
+            count++;
+          }
+        }
+      }
+    }
+    const avgVis = count > 0 ? totalVis / count : 0.9;
+    return avgVis < 0.35 || (dynamicMetrics?.overallBiometricScore !== undefined && dynamicMetrics.overallBiometricScore < 4.0);
+  }, [allFrames, keyframeList, dynamicMetrics]);
+
+  // If low confidence, default active tab to sequence/telemetry instead of corrections
+  useEffect(() => {
+    if (isLowConfidence) {
+      setActiveTab('sequence');
+    }
+  }, [isLowConfidence]);
+
   const togglePlay = () => {
     setIsPlaying(!isPlaying);
   };
@@ -605,39 +631,53 @@ export const AnalysisReportPage: React.FC<AnalysisReportPageProps> = ({
       )}
 
       <div ref={stageContainerRef} className="relative w-full aspect-video max-h-[72vh] min-h-[220px] sm:min-h-[380px] bg-black border border-zinc-800 rounded-2xl sm:rounded-3xl overflow-hidden shadow-2xl group flex items-center justify-center">
-        <KineticVideoPlayer
-          videoUrl={videoUrl || ''}
-          sportRule={sportRule}
-          sortedFrames={sortedFrames}
-          cropBox={cropBox}
-          isPlaying={isPlaying}
-          currentTime={currentTime}
-          onTimeUpdate={setCurrentTime}
-          onDurationChange={setDuration}
-          playbackRate={playbackSpeed}
-          isDataReady={isDataReady}
-          viewMode={viewMode}
-          onTogglePlay={togglePlay}
-          onToggleFullscreen={toggleFullscreen}
-          isFullscreen={isFullscreen}
-          onError={setVideoError}
-          debugForceNativeRotation={debugForceNativeRotation}
-        />
-        <div className="absolute inset-x-0 bottom-0 z-30">
-          <TimelineScrubber
-            currentTime={currentTime}
-            duration={duration}
-            isPlaying={isPlaying}
-            onTogglePlay={togglePlay}
-            onSeek={handleSeek}
-            onStepFrame={(delta) => handleSeek(currentTime + delta)}
-            fps={calibratedFps}
-            playbackSpeed={playbackSpeed}
-            onPlaybackSpeedChange={setPlaybackSpeed}
-            onToggleFullscreen={toggleFullscreen}
-            isFullscreen={isFullscreen}
-          />
-        </div>
+        {isLowConfidence ? (
+          <div className="flex flex-col items-center justify-center p-8 text-center gap-4 bg-zinc-900 w-full h-full">
+            <div className="w-16 h-16 rounded-2xl bg-amber-500/10 text-amber-400 flex items-center justify-center border border-amber-500/30">
+              <AlertTriangle className="w-8 h-8" />
+            </div>
+            <div className="space-y-1">
+              <h3 className="text-white font-black uppercase tracking-wider text-sm">Can't Render Skeletons with High Confidence</h3>
+              <p className="text-zinc-400 text-xs max-w-md">Video tracking confidence is below optimal threshold. Skeletons are disabled to prevent drift; review the verified telemetry report and raw data points below.</p>
+            </div>
+          </div>
+        ) : (
+          <>
+            <KineticVideoPlayer
+              videoUrl={videoUrl || ''}
+              sportRule={sportRule}
+              sortedFrames={sortedFrames}
+              cropBox={cropBox}
+              isPlaying={isPlaying}
+              currentTime={currentTime}
+              onTimeUpdate={setCurrentTime}
+              onDurationChange={setDuration}
+              playbackRate={playbackSpeed}
+              isDataReady={isDataReady}
+              viewMode={viewMode}
+              onTogglePlay={togglePlay}
+              onToggleFullscreen={toggleFullscreen}
+              isFullscreen={isFullscreen}
+              onError={setVideoError}
+              debugForceNativeRotation={debugForceNativeRotation}
+            />
+            <div className="absolute inset-x-0 bottom-0 z-30">
+              <TimelineScrubber
+                currentTime={currentTime}
+                duration={duration}
+                isPlaying={isPlaying}
+                onTogglePlay={togglePlay}
+                onSeek={handleSeek}
+                onStepFrame={(delta) => handleSeek(currentTime + delta)}
+                fps={calibratedFps}
+                playbackSpeed={playbackSpeed}
+                onPlaybackSpeedChange={setPlaybackSpeed}
+                onToggleFullscreen={toggleFullscreen}
+                isFullscreen={isFullscreen}
+              />
+            </div>
+          </>
+        )}
       </div>
 
       <div className="flex flex-col gap-6 mt-2 max-w-5xl mx-auto w-full">
@@ -662,14 +702,16 @@ export const AnalysisReportPage: React.FC<AnalysisReportPageProps> = ({
 
           {/* Section Tab Switcher */}
           <div className="flex items-center gap-2 border-b border-zinc-800 pb-3">
-            <button
-              onClick={() => setActiveTab('overview')}
-              className={`px-4 py-2 rounded-xl text-xs font-black uppercase transition-all cursor-pointer ${
-                activeTab === 'overview' ? 'bg-red-600 text-white shadow-lg' : 'bg-zinc-900 border border-zinc-800 text-zinc-400 hover:text-white'
-              }`}
-            >
-              🎯 Top 3 Corrections
-            </button>
+            {!isLowConfidence && (
+              <button
+                onClick={() => setActiveTab('overview')}
+                className={`px-4 py-2 rounded-xl text-xs font-black uppercase transition-all cursor-pointer ${
+                  activeTab === 'overview' ? 'bg-red-600 text-white shadow-lg' : 'bg-zinc-900 border border-zinc-800 text-zinc-400 hover:text-white'
+                }`}
+              >
+                🎯 Top 3 Corrections
+              </button>
+            )}
             <button
               onClick={() => setActiveTab('sequence')}
               className={`px-4 py-2 rounded-xl text-xs font-black uppercase transition-all cursor-pointer ${
@@ -680,7 +722,7 @@ export const AnalysisReportPage: React.FC<AnalysisReportPageProps> = ({
             </button>
           </div>
 
-          {activeTab === 'overview' && (
+          {!isLowConfidence && activeTab === 'overview' && (
             <GhostCorrectionVisualizer
               keyframeList={safeKeyframeList}
               allFrames={allFrames}
