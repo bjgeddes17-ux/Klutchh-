@@ -226,6 +226,7 @@ export const GhostCorrectionVisualizer: React.FC<GhostCorrectionVisualizerProps>
     return () => clearInterval(interval);
   }, [isPlayingMorph]);
 
+  const activeFault = top3Faults[selectedFaultIdx] || top3Faults[0];
   const videoRef = useRef<Video>(null);
   const [containerWidth, setContainerWidth] = useState<number>(Dimensions.get('window').width - 48);
   const [containerHeight, setContainerHeight] = useState<number>(220);
