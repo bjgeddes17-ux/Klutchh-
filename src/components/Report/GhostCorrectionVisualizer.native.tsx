@@ -29,7 +29,7 @@ import {
   Zap,
 } from 'lucide-react-native';
 import { FrameAnalysis, SportRule, JointRule, MediaPipeLandmark } from '../../types';
-import { calculateAngle } from '../../utils/geometry';
+import { calculateAngle, mapLandmarkToScreen } from '../../utils/geometry';
 
 interface MovementFault {
   id: string;
@@ -294,6 +294,11 @@ export const GhostCorrectionVisualizer: React.FC<GhostCorrectionVisualizerProps>
   const renderSkeleton = (lms: MediaPipeLandmark[], color: string, strokeW: number, opacity: number) => {
     if (!lms || lms.length < 29) return null;
 
+    const getGhostCoords = (lm?: MediaPipeLandmark) => {
+      if (!lm) return { x: 0, y: 0, visible: false };
+      return mapLandmarkToScreen(lm, W, H, 9, 16, undefined, 0, false);
+    };
+
     const connections = [
       [11, 12], [11, 13], [13, 15], [12, 14], [14, 16], // Upper body
       [11, 23], [12, 24], [23, 24], // Torso box
@@ -303,42 +308,53 @@ export const GhostCorrectionVisualizer: React.FC<GhostCorrectionVisualizerProps>
     return (
       <G opacity={opacity}>
         {/* Torso Area */}
-        {lms[11] && lms[12] && lms[24] && lms[23] && (
-          <Polygon
-            points={`
-              ${lms[11].x * W},${lms[11].y * H}
-              ${lms[12].x * W},${lms[12].y * H}
-              ${lms[24].x * W},${lms[24].y * H}
-              ${lms[23].x * W},${lms[23].y * H}
-            `}
-            fill={color === '#22c55e' ? 'rgba(34, 197, 94, 0.12)' : 'rgba(239, 68, 68, 0.12)'}
-          />
-        )}
+        {lms[11] && lms[12] && lms[24] && lms[23] && (() => {
+          const p1 = getGhostCoords(lms[11]);
+          const p2 = getGhostCoords(lms[12]);
+          const p3 = getGhostCoords(lms[24]);
+          const p4 = getGhostCoords(lms[23]);
+          if (!p1.visible || !p2.visible || !p3.visible || !p4.visible) return null;
+          return (
+            <Polygon
+              points={`
+                ${p1.x},${p1.y}
+                ${p2.x},${p2.y}
+                ${p3.x},${p3.y}
+                ${p4.x},${p4.y}
+              `}
+              fill={color === '#22c55e' ? 'rgba(34, 197, 94, 0.12)' : 'rgba(239, 68, 68, 0.12)'}
+            />
+          );
+        })()}
 
         {/* Head */}
-        {lms[0] && (
-          <Circle
-            cx={lms[0].x * W}
-            cy={lms[0].y * H - 4}
-            r={10}
-            fill={color === '#22c55e' ? 'rgba(34, 197, 94, 0.2)' : 'rgba(239, 68, 68, 0.2)'}
-            stroke={color}
-            strokeWidth={1.5}
-          />
-        )}
+        {lms[0] && (() => {
+          const p = getGhostCoords(lms[0]);
+          if (!p.visible) return null;
+          return (
+            <Circle
+              cx={p.x}
+              cy={p.y - 4}
+              r={10}
+              fill={color === '#22c55e' ? 'rgba(34, 197, 94, 0.2)' : 'rgba(239, 68, 68, 0.2)'}
+              stroke={color}
+              strokeWidth={1.5}
+            />
+          );
+        })()}
 
         {/* Bones */}
         {connections.map(([i1, i2], idx) => {
-          const p1 = lms[i1];
-          const p2 = lms[i2];
-          if (!p1 || !p2) return null;
+          const p1 = getGhostCoords(lms[i1]);
+          const p2 = getGhostCoords(lms[i2]);
+          if (!p1.visible || !p2.visible) return null;
           return (
             <Line
               key={`bone-${idx}`}
-              x1={p1.x * W}
-              y1={p1.y * H}
-              x2={p2.x * W}
-              y2={p2.y * H}
+              x1={p1.x}
+              y1={p1.y}
+              x2={p2.x}
+              y2={p2.y}
               stroke={color}
               strokeWidth={strokeW}
               strokeLinecap="round"
@@ -348,13 +364,13 @@ export const GhostCorrectionVisualizer: React.FC<GhostCorrectionVisualizerProps>
 
         {/* Joints */}
         {[11, 12, 13, 14, 15, 16, 23, 24, 25, 26, 27, 28].map((i) => {
-          const p = lms[i];
-          if (!p) return null;
+          const p = getGhostCoords(lms[i]);
+          if (!p.visible) return null;
           return (
             <Circle
               key={`joint-${i}`}
-              cx={p.x * W}
-              cy={p.y * H}
+              cx={p.x}
+              cy={p.y}
               r={color === '#22c55e' ? 3.5 : 3}
               fill="#09090b"
               stroke={color}

@@ -63,6 +63,7 @@ export const KineticVideoPlayer: React.FC<KineticVideoPlayerProps> = ({
   const [layout, setLayout] = useState({ width: 360, height: 640 });
   const [selectedSpeed, setSelectedSpeed] = useState<number>(playbackRate);
   const [duration, setDuration] = useState<number>(3.99);
+  const [videoDimensions, setVideoDimensions] = useState({ width: 9, height: 16 });
   const [isFullscreenModal, setIsFullscreenModal] = useState<boolean>(false);
   const [fullscreenLayout, setFullscreenLayout] = useState({
     width: Dimensions.get('window').width,
@@ -103,6 +104,9 @@ export const KineticVideoPlayer: React.FC<KineticVideoPlayerProps> = ({
 
   const handlePlaybackStatusUpdate = (status: AVPlaybackStatus) => {
     if (status.isLoaded) {
+      if (status.width && status.height) {
+        setVideoDimensions({ width: status.width, height: status.height });
+      }
       const posSec = status.positionMillis / 1000;
       onTimeUpdate(posSec);
       if (status.durationMillis) {
@@ -135,6 +139,11 @@ export const KineticVideoPlayer: React.FC<KineticVideoPlayerProps> = ({
   const landmarks = currentFrame?.landmarks;
   const { width: W, height: H } = layout;
 
+  const getScreenCoords = (lm?: MediaPipeLandmark) => {
+    if (!lm) return { x: 0, y: 0, visible: false };
+    return mapLandmarkToScreen(lm, W, H, videoDimensions.width, videoDimensions.height, undefined, 0, false);
+  };
+
   // Render Real Biometric Rules Callouts (Computing real angles from landmarks)
   const visibleRuleCallouts = useMemo(() => {
     if (!landmarks || landmarks.length < 29 || !sportRule?.jointRules) return [];
@@ -149,8 +158,9 @@ export const KineticVideoPlayer: React.FC<KineticVideoPlayerProps> = ({
     const selected = (rules.length > 3 ? rules.slice(0, 3) : rules).map((rule, index) => {
       const [, vertexIdx] = rule.keypoints || [0, 11, 13];
       const vertex = landmarks[vertexIdx] || landmarks[11];
-      const vx = vertex ? vertex.x * W : W * 0.5;
-      const vy = vertex ? vertex.y * H : H * 0.3 + index * 40;
+      const vScreen = getScreenCoords(vertex);
+      const vx = vScreen.visible ? vScreen.x : W * 0.5;
+      const vy = vScreen.visible ? vScreen.y : H * 0.3 + index * 40;
 
       // Calculate real angle from landmarks if precomputed angle is missing
       let angleVal = currentFrame?.angles?.[rule.id];
@@ -220,31 +230,42 @@ export const KineticVideoPlayer: React.FC<KineticVideoPlayerProps> = ({
       {landmarks && landmarks.length >= 29 && (
         <Svg style={styles.svgOverlay} width={W} height={H}>
           {/* 1. Torso Volume Polygon */}
-          {landmarks[11] && landmarks[12] && landmarks[24] && landmarks[23] && (
-            <Polygon
-              points={`
-                ${landmarks[11].x * W},${landmarks[11].y * H}
-                ${landmarks[12].x * W},${landmarks[12].y * H}
-                ${landmarks[24].x * W},${landmarks[24].y * H}
-                ${landmarks[23].x * W},${landmarks[23].y * H}
-              `}
-              fill="rgba(56, 189, 248, 0.08)"
-              stroke="rgba(56, 189, 248, 0.25)"
-              strokeWidth={1.5}
-            />
-          )}
+          {landmarks[11] && landmarks[12] && landmarks[24] && landmarks[23] && (() => {
+            const p1 = getScreenCoords(landmarks[11]);
+            const p2 = getScreenCoords(landmarks[12]);
+            const p3 = getScreenCoords(landmarks[24]);
+            const p4 = getScreenCoords(landmarks[23]);
+            if (!p1.visible || !p2.visible || !p3.visible || !p4.visible) return null;
+            return (
+              <Polygon
+                points={`
+                  ${p1.x},${p1.y}
+                  ${p2.x},${p2.y}
+                  ${p3.x},${p3.y}
+                  ${p4.x},${p4.y}
+                `}
+                fill="rgba(56, 189, 248, 0.08)"
+                stroke="rgba(56, 189, 248, 0.25)"
+                strokeWidth={1.5}
+              />
+            );
+          })()}
 
           {/* 2. Head / Helmet Indicator */}
-          {landmarks[0] && (
-            <Circle
-              cx={landmarks[0].x * W}
-              cy={landmarks[0].y * H - 4}
-              r={10}
-              fill="rgba(56, 189, 248, 0.12)"
-              stroke="rgba(56, 189, 248, 0.4)"
-              strokeWidth={1.5}
-            />
-          )}
+          {landmarks[0] && (() => {
+            const p = getScreenCoords(landmarks[0]);
+            if (!p.visible) return null;
+            return (
+              <Circle
+                cx={p.x}
+                cy={p.y - 4}
+                r={10}
+                fill="rgba(56, 189, 248, 0.12)"
+                stroke="rgba(56, 189, 248, 0.4)"
+                strokeWidth={1.5}
+              />
+            );
+          })()}
 
           {/* 3. Left Limbs (Purple) */}
           {[
@@ -252,16 +273,16 @@ export const KineticVideoPlayer: React.FC<KineticVideoPlayerProps> = ({
             [23, 25], [25, 27], [27, 31], [27, 29],
             [11, 23],
           ].map(([i1, i2], idx) => {
-            const p1 = landmarks[i1];
-            const p2 = landmarks[i2];
-            if (!p1 || !p2) return null;
+            const p1 = getScreenCoords(landmarks[i1]);
+            const p2 = getScreenCoords(landmarks[i2]);
+            if (!p1.visible || !p2.visible) return null;
             return (
               <Line
                 key={`left-limb-${idx}`}
-                x1={p1.x * W}
-                y1={p1.y * H}
-                x2={p2.x * W}
-                y2={p2.y * H}
+                x1={p1.x}
+                y1={p1.y}
+                x2={p2.x}
+                y2={p2.y}
                 stroke="#c084fc"
                 strokeWidth={2.5}
                 strokeLinecap="round"
@@ -275,16 +296,16 @@ export const KineticVideoPlayer: React.FC<KineticVideoPlayerProps> = ({
             [24, 26], [26, 28], [28, 32], [28, 30],
             [12, 24],
           ].map(([i1, i2], idx) => {
-            const p1 = landmarks[i1];
-            const p2 = landmarks[i2];
-            if (!p1 || !p2) return null;
+            const p1 = getScreenCoords(landmarks[i1]);
+            const p2 = getScreenCoords(landmarks[i2]);
+            if (!p1.visible || !p2.visible) return null;
             return (
               <Line
                 key={`right-limb-${idx}`}
-                x1={p1.x * W}
-                y1={p1.y * H}
-                x2={p2.x * W}
-                y2={p2.y * H}
+                x1={p1.x}
+                y1={p1.y}
+                x2={p2.x}
+                y2={p2.y}
                 stroke="#22c55e"
                 strokeWidth={2.5}
                 strokeLinecap="round"
@@ -293,31 +314,43 @@ export const KineticVideoPlayer: React.FC<KineticVideoPlayerProps> = ({
           })}
 
           {/* 5. Center Shoulders & Hips Connections */}
-          {landmarks[11] && landmarks[12] && (
-            <Line
-              x1={landmarks[11].x * W}
-              y1={landmarks[11].y * H}
-              x2={landmarks[12].x * W}
-              y2={landmarks[12].y * H}
-              stroke="#38bdf8"
-              strokeWidth={2}
-            />
-          )}
-          {landmarks[23] && landmarks[24] && (
-            <Line
-              x1={landmarks[23].x * W}
-              y1={landmarks[23].y * H}
-              x2={landmarks[24].x * W}
-              y2={landmarks[24].y * H}
-              stroke="#38bdf8"
-              strokeWidth={2}
-            />
-          )}
+          {landmarks[11] && landmarks[12] && (() => {
+            const p1 = getScreenCoords(landmarks[11]);
+            const p2 = getScreenCoords(landmarks[12]);
+            if (!p1.visible || !p2.visible) return null;
+            return (
+              <Line
+                x1={p1.x}
+                y1={p1.y}
+                x2={p2.x}
+                y2={p2.y}
+                stroke="#38bdf8"
+                strokeWidth={2}
+              />
+            );
+          })()}
+          {landmarks[23] && landmarks[24] && (() => {
+            const p1 = getScreenCoords(landmarks[23]);
+            const p2 = getScreenCoords(landmarks[24]);
+            if (!p1.visible || !p2.visible) return null;
+            return (
+              <Line
+                x1={p1.x}
+                y1={p1.y}
+                x2={p2.x}
+                y2={p2.y}
+                stroke="#38bdf8"
+                strokeWidth={2}
+              />
+            );
+          })()}
 
           {/* 6. Joint Pivot Circles */}
           {landmarks.map((lm, i) => {
             if (!lm) return null;
             if (i > 0 && i < 11) return null;
+            const p = getScreenCoords(lm);
+            if (!p.visible) return null;
 
             const isLeft = [11, 13, 15, 23, 25, 27, 29, 31].includes(i);
             const ringColor = isLeft ? '#c084fc' : '#22c55e';
@@ -325,16 +358,16 @@ export const KineticVideoPlayer: React.FC<KineticVideoPlayerProps> = ({
             return (
               <G key={`joint-${i}`}>
                 <Circle
-                  cx={lm.x * W}
-                  cy={lm.y * H}
+                  cx={p.x}
+                  cy={p.y}
                   r={4}
                   fill="rgba(0,0,0,0.7)"
                   stroke={ringColor}
                   strokeWidth={1.5}
                 />
                 <Circle
-                  cx={lm.x * W}
-                  cy={lm.y * H}
+                  cx={p.x}
+                  cy={p.y}
                   r={1.8}
                   fill="#ffffff"
                 />
@@ -420,15 +453,21 @@ export const KineticVideoPlayer: React.FC<KineticVideoPlayerProps> = ({
       {/* Bottom Transport Controls */}
       <View style={styles.bottomControlBar}>
         {/* Scrubber Bar */}
-        <TouchableOpacity
-          activeOpacity={1}
-          onPress={(e) => {
+        <View
+          style={styles.scrubberTrack}
+          onStartShouldSetResponder={() => true}
+          onResponderGrant={(e) => {
             const touchX = e.nativeEvent.locationX;
             const scrubberW = W - 32;
-            const ratio = Math.max(0, Math.min(1, touchX / scrubberW));
+            const ratio = Math.max(0, Math.min(1, touchX / Math.max(1, scrubberW)));
             handleSeek(ratio);
           }}
-          style={styles.scrubberTrack}
+          onResponderMove={(e) => {
+            const touchX = e.nativeEvent.locationX;
+            const scrubberW = W - 32;
+            const ratio = Math.max(0, Math.min(1, touchX / Math.max(1, scrubberW)));
+            handleSeek(ratio);
+          }}
         >
           <View
             style={[
@@ -442,7 +481,7 @@ export const KineticVideoPlayer: React.FC<KineticVideoPlayerProps> = ({
               { left: `${Math.min(97, (currentTime / (duration || 1)) * 100)}%` },
             ]}
           />
-        </TouchableOpacity>
+        </View>
 
         {/* Buttons Row */}
         <View style={styles.transportRow}>
@@ -524,120 +563,146 @@ export const KineticVideoPlayer: React.FC<KineticVideoPlayerProps> = ({
           />
 
           {/* Fullscreen SVG Overlay */}
-          {landmarks && landmarks.length >= 29 && (
-            <Svg
-              style={StyleSheet.absoluteFillObject}
-              width={fullscreenLayout.width}
-              height={fullscreenLayout.height}
-            >
-              {/* Torso */}
-              {landmarks[11] && landmarks[12] && landmarks[24] && landmarks[23] && (
-                <Polygon
-                  points={`
-                    ${landmarks[11].x * fullscreenLayout.width},${landmarks[11].y * fullscreenLayout.height}
-                    ${landmarks[12].x * fullscreenLayout.width},${landmarks[12].y * fullscreenLayout.height}
-                    ${landmarks[24].x * fullscreenLayout.width},${landmarks[24].y * fullscreenLayout.height}
-                    ${landmarks[23].x * fullscreenLayout.width},${landmarks[23].y * fullscreenLayout.height}
-                  `}
-                  fill="rgba(56, 189, 248, 0.08)"
-                  stroke="rgba(56, 189, 248, 0.25)"
-                  strokeWidth={1.5}
-                />
-              )}
+          {landmarks && landmarks.length >= 29 && (() => {
+            const getFsCoords = (lm?: MediaPipeLandmark) => {
+              if (!lm) return { x: 0, y: 0, visible: false };
+              return mapLandmarkToScreen(lm, fullscreenLayout.width, fullscreenLayout.height, videoDimensions.width, videoDimensions.height, undefined, 0, false);
+            };
 
-              {/* Left Limbs */}
-              {[
-                [11, 13], [13, 15],
-                [23, 25], [25, 27], [27, 31], [27, 29],
-                [11, 23],
-              ].map(([i1, i2], idx) => {
-                const p1 = landmarks[i1];
-                const p2 = landmarks[i2];
-                if (!p1 || !p2) return null;
-                return (
-                  <Line
-                    key={`fs-left-${idx}`}
-                    x1={p1.x * fullscreenLayout.width}
-                    y1={p1.y * fullscreenLayout.height}
-                    x2={p2.x * fullscreenLayout.width}
-                    y2={p2.y * fullscreenLayout.height}
-                    stroke="#c084fc"
-                    strokeWidth={3}
-                    strokeLinecap="round"
-                  />
-                );
-              })}
-
-              {/* Right Limbs */}
-              {[
-                [12, 14], [14, 16],
-                [24, 26], [26, 28], [28, 32], [28, 30],
-                [12, 24],
-              ].map(([i1, i2], idx) => {
-                const p1 = landmarks[i1];
-                const p2 = landmarks[i2];
-                if (!p1 || !p2) return null;
-                return (
-                  <Line
-                    key={`fs-right-${idx}`}
-                    x1={p1.x * fullscreenLayout.width}
-                    y1={p1.y * fullscreenLayout.height}
-                    x2={p2.x * fullscreenLayout.width}
-                    y2={p2.y * fullscreenLayout.height}
-                    stroke="#22c55e"
-                    strokeWidth={3}
-                    strokeLinecap="round"
-                  />
-                );
-              })}
-
-              {/* Center Connectors */}
-              {landmarks[11] && landmarks[12] && (
-                <Line
-                  x1={landmarks[11].x * fullscreenLayout.width}
-                  y1={landmarks[11].y * fullscreenLayout.height}
-                  x2={landmarks[12].x * fullscreenLayout.width}
-                  y2={landmarks[12].y * fullscreenLayout.height}
-                  stroke="#38bdf8"
-                  strokeWidth={2.5}
-                />
-              )}
-              {landmarks[23] && landmarks[24] && (
-                <Line
-                  x1={landmarks[23].x * fullscreenLayout.width}
-                  y1={landmarks[23].y * fullscreenLayout.height}
-                  x2={landmarks[24].x * fullscreenLayout.width}
-                  y2={landmarks[24].y * fullscreenLayout.height}
-                  stroke="#38bdf8"
-                  strokeWidth={2.5}
-                />
-              )}
-
-              {/* Joint Circles */}
-              {landmarks.map((lm, i) => {
-                if (!lm || (i > 0 && i < 11)) return null;
-                const isLeft = [11, 13, 15, 23, 25, 27, 29, 31].includes(i);
-                return (
-                  <G key={`fs-joint-${i}`}>
-                    <Circle
-                      cx={lm.x * fullscreenLayout.width}
-                      cy={lm.y * fullscreenLayout.height}
-                      r={5}
-                      fill="rgba(0,0,0,0.7)"
-                      stroke={isLeft ? '#c084fc' : '#22c55e'}
-                      strokeWidth={2}
+            return (
+              <Svg
+                style={StyleSheet.absoluteFillObject}
+                width={fullscreenLayout.width}
+                height={fullscreenLayout.height}
+              >
+                {/* Torso */}
+                {landmarks[11] && landmarks[12] && landmarks[24] && landmarks[23] && (() => {
+                  const p1 = getFsCoords(landmarks[11]);
+                  const p2 = getFsCoords(landmarks[12]);
+                  const p3 = getFsCoords(landmarks[24]);
+                  const p4 = getFsCoords(landmarks[23]);
+                  if (!p1.visible || !p2.visible || !p3.visible || !p4.visible) return null;
+                  return (
+                    <Polygon
+                      points={`
+                        ${p1.x},${p1.y}
+                        ${p2.x},${p2.y}
+                        ${p3.x},${p3.y}
+                        ${p4.x},${p4.y}
+                      `}
+                      fill="rgba(56, 189, 248, 0.08)"
+                      stroke="rgba(56, 189, 248, 0.25)"
+                      strokeWidth={1.5}
                     />
-                    <Circle
-                      cx={lm.x * fullscreenLayout.width}
-                      cy={lm.y * fullscreenLayout.height}
-                      r={2}
-                      fill="#ffffff"
+                  );
+                })()}
+
+                {/* Left Limbs */}
+                {[
+                  [11, 13], [13, 15],
+                  [23, 25], [25, 27], [27, 31], [27, 29],
+                  [11, 23],
+                ].map(([i1, i2], idx) => {
+                  const p1 = getFsCoords(landmarks[i1]);
+                  const p2 = getFsCoords(landmarks[i2]);
+                  if (!p1.visible || !p2.visible) return null;
+                  return (
+                    <Line
+                      key={`fs-left-${idx}`}
+                      x1={p1.x}
+                      y1={p1.y}
+                      x2={p2.x}
+                      y2={p2.y}
+                      stroke="#c084fc"
+                      strokeWidth={3}
+                      strokeLinecap="round"
                     />
-                  </G>
-                );
-              })}
-            </Svg>
-          )}
+                  );
+                })}
+
+                {/* Right Limbs */}
+                {[
+                  [12, 14], [14, 16],
+                  [24, 26], [26, 28], [28, 32], [28, 30],
+                  [12, 24],
+                ].map(([i1, i2], idx) => {
+                  const p1 = getFsCoords(landmarks[i1]);
+                  const p2 = getFsCoords(landmarks[i2]);
+                  if (!p1.visible || !p2.visible) return null;
+                  return (
+                    <Line
+                      key={`fs-right-${idx}`}
+                      x1={p1.x}
+                      y1={p1.y}
+                      x2={p2.x}
+                      y2={p2.y}
+                      stroke="#22c55e"
+                      strokeWidth={3}
+                      strokeLinecap="round"
+                    />
+                  );
+                })}
+
+                {/* Center Connectors */}
+                {landmarks[11] && landmarks[12] && (() => {
+                  const p1 = getFsCoords(landmarks[11]);
+                  const p2 = getFsCoords(landmarks[12]);
+                  if (!p1.visible || !p2.visible) return null;
+                  return (
+                    <Line
+                      x1={p1.x}
+                      y1={p1.y}
+                      x2={p2.x}
+                      y2={p2.y}
+                      stroke="#38bdf8"
+                      strokeWidth={2.5}
+                    />
+                  );
+                })()}
+                {landmarks[23] && landmarks[24] && (() => {
+                  const p1 = getFsCoords(landmarks[23]);
+                  const p2 = getFsCoords(landmarks[24]);
+                  if (!p1.visible || !p2.visible) return null;
+                  return (
+                    <Line
+                      x1={p1.x}
+                      y1={p1.y}
+                      x2={p2.x}
+                      y2={p2.y}
+                      stroke="#38bdf8"
+                      strokeWidth={2.5}
+                    />
+                  );
+                })()}
+
+                {/* Joint Circles */}
+                {landmarks.map((lm, i) => {
+                  if (!lm || (i > 0 && i < 11)) return null;
+                  const p = getFsCoords(lm);
+                  if (!p.visible) return null;
+                  const isLeft = [11, 13, 15, 23, 25, 27, 29, 31].includes(i);
+                  return (
+                    <G key={`fs-joint-${i}`}>
+                      <Circle
+                        cx={p.x}
+                        cy={p.y}
+                        r={5}
+                        fill="rgba(0,0,0,0.7)"
+                        stroke={isLeft ? '#c084fc' : '#22c55e'}
+                        strokeWidth={2}
+                      />
+                      <Circle
+                        cx={p.x}
+                        cy={p.y}
+                        r={2}
+                        fill="#ffffff"
+                      />
+                    </G>
+                  );
+                })}
+              </Svg>
+            );
+          })()}
 
           {/* Top Fullscreen Header with Exit Button */}
           <View style={styles.fullscreenTopBar}>
