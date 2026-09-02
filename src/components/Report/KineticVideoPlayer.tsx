@@ -62,10 +62,10 @@ export const KineticVideoPlayer: React.FC<KineticVideoPlayerProps> = ({
     return sortedFrames[idx];
   }, [sortedFrames, currentTime]);
 
-  // Sync external currentTime to video element when not playing
+  // Sync external currentTime to video element when not playing or when scrubbed
   useEffect(() => {
     if (videoRef.current && !isPlaying) {
-      if (Math.abs(videoRef.current.currentTime - currentTime) > 0.05) {
+      if (Math.abs(videoRef.current.currentTime - currentTime) > 0.08) {
         videoRef.current.currentTime = currentTime;
       }
     }
@@ -89,44 +89,30 @@ export const KineticVideoPlayer: React.FC<KineticVideoPlayerProps> = ({
     }
   }, [playbackRate]);
 
-  // Core drawing loop
+  // Core skeleton drawing loop over native video
   useEffect(() => {
     const video = videoRef.current;
     const canvas = canvasRef.current;
     if (!video || !canvas || !isDataReady) return;
 
-    let isProcessing = false;
     let animationFrameId: number;
-    let videoFrameCallbackId: number;
 
-    const processFrame = (now: DOMHighResTimeStamp, metadata?: any) => {
+    const renderOverlay = () => {
       if (!canvas || !video) return;
-      
+
       const width = video.videoWidth || 640;
       const height = video.videoHeight || 360;
 
-      if (width === 0 || height === 0) {
-        if ((video as any).requestVideoFrameCallback) {
-          videoFrameCallbackId = (video as any).requestVideoFrameCallback(processFrame);
-        } else {
-          animationFrameId = requestAnimationFrame(processFrame);
+      if (width > 0 && height > 0) {
+        if (canvas.width !== width || canvas.height !== height) {
+          canvas.width = width;
+          canvas.height = height;
+          setVideoDimensions({ width, height });
         }
-        return;
-      }
-      
-      if (canvas.width !== width || canvas.height !== height) {
-        canvas.width = width;
-        canvas.height = height;
-        setVideoDimensions({ width, height });
-      }
 
-      const ctx = canvas.getContext('2d');
-      if (ctx && !isProcessing) {
-        isProcessing = true;
-        try {
-          const vTime = metadata && typeof metadata.mediaTime === 'number' 
-            ? metadata.mediaTime 
-            : video.currentTime;
+        const ctx = canvas.getContext('2d');
+        if (ctx) {
+          const vTime = video.currentTime;
           
           if (isPlaying) {
             onTimeUpdate(vTime);
@@ -182,24 +168,6 @@ export const KineticVideoPlayer: React.FC<KineticVideoPlayerProps> = ({
 
           ctx.clearRect(0, 0, width, height);
 
-          if (cropBox) {
-            const sx = cropBox.x * width;
-            const sy = cropBox.y * height;
-            const sWidth = cropBox.width * width;
-            const sHeight = cropBox.height * height;
-            ctx.drawImage(video, sx, sy, sWidth, sHeight, 0, 0, width, height);
-
-            if (landmarksToDraw) {
-              landmarksToDraw = landmarksToDraw.map(lp => ({
-                ...lp,
-                x: (lp.x - cropBox.x) / cropBox.width,
-                y: (lp.y - cropBox.y) / cropBox.height
-              }));
-            }
-          } else {
-            ctx.drawImage(video, 0, 0, width, height);
-          }
-
           if (landmarksToDraw) {
             drawPoseSkeleton(
               ctx,
@@ -213,29 +181,18 @@ export const KineticVideoPlayer: React.FC<KineticVideoPlayerProps> = ({
               false
             );
           }
-        } finally {
-          isProcessing = false;
         }
       }
 
-      if ((video as any).requestVideoFrameCallback) {
-        videoFrameCallbackId = (video as any).requestVideoFrameCallback(processFrame);
-      } else {
-        animationFrameId = requestAnimationFrame(processFrame);
-      }
+      animationFrameId = requestAnimationFrame(renderOverlay);
     };
 
-    if ((video as any).requestVideoFrameCallback) {
-      videoFrameCallbackId = (video as any).requestVideoFrameCallback(processFrame);
-    } else {
-      animationFrameId = requestAnimationFrame(processFrame);
-    }
+    animationFrameId = requestAnimationFrame(renderOverlay);
 
     return () => {
-      if (videoFrameCallbackId) (video as any).cancelVideoFrameCallback(videoFrameCallbackId);
       if (animationFrameId) cancelAnimationFrame(animationFrameId);
     };
-  }, [isDataReady, isPlaying, sortedFrames, sportRule, cropBox, videoUrl]);
+  }, [isDataReady, isPlaying, sortedFrames, sportRule, videoUrl]);
 
   return (
     <div className="relative w-full h-full bg-black rounded-xl overflow-hidden shadow-2xl border border-white/10 group">
@@ -246,7 +203,12 @@ export const KineticVideoPlayer: React.FC<KineticVideoPlayerProps> = ({
         muted
         preload="auto"
         crossOrigin="anonymous"
-        className="absolute inset-0 w-full h-full opacity-0 pointer-events-none"
+        className="absolute inset-0 w-full h-full object-contain z-0"
+        onTimeUpdate={(e) => {
+          if (isPlaying) {
+            onTimeUpdate(e.currentTarget.currentTime);
+          }
+        }}
         onDurationChange={(e) => onDurationChange?.(e.currentTarget.duration)}
         onError={() => {
           setVideoError(true);
@@ -256,7 +218,7 @@ export const KineticVideoPlayer: React.FC<KineticVideoPlayerProps> = ({
       <canvas
         ref={canvasRef}
         onClick={onTogglePlay}
-        className="w-full h-full object-contain cursor-pointer z-10"
+        className="absolute inset-0 w-full h-full object-contain pointer-events-none z-10"
       />
 
       <KineticHeatmapOverlay 

@@ -566,6 +566,7 @@ export const AnalysisReportPage: React.FC<AnalysisReportPageProps> = ({
               sportRule={sportRule}
               onSeekTimestamp={handleSeek}
               onSelectDrill={() => setActiveTab('drills')}
+              videoUrl={videoUrl}
             />
 
             {/* Key Strengths Banner */}

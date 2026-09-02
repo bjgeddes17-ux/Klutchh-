@@ -7,6 +7,7 @@ import {
   ScrollView,
   Dimensions,
 } from 'react-native';
+import { Video, ResizeMode } from 'expo-av';
 import Svg, {
   Line,
   Circle,
@@ -53,6 +54,7 @@ interface GhostCorrectionVisualizerProps {
   sportRule: SportRule;
   onSeekTimestamp?: (timestamp: number) => void;
   onSelectDrill?: (drillName: string) => void;
+  videoUrl?: string;
 }
 
 export const GhostCorrectionVisualizer: React.FC<GhostCorrectionVisualizerProps> = ({
@@ -61,6 +63,7 @@ export const GhostCorrectionVisualizer: React.FC<GhostCorrectionVisualizerProps>
   sportRule,
   onSeekTimestamp,
   onSelectDrill,
+  videoUrl,
 }) => {
   const [selectedFaultIdx, setSelectedFaultIdx] = useState<number>(0);
   const [viewMode, setViewMode] = useState<'ghost_overlay' | 'morph_loop' | 'side_by_side'>('ghost_overlay');
@@ -223,10 +226,18 @@ export const GhostCorrectionVisualizer: React.FC<GhostCorrectionVisualizerProps>
     return () => clearInterval(interval);
   }, [isPlayingMorph]);
 
-  const activeFault = top3Faults[selectedFaultIdx] || top3Faults[0];
+  const videoRef = useRef<Video>(null);
+  const [containerWidth, setContainerWidth] = useState<number>(Dimensions.get('window').width - 48);
+  const [containerHeight, setContainerHeight] = useState<number>(220);
 
-  const W = Dimensions.get('window').width - 48;
-  const H = 220;
+  useEffect(() => {
+    if (videoRef.current && activeFault) {
+      videoRef.current.setPositionAsync(activeFault.timestamp * 1000);
+    }
+  }, [selectedFaultIdx, activeFault]);
+
+  const W = containerWidth;
+  const H = containerHeight;
 
   // Build Actual (Red) vs Optimal Ghost (Emerald) landmark sets
   const { actualLms, ghostLms, interpolatedLms } = useMemo(() => {
@@ -433,8 +444,27 @@ export const GhostCorrectionVisualizer: React.FC<GhostCorrectionVisualizerProps>
         </View>
 
         {/* SVG Drawing Surface */}
-        <View style={styles.svgContainer}>
-          <Svg width={W} height={H}>
+        <View 
+          style={styles.svgContainer}
+          onLayout={(e) => {
+            const { width, height } = e.nativeEvent.layout;
+            if (width > 0 && height > 0) {
+              setContainerWidth(width);
+              setContainerHeight(height);
+            }
+          }}
+        >
+          {videoUrl ? (
+            <Video
+              ref={videoRef}
+              source={{ uri: videoUrl }}
+              resizeMode={ResizeMode.CONTAIN}
+              isMuted={true}
+              shouldPlay={false}
+              style={StyleSheet.absoluteFillObject}
+            />
+          ) : null}
+          <Svg width={W} height={H} pointerEvents="none">
             {/* Dark Grid Lines */}
             <Line x1={20} y1={H - 20} x2={W - 20} y2={H - 20} stroke="#27272a" strokeWidth={1} />
             <Line x1={W / 2} y1={10} x2={W / 2} y2={H - 10} stroke="#18181b" strokeWidth={1} strokeDasharray="3,3" />

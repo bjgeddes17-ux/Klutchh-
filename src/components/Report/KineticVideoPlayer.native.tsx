@@ -30,7 +30,7 @@ import {
   X,
 } from 'lucide-react-native';
 import { SportRule, FrameAnalysis, MediaPipeLandmark } from '../../types';
-import { calculateAngle } from '../../utils/geometry';
+import { calculateAngle, mapLandmarkToScreen } from '../../utils/geometry';
 
 interface KineticVideoPlayerProps {
   videoUrl: string;
@@ -114,8 +114,9 @@ export const KineticVideoPlayer: React.FC<KineticVideoPlayerProps> = ({
   };
 
   const handleSeek = (ratio: number) => {
-    const targetMs = Math.max(0, Math.min(duration, ratio * duration)) * 1000;
-    videoRef.current?.setPositionAsync(targetMs);
+    const targetSec = Math.max(0, Math.min(duration, ratio * duration));
+    onTimeUpdate(targetSec);
+    videoRef.current?.setPositionAsync(targetSec * 1000);
   };
 
   const handleStep = (direction: 'back' | 'forward') => {

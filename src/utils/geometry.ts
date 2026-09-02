@@ -576,4 +576,94 @@ export function normalizeLandmarks(landmarks: MediaPipeLandmark[]): MediaPipeLan
   });
 }
 
+/**
+ * Calculates exact rendered video rectangle inside a container when using 'contain' (letterboxing/pillarboxing)
+ */
+export function getVideoRenderRect(
+  containerWidth: number,
+  containerHeight: number,
+  videoWidth: number = 9,
+  videoHeight: number = 16
+) {
+  const containerAspect = containerWidth / containerHeight;
+  const videoAspect = videoWidth / videoHeight;
+
+  let renderWidth = containerWidth;
+  let renderHeight = containerHeight;
+  let offsetX = 0;
+  let offsetY = 0;
+
+  if (containerAspect > videoAspect) {
+    // Pillarbox (black bars on left and right)
+    renderWidth = containerHeight * videoAspect;
+    offsetX = (containerWidth - renderWidth) / 2;
+  } else {
+    // Letterbox (black bars on top and bottom)
+    renderHeight = containerWidth / videoAspect;
+    offsetY = (containerHeight - renderHeight) / 2;
+  }
+
+  return { width: renderWidth, height: renderHeight, x: offsetX, y: offsetY };
+}
+
+/**
+ * Transforms a normalized landmark coordinate (0..1) into screen pixel coordinates 
+ * accounting for letterboxing, cropping, and sensor orientation rotation.
+ */
+export function mapLandmarkToScreen(
+  landmark: MediaPipeLandmark,
+  containerWidth: number,
+  containerHeight: number,
+  videoWidth: number = 9,
+  videoHeight: number = 16,
+  cropBox?: { x: number; y: number; width: number; height: number },
+  rotation: number = 0,
+  isMirrored: boolean = false
+): { x: number; y: number; visible: boolean } {
+  if (!landmark || containerWidth <= 0 || containerHeight <= 0) {
+    return { x: 0, y: 0, visible: false };
+  }
+
+  let lx = landmark.x;
+  let ly = landmark.y;
+
+  // 0. Handle selfie camera horizontal mirroring
+  if (isMirrored) {
+    lx = 1.0 - lx;
+  }
+
+  // 1. Handle sensor/camera orientation rotation if specified
+  if (rotation === 90) {
+    const temp = lx;
+    lx = ly;
+    ly = 1.0 - temp;
+  } else if (rotation === 270) {
+    const temp = lx;
+    lx = 1.0 - ly;
+    ly = temp;
+  } else if (rotation === 180) {
+    lx = 1.0 - lx;
+    ly = 1.0 - ly;
+  }
+
+  // 2. Apply cropBox transform if present
+  if (cropBox && cropBox.width > 0 && cropBox.height > 0) {
+    lx = (lx - cropBox.x) / cropBox.width;
+    ly = (ly - cropBox.y) / cropBox.height;
+  }
+
+  // Check visibility bounds and strict confidence threshold (>= 0.5)
+  const confidenceValid = landmark.visibility === undefined || landmark.visibility >= 0.5;
+  const visible = lx >= 0 && lx <= 1 && ly >= 0 && ly <= 1 && confidenceValid;
+
+  // 3. Calculate video letterbox render rect
+  const videoRect = getVideoRenderRect(containerWidth, containerHeight, videoWidth, videoHeight);
+
+  const screenX = Math.round(videoRect.x + (lx * videoRect.width));
+  const screenY = Math.round(videoRect.y + (ly * videoRect.height));
+
+  return { x: screenX, y: screenY, visible };
+}
+
+
 
