@@ -585,6 +585,10 @@ export function getVideoRenderRect(
   videoWidth: number = 9,
   videoHeight: number = 16
 ) {
+  if (containerWidth <= 0 || containerHeight <= 0 || videoWidth <= 0 || videoHeight <= 0) {
+    return { width: containerWidth, height: containerHeight, x: 0, y: 0 };
+  }
+
   const containerAspect = containerWidth / containerHeight;
   const videoAspect = videoWidth / videoHeight;
 
@@ -595,15 +599,22 @@ export function getVideoRenderRect(
 
   if (containerAspect > videoAspect) {
     // Pillarbox (black bars on left and right)
+    // The video is narrower than the container relative to height
     renderWidth = containerHeight * videoAspect;
     offsetX = (containerWidth - renderWidth) / 2;
   } else {
     // Letterbox (black bars on top and bottom)
+    // The video is wider than the container relative to width
     renderHeight = containerWidth / videoAspect;
     offsetY = (containerHeight - renderHeight) / 2;
   }
 
-  return { width: renderWidth, height: renderHeight, x: offsetX, y: offsetY };
+  return { 
+    width: Math.floor(renderWidth), 
+    height: Math.floor(renderHeight), 
+    x: Math.floor(offsetX), 
+    y: Math.floor(offsetY) 
+  };
 }
 
 /**

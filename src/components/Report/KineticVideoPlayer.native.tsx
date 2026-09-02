@@ -1,4 +1,4 @@
-import React, { useRef, useState, useMemo } from 'react';
+import React, { useRef, useState, useMemo, useEffect } from 'react';
 import {
   View,
   Text,
@@ -30,7 +30,7 @@ import {
   X,
 } from 'lucide-react-native';
 import { SportRule, FrameAnalysis, MediaPipeLandmark } from '../../types';
-import { calculateAngle, mapLandmarkToScreen } from '../../utils/geometry';
+import { calculateAngle, mapLandmarkToScreen, getVideoRenderRect } from '../../utils/geometry';
 
 interface KineticVideoPlayerProps {
   videoUrl: string;
@@ -44,6 +44,7 @@ interface KineticVideoPlayerProps {
   isDataReady: boolean;
   viewMode?: 'student' | 'coach';
   onTogglePlay?: () => void;
+  onPause?: () => void;
 }
 
 export const KineticVideoPlayer: React.FC<KineticVideoPlayerProps> = ({
@@ -58,12 +59,16 @@ export const KineticVideoPlayer: React.FC<KineticVideoPlayerProps> = ({
   isDataReady,
   viewMode = 'student',
   onTogglePlay,
+  onPause,
 }) => {
   const videoRef = useRef<Video>(null);
+  const fullscreenVideoRef = useRef<Video>(null);
+  const isScrubbing = useRef(false);
   const [layout, setLayout] = useState({ width: 360, height: 640 });
   const [selectedSpeed, setSelectedSpeed] = useState<number>(playbackRate);
   const [duration, setDuration] = useState<number>(3.99);
   const [videoDimensions, setVideoDimensions] = useState({ width: 9, height: 16 });
+  const [renderedRect, setRenderedRect] = useState<{ x: number; y: number; width: number; height: number } | null>(null);
   const [isFullscreenModal, setIsFullscreenModal] = useState<boolean>(false);
   const [fullscreenLayout, setFullscreenLayout] = useState({
     width: Dimensions.get('window').width,
@@ -102,11 +107,9 @@ export const KineticVideoPlayer: React.FC<KineticVideoPlayerProps> = ({
     return sortedFrames[idx];
   }, [sortedFrames, currentTime]);
 
-  const handlePlaybackStatusUpdate = (status: AVPlaybackStatus) => {
-    if (status.isLoaded) {
-      if (status.width && status.height) {
-        setVideoDimensions({ width: status.width, height: status.height });
-      }
+  const handlePlaybackStatusUpdate = (status: AVPlaybackStatus, fromFullscreen: boolean) => {
+    // Only accept updates from the active player to prevent "fighting" between instances
+    if (status.isLoaded && !isScrubbing.current && (fromFullscreen === isFullscreenModal)) {
       const posSec = status.positionMillis / 1000;
       onTimeUpdate(posSec);
       if (status.durationMillis) {
@@ -117,10 +120,51 @@ export const KineticVideoPlayer: React.FC<KineticVideoPlayerProps> = ({
     }
   };
 
-  const handleSeek = (ratio: number) => {
+  const handleReadyForDisplay = (event: any) => {
+    if (event.naturalSize) {
+      const { width, height } = event.naturalSize;
+      setVideoDimensions({ width, height });
+      
+      // Calculate initial rendered rect
+      const rect = getVideoRenderRect(
+        isFullscreenModal ? fullscreenLayout.width : layout.width,
+        isFullscreenModal ? fullscreenLayout.height : layout.height,
+        width,
+        height
+      );
+      setRenderedRect(rect);
+    }
+  };
+
+  // Recalculate rendered rect when layout or dimensions change
+  useEffect(() => {
+    const curW = isFullscreenModal ? fullscreenLayout.width : layout.width;
+    const curH = isFullscreenModal ? fullscreenLayout.height : layout.height;
+    if (curW > 0 && curH > 0 && videoDimensions.width > 0) {
+      const rect = getVideoRenderRect(curW, curH, videoDimensions.width, videoDimensions.height);
+      setRenderedRect(rect);
+    }
+  }, [layout, fullscreenLayout, videoDimensions, isFullscreenModal]);
+
+  const handleSeek = (ratio: number, finished: boolean = false) => {
+    isScrubbing.current = !finished;
+    
+    // Pause on seek start to prevent fighting
+    if (!finished && isPlaying && onPause) {
+      onPause();
+    }
+
     const targetSec = Math.max(0, Math.min(duration, ratio * duration));
+    
+    // Always update parent time so skeleton moves
     onTimeUpdate(targetSec);
-    videoRef.current?.setPositionAsync(targetSec * 1000);
+    
+    // Perform actual video seek
+    if (isFullscreenModal) {
+      fullscreenVideoRef.current?.setPositionAsync(targetSec * 1000, { toleranceMillisBefore: 0, toleranceMillisAfter: 0 });
+    } else {
+      videoRef.current?.setPositionAsync(targetSec * 1000, { toleranceMillisBefore: 0, toleranceMillisAfter: 0 });
+    }
   };
 
   const handleStep = (direction: 'back' | 'forward') => {
@@ -137,11 +181,23 @@ export const KineticVideoPlayer: React.FC<KineticVideoPlayerProps> = ({
   };
 
   const landmarks = currentFrame?.landmarks;
-  const { width: W, height: H } = layout;
+  const curW = isFullscreenModal ? fullscreenLayout.width : layout.width;
+  const curH = isFullscreenModal ? fullscreenLayout.height : layout.height;
 
   const getScreenCoords = (lm?: MediaPipeLandmark) => {
-    if (!lm) return { x: 0, y: 0, visible: false };
-    return mapLandmarkToScreen(lm, W, H, videoDimensions.width, videoDimensions.height, undefined, 0, false);
+    if (!lm || !renderedRect) return { x: 0, y: 0, visible: false };
+    
+    // Using the pre-calculated renderedRect for absolute precision
+    const lx = lm.x;
+    const ly = lm.y;
+    
+    const confidenceValid = lm.visibility === undefined || lm.visibility >= 0.25;
+    const visible = lx >= 0 && lx <= 1 && ly >= 0 && ly <= 1 && confidenceValid;
+    
+    const screenX = renderedRect.x + (lx * renderedRect.width);
+    const screenY = renderedRect.y + (ly * renderedRect.height);
+    
+    return { x: screenX, y: screenY, visible };
   };
 
   // Render Real Biometric Rules Callouts (Computing real angles from landmarks)
@@ -159,8 +215,8 @@ export const KineticVideoPlayer: React.FC<KineticVideoPlayerProps> = ({
       const [, vertexIdx] = rule.keypoints || [0, 11, 13];
       const vertex = landmarks[vertexIdx] || landmarks[11];
       const vScreen = getScreenCoords(vertex);
-      const vx = vScreen.visible ? vScreen.x : W * 0.5;
-      const vy = vScreen.visible ? vScreen.y : H * 0.3 + index * 40;
+      const vx = vScreen.visible ? vScreen.x : curW * 0.5;
+      const vy = vScreen.visible ? vScreen.y : curH * 0.3 + index * 40;
 
       // Calculate real angle from landmarks if precomputed angle is missing
       let angleVal = currentFrame?.angles?.[rule.id];
@@ -192,9 +248,9 @@ export const KineticVideoPlayer: React.FC<KineticVideoPlayerProps> = ({
       const labelText = `${cleanName}: ${displayAngle}${rule.unit || '°'}`;
 
       // Staggered Y positioning so callouts never collide
-      const targetY = Math.max(60, Math.min(H - 120, vy - 10 + (index % 2 === 0 ? -16 : 16)));
-      const isRightSide = vx < W * 0.5;
-      const pillX = isRightSide ? Math.min(W - 190, vx + 24) : Math.max(16, vx - 180);
+      const targetY = Math.max(60, Math.min(curH - 120, vy - 10 + (index % 2 === 0 ? -16 : 16)));
+      const isRightSide = vx < curW * 0.5;
+      const pillX = isRightSide ? Math.min(curW - 190, vx + 24) : Math.max(16, vx - 180);
 
       return {
         id: rule.id,
@@ -209,7 +265,7 @@ export const KineticVideoPlayer: React.FC<KineticVideoPlayerProps> = ({
     });
 
     return selected;
-  }, [landmarks, currentFrame, sportRule, W, H]);
+  }, [landmarks, currentFrame, sportRule, curW, curH, renderedRect]);
 
   return (
     <View style={styles.container} onLayout={handleLayout}>
@@ -220,15 +276,16 @@ export const KineticVideoPlayer: React.FC<KineticVideoPlayerProps> = ({
         rate={selectedSpeed}
         isMuted={true}
         resizeMode={ResizeMode.CONTAIN}
-        shouldPlay={isPlaying}
+        shouldPlay={isPlaying && !isFullscreenModal}
         isLooping={true}
-        onPlaybackStatusUpdate={handlePlaybackStatusUpdate}
+        onPlaybackStatusUpdate={(s) => handlePlaybackStatusUpdate(s, false)}
+        onReadyForDisplay={handleReadyForDisplay}
         style={styles.video}
       />
 
       {/* Svg Biomechanical Overlay */}
       {landmarks && landmarks.length >= 29 && (
-        <Svg style={styles.svgOverlay} width={W} height={H}>
+        <Svg style={styles.svgOverlay} width={curW} height={curH}>
           {/* 1. Torso Volume Polygon */}
           {landmarks[11] && landmarks[12] && landmarks[24] && landmarks[23] && (() => {
             const p1 = getScreenCoords(landmarks[11]);
@@ -457,16 +514,24 @@ export const KineticVideoPlayer: React.FC<KineticVideoPlayerProps> = ({
           style={styles.scrubberTrack}
           onStartShouldSetResponder={() => true}
           onResponderGrant={(e) => {
+            isScrubbing.current = true;
             const touchX = e.nativeEvent.locationX;
-            const scrubberW = W - 32;
+            const scrubberW = curW - 32;
             const ratio = Math.max(0, Math.min(1, touchX / Math.max(1, scrubberW)));
-            handleSeek(ratio);
+            handleSeek(ratio, false);
           }}
           onResponderMove={(e) => {
             const touchX = e.nativeEvent.locationX;
-            const scrubberW = W - 32;
+            const scrubberW = curW - 32;
             const ratio = Math.max(0, Math.min(1, touchX / Math.max(1, scrubberW)));
-            handleSeek(ratio);
+            handleSeek(ratio, false);
+          }}
+          onResponderRelease={(e) => {
+            const touchX = e.nativeEvent.locationX;
+            const scrubberW = curW - 32;
+            const ratio = Math.max(0, Math.min(1, touchX / Math.max(1, scrubberW)));
+            handleSeek(ratio, true);
+            isScrubbing.current = false;
           }}
         >
           <View
@@ -552,157 +617,191 @@ export const KineticVideoPlayer: React.FC<KineticVideoPlayerProps> = ({
 
           {/* Fullscreen Video */}
           <Video
+            ref={fullscreenVideoRef}
             source={{ uri: videoUrl }}
             rate={selectedSpeed}
             isMuted={true}
             resizeMode={ResizeMode.CONTAIN}
-            shouldPlay={isPlaying}
+            shouldPlay={isPlaying && isFullscreenModal}
             isLooping={true}
-            onPlaybackStatusUpdate={handlePlaybackStatusUpdate}
+            onPlaybackStatusUpdate={(s) => handlePlaybackStatusUpdate(s, true)}
+            onReadyForDisplay={handleReadyForDisplay}
             style={StyleSheet.absoluteFillObject}
           />
 
           {/* Fullscreen SVG Overlay */}
-          {landmarks && landmarks.length >= 29 && (() => {
-            const getFsCoords = (lm?: MediaPipeLandmark) => {
-              if (!lm) return { x: 0, y: 0, visible: false };
-              return mapLandmarkToScreen(lm, fullscreenLayout.width, fullscreenLayout.height, videoDimensions.width, videoDimensions.height, undefined, 0, false);
-            };
+          {landmarks && landmarks.length >= 29 && renderedRect && (
+            <Svg
+              style={StyleSheet.absoluteFillObject}
+              width={fullscreenLayout.width}
+              height={fullscreenLayout.height}
+            >
+              {/* Torso */}
+              {landmarks[11] && landmarks[12] && landmarks[24] && landmarks[23] && (() => {
+                const p1 = getScreenCoords(landmarks[11]);
+                const p2 = getScreenCoords(landmarks[12]);
+                const p3 = getScreenCoords(landmarks[24]);
+                const p4 = getScreenCoords(landmarks[23]);
+                if (!p1.visible || !p2.visible || !p3.visible || !p4.visible) return null;
+                return (
+                  <Polygon
+                    points={`
+                      ${p1.x},${p1.y}
+                      ${p2.x},${p2.y}
+                      ${p3.x},${p3.y}
+                      ${p4.x},${p4.y}
+                    `}
+                    fill="rgba(56, 189, 248, 0.08)"
+                    stroke="rgba(56, 189, 248, 0.25)"
+                    strokeWidth={1.5}
+                  />
+                );
+              })()}
 
-            return (
-              <Svg
-                style={StyleSheet.absoluteFillObject}
-                width={fullscreenLayout.width}
-                height={fullscreenLayout.height}
-              >
-                {/* Torso */}
-                {landmarks[11] && landmarks[12] && landmarks[24] && landmarks[23] && (() => {
-                  const p1 = getFsCoords(landmarks[11]);
-                  const p2 = getFsCoords(landmarks[12]);
-                  const p3 = getFsCoords(landmarks[24]);
-                  const p4 = getFsCoords(landmarks[23]);
-                  if (!p1.visible || !p2.visible || !p3.visible || !p4.visible) return null;
-                  return (
-                    <Polygon
-                      points={`
-                        ${p1.x},${p1.y}
-                        ${p2.x},${p2.y}
-                        ${p3.x},${p3.y}
-                        ${p4.x},${p4.y}
-                      `}
-                      fill="rgba(56, 189, 248, 0.08)"
-                      stroke="rgba(56, 189, 248, 0.25)"
-                      strokeWidth={1.5}
+              {/* Left Limbs */}
+              {[
+                [11, 13], [13, 15],
+                [23, 25], [25, 27], [27, 31], [27, 29],
+                [11, 23],
+              ].map(([i1, i2], idx) => {
+                const p1 = getScreenCoords(landmarks[i1]);
+                const p2 = getScreenCoords(landmarks[i2]);
+                if (!p1.visible || !p2.visible) return null;
+                return (
+                  <Line
+                    key={`fs-left-${idx}`}
+                    x1={p1.x}
+                    y1={p1.y}
+                    x2={p2.x}
+                    y2={p2.y}
+                    stroke="#c084fc"
+                    strokeWidth={3}
+                    strokeLinecap="round"
+                  />
+                );
+              })}
+
+              {/* Right Limbs */}
+              {[
+                [12, 14], [14, 16],
+                [24, 26], [26, 28], [28, 32], [28, 30],
+                [12, 24],
+              ].map(([i1, i2], idx) => {
+                const p1 = getScreenCoords(landmarks[i1]);
+                const p2 = getScreenCoords(landmarks[i2]);
+                if (!p1.visible || !p2.visible) return null;
+                return (
+                  <Line
+                    key={`fs-right-${idx}`}
+                    x1={p1.x}
+                    y1={p1.y}
+                    x2={p2.x}
+                    y2={p2.y}
+                    stroke="#22c55e"
+                    strokeWidth={3}
+                    strokeLinecap="round"
+                  />
+                );
+              })}
+
+              {/* Center Connectors */}
+              {landmarks[11] && landmarks[12] && (() => {
+                const p1 = getScreenCoords(landmarks[11]);
+                const p2 = getScreenCoords(landmarks[12]);
+                if (!p1.visible || !p2.visible) return null;
+                return (
+                  <Line
+                    x1={p1.x}
+                    y1={p1.y}
+                    x2={p2.x}
+                    y2={p2.y}
+                    stroke="#38bdf8"
+                    strokeWidth={2.5}
+                  />
+                );
+              })()}
+              {landmarks[23] && landmarks[24] && (() => {
+                const p1 = getScreenCoords(landmarks[23]);
+                const p2 = getScreenCoords(landmarks[24]);
+                if (!p1.visible || !p2.visible) return null;
+                return (
+                  <Line
+                    x1={p1.x}
+                    y1={p1.y}
+                    x2={p2.x}
+                    y2={p2.y}
+                    stroke="#38bdf8"
+                    strokeWidth={2.5}
+                  />
+                );
+              })()}
+
+              {/* Joint Circles */}
+              {landmarks.map((lm, i) => {
+                if (!lm || (i > 0 && i < 11)) return null;
+                const p = getScreenCoords(lm);
+                if (!p.visible) return null;
+                const isLeft = [11, 13, 15, 23, 25, 27, 29, 31].includes(i);
+                return (
+                  <G key={`fs-joint-${i}`}>
+                    <Circle
+                      cx={p.x}
+                      cy={p.y}
+                      r={5}
+                      fill="rgba(0,0,0,0.7)"
+                      stroke={isLeft ? '#c084fc' : '#22c55e'}
+                      strokeWidth={2}
                     />
-                  );
-                })()}
+                    <Circle
+                      cx={p.x}
+                      cy={p.y}
+                      r={2}
+                      fill="#ffffff"
+                    />
+                  </G>
+                );
+              })}
 
-                {/* Left Limbs */}
-                {[
-                  [11, 13], [13, 15],
-                  [23, 25], [25, 27], [27, 31], [27, 29],
-                  [11, 23],
-                ].map(([i1, i2], idx) => {
-                  const p1 = getFsCoords(landmarks[i1]);
-                  const p2 = getFsCoords(landmarks[i2]);
-                  if (!p1.visible || !p2.visible) return null;
-                  return (
+              {/* Angle Callouts in Fullscreen */}
+              {visibleRuleCallouts.map((callout, idx) => {
+                const pillW = Math.min(190, Math.max(120, callout.labelText.length * 6.8 + 24));
+                return (
+                  <G key={`fs-callout-${idx}`}>
                     <Line
-                      key={`fs-left-${idx}`}
-                      x1={p1.x}
-                      y1={p1.y}
-                      x2={p2.x}
-                      y2={p2.y}
-                      stroke="#c084fc"
-                      strokeWidth={3}
-                      strokeLinecap="round"
+                      x1={callout.vx}
+                      y1={callout.vy}
+                      x2={callout.pillX + (callout.pillX > callout.vx ? 0 : pillW)}
+                      y2={callout.pillY + 9}
+                      stroke={callout.color}
+                      strokeWidth={1}
+                      strokeDasharray="2,2"
+                      opacity={0.85}
                     />
-                  );
-                })}
-
-                {/* Right Limbs */}
-                {[
-                  [12, 14], [14, 16],
-                  [24, 26], [26, 28], [28, 32], [28, 30],
-                  [12, 24],
-                ].map(([i1, i2], idx) => {
-                  const p1 = getFsCoords(landmarks[i1]);
-                  const p2 = getFsCoords(landmarks[i2]);
-                  if (!p1.visible || !p2.visible) return null;
-                  return (
-                    <Line
-                      key={`fs-right-${idx}`}
-                      x1={p1.x}
-                      y1={p1.y}
-                      x2={p2.x}
-                      y2={p2.y}
-                      stroke="#22c55e"
-                      strokeWidth={3}
-                      strokeLinecap="round"
+                    <Rect
+                      x={callout.pillX}
+                      y={callout.pillY}
+                      width={pillW}
+                      height={18}
+                      rx={9}
+                      fill="rgba(9, 9, 11, 0.92)"
+                      stroke={callout.color}
+                      strokeWidth={1}
                     />
-                  );
-                })}
-
-                {/* Center Connectors */}
-                {landmarks[11] && landmarks[12] && (() => {
-                  const p1 = getFsCoords(landmarks[11]);
-                  const p2 = getFsCoords(landmarks[12]);
-                  if (!p1.visible || !p2.visible) return null;
-                  return (
-                    <Line
-                      x1={p1.x}
-                      y1={p1.y}
-                      x2={p2.x}
-                      y2={p2.y}
-                      stroke="#38bdf8"
-                      strokeWidth={2.5}
-                    />
-                  );
-                })()}
-                {landmarks[23] && landmarks[24] && (() => {
-                  const p1 = getFsCoords(landmarks[23]);
-                  const p2 = getFsCoords(landmarks[24]);
-                  if (!p1.visible || !p2.visible) return null;
-                  return (
-                    <Line
-                      x1={p1.x}
-                      y1={p1.y}
-                      x2={p2.x}
-                      y2={p2.y}
-                      stroke="#38bdf8"
-                      strokeWidth={2.5}
-                    />
-                  );
-                })()}
-
-                {/* Joint Circles */}
-                {landmarks.map((lm, i) => {
-                  if (!lm || (i > 0 && i < 11)) return null;
-                  const p = getFsCoords(lm);
-                  if (!p.visible) return null;
-                  const isLeft = [11, 13, 15, 23, 25, 27, 29, 31].includes(i);
-                  return (
-                    <G key={`fs-joint-${i}`}>
-                      <Circle
-                        cx={p.x}
-                        cy={p.y}
-                        r={5}
-                        fill="rgba(0,0,0,0.7)"
-                        stroke={isLeft ? '#c084fc' : '#22c55e'}
-                        strokeWidth={2}
-                      />
-                      <Circle
-                        cx={p.x}
-                        cy={p.y}
-                        r={2}
-                        fill="#ffffff"
-                      />
-                    </G>
-                  );
-                })}
-              </Svg>
-            );
-          })()}
+                    <Circle cx={callout.pillX + 8} cy={callout.pillY + 9} r={2.8} fill={callout.color} />
+                    <SvgText
+                      x={callout.pillX + 15}
+                      y={callout.pillY + 12.5}
+                      fill="#ffffff"
+                      fontSize="9"
+                      fontWeight="bold"
+                    >
+                      {callout.labelText}
+                    </SvgText>
+                  </G>
+                );
+              })}
+            </Svg>
+          )}
 
           {/* Top Fullscreen Header with Exit Button */}
           <View style={styles.fullscreenTopBar}>
@@ -728,15 +827,29 @@ export const KineticVideoPlayer: React.FC<KineticVideoPlayerProps> = ({
 
           {/* Bottom Fullscreen Transport Bar */}
           <View style={styles.fullscreenBottomBar}>
-            <TouchableOpacity
-              activeOpacity={1}
-              onPress={(e) => {
-                const touchX = e.nativeEvent.locationX;
-                const scrubberW = fullscreenLayout.width - 32;
-                const ratio = Math.max(0, Math.min(1, touchX / scrubberW));
-                handleSeek(ratio);
-              }}
+            <View
               style={styles.scrubberTrack}
+              onStartShouldSetResponder={() => true}
+              onResponderGrant={(e) => {
+                isScrubbing.current = true;
+                const touchX = e.nativeEvent.locationX;
+                const scrubberW = Math.max(1, fullscreenLayout.width - 60); 
+                const ratio = Math.max(0, Math.min(1, touchX / scrubberW));
+                handleSeek(ratio, false);
+              }}
+              onResponderMove={(e) => {
+                const touchX = e.nativeEvent.locationX;
+                const scrubberW = Math.max(1, fullscreenLayout.width - 60);
+                const ratio = Math.max(0, Math.min(1, touchX / scrubberW));
+                handleSeek(ratio, false);
+              }}
+              onResponderRelease={(e) => {
+                const touchX = e.nativeEvent.locationX;
+                const scrubberW = Math.max(1, fullscreenLayout.width - 60);
+                const ratio = Math.max(0, Math.min(1, touchX / scrubberW));
+                handleSeek(ratio, true);
+                isScrubbing.current = false;
+              }}
             >
               <View
                 style={[
@@ -750,7 +863,7 @@ export const KineticVideoPlayer: React.FC<KineticVideoPlayerProps> = ({
                   { left: `${Math.min(97, (currentTime / (duration || 1)) * 100)}%` },
                 ]}
               />
-            </TouchableOpacity>
+            </View>
 
             <View style={styles.transportRow}>
               <TouchableOpacity

@@ -477,6 +477,7 @@ export const AnalysisReportPage: React.FC<AnalysisReportPageProps> = ({
           onTimeUpdate={setCurrentTime}
           isDataReady={true}
           onTogglePlay={() => setIsPlaying(!isPlaying)}
+          onPause={() => setIsPlaying(false)}
         />
 
         {/* 3. Navigation Tab Bar */}
