@@ -112,6 +112,9 @@ const rugbyRules: JointRule[] = [
 
   // Scrums, Rucks & Lineouts (10 rules)
   createRule('rugby_scrum_spine_flat', 'rugby', 'Scrum Flat Back Alignment', 'Scrum Setup', 'Spine parallel to ground (180° neck-hip-knee line).', [12, 24, 28], 165, 180, 'critical_safety', 'grassroots'),
+  createRule('rugby_scrum_bind_elbow_lock', 'rugby', 'Scrum Bind Elbow Lock', 'Scrum Bind', 'Elbow locked high at 165°+ for stable prop binding.', [12, 14, 16], 165, 180, 'performance', 'elite_pro'),
+  createRule('rugby_lineout_lift_thoracic_extension', 'rugby', 'Lineout Lifter Chest Up', 'Lineout Lift', 'Lifter maintains chest up with thoracic extension during peak lift.', [11, 12, 24], 160, 180, 'critical_safety', 'academy'),
+  createRule('rugby_ruck_entry_hip_depth', 'rugby', 'Ruck Entry Hip Depth', 'Ruck Entry', 'Hips below opponent shoulders during cleanout.', [23, 24, 11], 45, 75, 'performance', 'academy'),
   createRule('rugby_scrum_hip_knee_90', 'rugby', 'Scrum Power Angle (Hip/Knee)', 'Scrum Engagement', 'Knee bend angle at 90°-110° for optimal pushing force.', [24, 26, 28], 95, 115, 'performance', 'academy'),
   createRule('rugby_ruck_over_cleanout', 'rugby', 'Ruck Cleanout Shoulder Level', 'Cleanout', 'Shoulders above hips during ruck cleanout.', [12, 24, 26], 155, 175, 'critical_safety', 'grassroots'),
   createRule('rugby_lineout_jump_reach', 'rugby', 'Lineout Jump Overhead Reach', 'Peak Jump', 'Arms fully extended overhead at top of lineout lift.', [24, 12, 16], 165, 180, 'performance', 'grassroots'),
@@ -172,6 +175,9 @@ const soccerRules: JointRule[] = [
   createRule('soccer_stepover_hip_circle', 'soccer', 'Stepover Hip Abduction', 'Skill Move', 'Hip opening wide over top of ball.', [12, 24, 26], 120, 150, 'performance', 'academy'),
   createRule('soccer_sprint_stride_knee_drive', 'soccer', 'Wing Sprint High Knee Drive', 'Sprint Stride', 'Knee drive angle parallel to pitch ground.', [23, 25, 27], 75, 95, 'performance', 'grassroots'),
   createRule('soccer_jockey_defensive_stance', 'soccer', 'Jockey Stance Knee Dip', 'Defending', 'Side-on defensive stance with 110° knee flex.', [24, 26, 28], 105, 130, 'performance', 'grassroots'),
+  createRule('soccer_jockey_defensive_crouch', 'soccer', 'Jockeying Defensive Crouch', 'Defensive Jockey', 'Low center of gravity with knees at 110°-130° for agility.', [23, 25, 27], 110, 130, 'performance', 'grassroots'),
+  createRule('soccer_volley_strike_lean', 'soccer', 'Volley Strike Body Lean', 'Volley', 'Body tilted slightly back to control ball elevation.', [11, 12, 24], 100, 120, 'performance', 'academy'),
+  createRule('soccer_corner_injection_plant_foot', 'soccer', 'Corner Plant Foot Alignment', 'Corner Kick', 'Plant foot pointing directly at the target arc.', [23, 25, 27], 140, 160, 'performance', 'grassroots'),
   createRule('soccer_slide_tackle_lead_leg', 'soccer', 'Slide Tackle Lead Leg Reach', 'Slide Contact', 'Lead leg extended sweeping ball clean.', [23, 25, 27], 160, 180, 'critical_safety', 'academy'),
   createRule('soccer_curtain_turn_pivot', 'soccer', 'Cruyff Turn Hip Pivot', 'Fake Kick', 'Hips pivoting 180° dragging ball behind plant foot.', [23, 24, 28], 80, 110, 'performance', 'elite_pro'),
   createRule('soccer_chest_control_cushion', 'soccer', 'Chest Trap Arch Back', 'Air Reception', 'Upper spine arched back cushioning high ball.', [12, 24, 26], 155, 175, 'performance', 'academy'),
@@ -248,6 +254,7 @@ const netballRules: JointRule[] = [
 
   // Defending & Interceptions (10 rules)
   createRule('netball_3ft_marking_distance', 'netball', '3ft Marking Base Extension', '3ft Defense', 'Feet set 3 feet back from shooter foot.', [27, 23, 28], 90, 120, 'critical_safety', 'grassroots'),
+  createRule('netball_defensive_reach_interference', 'netball', 'Defensive Interference Reach', 'Marking', 'Shoulder extension for high-point ball interference.', [11, 13, 15], 160, 180, 'performance', 'academy'),
   createRule('netball_arms_up_defense_reach', 'netball', 'Defensive Arm Stretch Angle', 'Marking Shot', 'Arms reaching high overhead contesting shot.', [24, 12, 16], 165, 180, 'performance', 'grassroots'),
   createRule('netball_intercept_jump_knee', 'netball', 'Interception Jump Takeoff Dip', 'Interception', 'Explosive knee bend launching for aerial ball.', [24, 26, 28], 100, 125, 'performance', 'academy'),
   createRule('netball_lean_over_pass_lane', 'netball', 'Defensive Lean Over Stance', 'Pass Distraction', 'Trunk leans forward without touching opponent.', [12, 24, 26], 140, 165, 'performance', 'elite_pro'),
@@ -301,6 +308,7 @@ const hockeyRules: JointRule[] = [
 
   // Penalty Corner & Goalkeeping (10 rules)
   createRule('hockey_pc_injector_push_elbow', 'hockey', 'Penalty Corner Injector Extension', 'Injection', 'Long sweeping arm extension injecting PC ball.', [12, 14, 16], 155, 178, 'performance', 'academy'),
+  createRule('hockey_overhead_pass_elbow_drive', 'hockey', 'Overhead Pass Elbow Drive', 'Overhead Pass', 'Leading elbow drives up and through for aerial height.', [11, 13, 15], 140, 170, 'performance', 'elite_pro'),
   createRule('hockey_pc_stopper_knee_crouch', 'hockey', 'PC Stopper Low Knee Crouch', 'Stop Trap', 'Back knee drops low catching injected ball.', [24, 26, 28], 85, 110, 'performance', 'grassroots'),
   createRule('hockey_gk_kick_save_leg_extension', 'hockey', 'GK Kick Save Leg Extension', 'Kick Save', 'Pad leg extends sideways kicking high shot clear.', [24, 26, 28], 155, 180, 'performance', 'grassroots'),
   createRule('hockey_gk_glove_save_arm_reach', 'hockey', 'GK Left Glove Save Arm Stretch', 'Glove Save', 'Left arm reaches up deflecting high flick.', [11, 13, 15], 160, 180, 'performance', 'academy'),
@@ -317,16 +325,19 @@ const hockeyRules: JointRule[] = [
 // -------------------------------------------------------------
 const cricketRules: JointRule[] = [
   // Fast & Spin Bowling (10 rules)
-  createRule('cricket_bowling_front_knee_block', 'cricket', 'Front Knee Extension at Delivery', 'Delivery Stride', 'Front knee flexed then firm extension (160°-180°) transferring momentum.', [23, 25, 27], 160, 180, 'critical_safety', 'grassroots', 'Acts as a brace to catapult the upper body forward for maximum pace.', 'A "soft" or flexed front knee leads to massive energy loss and increased lumbar stress.', 250, 1.5, {
+  createRule('cricket_bowling_front_knee_block', 'cricket', 'Front Knee Extension at Delivery', 'Delivery Stride', 'Front knee flexed then firm extension (168°-180°) transferring momentum.', [23, 25, 27], 168, 180, 'critical_safety', 'elite_pro', 'Acts as a brace to catapult the upper body forward for maximum pace.', 'A "soft" or flexed front knee leads to massive energy loss and increased lumbar stress.', 250, 1.5, {
     optimal: ['Textbook front-leg brace. You are maximizing the ground reaction force perfectly.', 'Rock-solid front knee. This is the foundation of a high-velocity delivery stride.'],
     warning: ['Front knee is slightly collapsing at the point of release. You are leaking pace.', 'Watch the "soft" knee. Try to firm up the front leg 0.1s earlier to snap the torso through.'],
     error: ['Significant knee collapse detected. This is a high-risk posture for lower back stress.', 'No front-leg brace. Your arm is doing all the work—you need that leg to act as a pivot.']
   }),
-  createRule('cricket_bowling_arm_straight', 'cricket', 'Bowling Arm Straightness (15° Law)', 'Release Instant', 'Bowling arm elbow straight within ICC 15° bend rule.', [12, 14, 16], 165, 180, 'critical_safety', 'grassroots', 'Ensures a legal delivery and prevents elbow ligament strain.', 'Bending the elbow (throwing) can lead to joint impingement and match disqualification.', 1200, 2.5, {
+  createRule('cricket_bowling_arm_straight', 'cricket', 'Bowling Arm Straightness (15° Law)', 'Release Instant', 'Bowling arm elbow straight within ICC 15° bend rule.', [12, 14, 16], 175, 180, 'critical_safety', 'elite_pro', 'Ensures a legal delivery and prevents elbow ligament strain.', 'Bending the elbow (throwing) can lead to joint impingement and match disqualification.', 1200, 2.5, {
     optimal: ['Perfectly legal high-arm action. Great extension through the arc.', 'Clean delivery. Your elbow remains locked, satisfying the 15-degree mandate.'],
     warning: ['Subtle bend detected near the peak. Focus on locking that tricep early in the swing.', 'Margin is tight. Ensure the arm remains a stiff lever from gather to release.'],
     error: ['Action exceeds the 15-degree legal limit. This is classified as a "throw" and must be corrected.', 'Illegal elbow flexion detected. High risk of medial epicondylitis if not corrected.']
   }),
+  createRule('cricket_batting_back_foot_punch_spine', 'cricket', 'Back-Foot Punch Spine Verticality', 'Back-Foot Shot', 'Maintain vertical spine while punching through the line of the ball.', [11, 12, 24], 170, 180, 'performance', 'academy', 'Maximizes balance and allows the hands to flow through the ball.', 'Leaning too far back or forward loses power and risks an edge.', 400, 0.9),
+  createRule('cricket_fielding_low_catch_knee_flex', 'cricket', 'Low Catch Knee Absorption', 'Fielding Catch', 'Deep knee flexion when taking low catches to absorb impact.', [23, 25, 27], 80, 110, 'posture', 'grassroots'),
+  createRule('cricket_spin_release_wrist_snap', 'cricket', 'Spin Release Wrist Snap', 'Spin Release', 'High wrist flexion for maximum revolutions.', [14, 16, 20], 70, 100, 'performance', 'elite_pro'),
   createRule('cricket_back_foot_landing_knee', 'cricket', 'Back Foot Contact Knee Flex', 'Bound Landing', 'Back knee flexes absorbing high-jump landing.', [24, 26, 28], 125, 150, 'critical_safety', 'grassroots'),
   createRule('cricket_non_bowling_arm_pull', 'cricket', 'Non-Bowling Arm Elbow Drive', 'Gather Phase', 'Non-bowling arm pulls down hard past hip.', [11, 13, 15], 65, 95, 'performance', 'academy'),
   createRule('cricket_hip_shoulder_separation', 'cricket', 'Hip-Shoulder Separation Angle', 'Delivery Stride', 'Hips rotate ahead of shoulders creating bowling catapult.', [11, 12, 24], 120, 155, 'performance', 'elite_pro'),
@@ -393,6 +404,9 @@ const tennisRules: JointRule[] = [
   createRule('tn_serve_wrist_snap_extra', 'tennis', 'Serve Pronation Wrist Snap', 'Serve Release', 'Wrist snap at impact for spin.', [14, 16, 20], 160, 180, 'performance', 'academy'),
   createRule('tn_forehand_follow_through_arm_extension', 'tennis', 'Forehand Extension Finish', 'Follow-Through', 'Hitting arm full extension through finish.', [12, 14, 16], 150, 178, 'performance', 'grassroots'),
   createRule('tn_slice_backhand_high_low_path', 'tennis', 'Slice Backhand High-to-Low Path', 'Racquet Drop', 'Racquet moves down at 45° angle carving backspin.', [12, 14, 16], 120, 150, 'performance', 'academy'),
+  createRule('tn_overhead_smash_extension', 'tennis', 'Overhead Smash Elbow Extension', 'Impact Moment', 'Dominant arm fully extended at highest contact point.', [12, 14, 16], 170, 180, 'performance', 'elite_pro'),
+  createRule('tn_backhand_slice_carve', 'tennis', 'Backhand Slice Carve Angle', 'Racquet Drop', 'Sharp downward angle for low-skidding backspin.', [12, 14, 16], 125, 145, 'performance', 'elite_pro'),
+  createRule('tn_return_split_step_depth', 'tennis', 'Return Split-Step Knee Depth', 'Split Step', 'Deep reactive knee dip for high-velocity returns.', [24, 26, 28], 100, 120, 'performance', 'elite_pro'),
   createRule('tn_buggy_whip_follow_through', 'tennis', 'Nadal Buggy-Whip Above Head', 'Wiper Follow-Through', 'Racquet sweeps overhead on same side for ultra topspin.', [12, 14, 16], 120, 155, 'performance', 'elite_pro'),
 
   // Serve & Overhead Smash (10 rules)
@@ -447,8 +461,10 @@ const golfRules: JointRule[] = [
   createRule('gf_head_stability_swing', 'golf', 'Head Fixation During Backswing', 'Backswing Coiling', 'Head stays fixed in central space avoiding lateral swaying.', [0, 11, 23], 155, 180, 'posture', 'grassroots'),
   createRule('gf_trail_elbow_tuck_downswing', 'golf', 'Trail Elbow Tuck Pitching', 'Downswing Impact', 'Trail elbow stays tucked near torso slotting club inside.', [12, 14, 16], 85, 115, 'performance', 'academy'),
   createRule('gf_wrist_hinge_backswing', 'golf', '90° Wrist Cock Top of Backswing', 'Backswing Coiling', 'Wrists hinge 90° setting club shaft parallel to target line.', [14, 16, 20], 80, 105, 'performance', 'grassroots'),
-  createRule('gf_arm_impact_extension', 'golf', 'Arm Impact Extension', 'Impact', 'Arm extension through impact zone.', [12, 14, 16], 165, 180, 'performance', 'elite_pro'),
   createRule('gf_wrist_impact_stability', 'golf', 'Wrist Stability at Impact', 'Impact', 'Wrist angle stability preventing flip.', [14, 16, 20], 160, 180, 'performance', 'academy'),
+  createRule('gf_bunker_splash_entry_angle', 'golf', 'Bunker Splash Entry Point', 'Sand Impact', 'Stick entry 2 inches behind ball for sand explosion.', [12, 24, 26], 130, 150, 'performance', 'elite_pro'),
+  createRule('gf_stinger_release_lock', 'golf', 'Stinger Low Follow Lock', 'Release', 'Hands held low and arms extended for low stinger flight.', [12, 14, 16], 110, 130, 'performance', 'elite_pro'),
+  createRule('gf_arm_impact_extension', 'golf', 'Arm Impact Extension', 'Impact', 'Arm extension through impact zone.', [12, 14, 16], 165, 180, 'performance', 'elite_pro'),
 
   // Wedge & Short Game Pitching (10 rules)
   createRule('gf_pitch_narrow_stance_width', 'golf', 'Pitch Shot Narrow Base Stance', 'Address Stance', 'Feet positioned 20-30cm apart for short game precision.', [27, 23, 28], 60, 85, 'posture', 'grassroots'),

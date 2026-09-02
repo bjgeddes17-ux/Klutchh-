@@ -169,6 +169,14 @@ export interface KineticSummary {
   weeklyPrescription: { title: string; detail: string }[];
 }
 
+export interface DrillThreshold {
+  jointKey: string;
+  min: number;
+  max: number;
+  unit: string;
+  description: string;
+}
+
 export interface AICoachingReport {
   overallGrade: string;
   summaryTitle: string;
@@ -187,6 +195,7 @@ export interface AICoachingReport {
   coachEncouragement: string;
   averageVelocities?: Record<string, number>;
   averageTorques?: Record<string, number>;
+  drillThresholds?: DrillThreshold[];
 }
 
 export interface UserAccount {

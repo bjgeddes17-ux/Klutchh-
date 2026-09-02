@@ -9,7 +9,8 @@ import { SavedReportsModal } from './components/SavedReportsModal';
 import { AnalysisReportPage } from './components/AnalysisReportPage';
 import ProgressDashboard from './components/ProgressDashboard';
 import { BiometricDrillsLibrary } from './components/BiometricDrillsLibrary';
-import { DrillItem } from './data/drillLibrary';
+import { DrillItem, COMPREHENSIVE_DRILL_LIBRARY } from './data/drillLibrary';
+import { injectDrillThresholds } from './utils/thresholdEngine';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { Play, FileText, Bookmark, ShieldAlert, AlertCircle } from 'lucide-react';
 import { set, get, del } from 'idb-keyval';
@@ -38,6 +39,7 @@ function App() {
   const [calibratedFps, setCalibratedFps] = useState<number>(30);
   const [selectedTechniqueId, setSelectedTechniqueId] = useState<string>(SPORTS_RULES[0].techniques[0]?.id || '');
   const [selectedMovementPhase, setSelectedMovementPhase] = useState<string>(SPORTS_RULES[0].phases[0]);
+  const [selectedDrillId, setSelectedDrillId] = useState<string | null>(null);
   const [customVideoUrl, setCustomVideoUrl] = useState<string | null>(null);
   const [customVideoFile, setCustomVideoFile] = useState<File | null>(null);
   const [targetAthleteAnchor, setTargetAthleteAnchor] = useState<'auto' | 'left' | 'center' | 'right'>('auto');
@@ -103,6 +105,7 @@ function App() {
 
   const handleSportChange = (id: SportId) => {
     setSelectedSportId(id);
+    setSelectedDrillId(null);
     const newSport = SPORTS_RULES.find((s) => s.id === id) || SPORTS_RULES[0];
     if (newSport.techniques && newSport.techniques.length > 0) {
       setSelectedTechniqueId(newSport.techniques[0].id);
@@ -153,24 +156,33 @@ function App() {
 
   const handleProcessingMagicComplete = useCallback((res?: AnalysisResult) => {
     if (res && res.aiReport) {
+      // Inject drill-specific thresholds if a drill was selected
+      let finalRes = res;
+      if (selectedDrillId) {
+        const drill = COMPREHENSIVE_DRILL_LIBRARY.find(d => d.id === selectedDrillId);
+        if (drill) {
+          finalRes = injectDrillThresholds(res, drill);
+        }
+      }
+
       const newReportId = `report-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
       setActiveReportId(newReportId);
-      if (res.keyframes && res.keyframes.length > 0) setKeyframeList(res.keyframes);
-      if (res.allFrames && res.allFrames.length > 0) setAllFrames(res.allFrames);
-      if (res.aiReport) setCurrentAIReport(res.aiReport);
-      if (res.sequenceComparison) setCurrentSequenceComparison(res.sequenceComparison);
-      if (res.dynamicMetrics) setCurrentDynamicMetrics(res.dynamicMetrics);
-      setCurrentOverallSymmetry(res.overallSymmetry);
-      setCurrentOverallKneeSafety(res.overallKneeSafety);
-      setCurrentStartTime(res.startTime || 0);
-      setCurrentEndTime(res.endTime);
-      setCurrentCropBox(res.cropBox);
+      if (finalRes.keyframes && finalRes.keyframes.length > 0) setKeyframeList(finalRes.keyframes);
+      if (finalRes.allFrames && finalRes.allFrames.length > 0) setAllFrames(finalRes.allFrames);
+      if (finalRes.aiReport) setCurrentAIReport(finalRes.aiReport);
+      if (finalRes.sequenceComparison) setCurrentSequenceComparison(finalRes.sequenceComparison);
+      if (finalRes.dynamicMetrics) setCurrentDynamicMetrics(finalRes.dynamicMetrics);
+      setCurrentOverallSymmetry(finalRes.overallSymmetry);
+      setCurrentOverallKneeSafety(finalRes.overallKneeSafety);
+      setCurrentStartTime(finalRes.startTime || 0);
+      setCurrentEndTime(finalRes.endTime);
+      setCurrentCropBox(finalRes.cropBox);
       setViewMode('full_report');
     } else {
       alert("Analysis failed. Unable to extract valid biomechanical telemetry from video.");
       setViewMode('workspace');
     }
-  }, []);
+  }, [selectedDrillId]);
 
   const handleBackToWorkspace = () => {
     if (customVideoUrl && customVideoUrl.startsWith('blob:')) {
@@ -292,8 +304,11 @@ function App() {
             selectedSportId={selectedSportId}
             onSelectSport={handleSportChange}
             onSelectDrillAsRule={(drill) => {
+              setSelectedDrillId(drill.id);
               if (drill.sportId) {
                 handleSportChange(drill.sportId);
+                // Note: handleSportChange clears selectedDrillId, so we set it after
+                setSelectedDrillId(drill.id);
               }
               if (drill.techniqueId) {
                 setSelectedTechniqueId(drill.techniqueId);

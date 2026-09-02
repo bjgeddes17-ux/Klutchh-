@@ -504,6 +504,42 @@ export const AnalysisReportPage: React.FC<AnalysisReportPageProps> = ({
         </div>
       )}
 
+      {aiReport?.drillThresholds && aiReport.drillThresholds.length > 0 && (
+        <motion.div 
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="bg-zinc-900 border-2 border-emerald-500/30 p-5 rounded-2xl flex flex-col sm:flex-row items-center gap-6 shadow-xl relative overflow-hidden"
+        >
+          <div className="absolute top-0 right-0 p-1 bg-emerald-500/10 text-emerald-400 text-[8px] font-black uppercase tracking-widest px-3 py-1 rounded-bl-xl border-l border-b border-emerald-500/20">
+            Precision Target Mode Active
+          </div>
+          <div className="flex items-center gap-4 shrink-0">
+            <div className="w-14 h-14 rounded-2xl bg-emerald-500/10 text-emerald-400 flex items-center justify-center border border-emerald-500/30">
+              <Target className="w-8 h-8" />
+            </div>
+            <div>
+              <h3 className="text-white font-black uppercase italic tracking-wider">Elite Biomechanical Targets</h3>
+              <p className="text-zinc-400 text-[10px] uppercase font-bold tracking-widest mt-0.5">Drill-Specific Requirements</p>
+            </div>
+          </div>
+          
+          <div className="flex-1 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 w-full">
+            {aiReport.drillThresholds.map((t, idx) => (
+              <div key={idx} className="bg-zinc-950 border border-zinc-800 p-3 rounded-xl flex items-center justify-between">
+                <div>
+                  <span className="text-[9px] font-black text-zinc-500 uppercase block tracking-tighter">{t.description}</span>
+                  <span className="text-sm font-black text-white">{t.min}{t.unit} - {t.max}{t.unit}</span>
+                </div>
+                <div className="flex flex-col items-end">
+                  <span className="text-[8px] font-black text-emerald-500 uppercase tracking-widest">Ideal</span>
+                  <div className="w-1.5 h-6 bg-emerald-500/40 rounded-full" />
+                </div>
+              </div>
+            ))}
+          </div>
+        </motion.div>
+      )}
+
       <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-4 sm:p-5 flex flex-col lg:flex-row lg:items-center justify-between gap-4 shadow-xl">
         <div className="flex items-center gap-3">
           <button onClick={onBack} className="bg-zinc-800 hover:bg-zinc-700 text-zinc-300 p-2 rounded-xl border border-zinc-700 transition-all"><ArrowLeft className="w-5 h-5" /></button>

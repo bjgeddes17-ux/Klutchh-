@@ -656,7 +656,7 @@ export const GhostCorrectionVisualizer: React.FC<GhostCorrectionVisualizerProps>
             </div>
 
             {/* Render Animated Skeleton */}
-            <div className="relative w-full h-full p-4 flex items-center justify-center">
+            <div className="absolute inset-0 w-full h-full flex items-center justify-center overflow-hidden pointer-events-none">
               {renderInteractiveSkeleton(activeFault, ghostInterpolation, 'hybrid')}
             </div>
 

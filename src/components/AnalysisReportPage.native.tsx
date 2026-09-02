@@ -558,6 +558,34 @@ export const AnalysisReportPage: React.FC<AnalysisReportPageProps> = ({
           </TouchableOpacity>
         </ScrollView>
 
+        {/* Drill Thresholds Section */}
+        {aiReport?.drillThresholds && aiReport.drillThresholds.length > 0 && (
+          <View style={styles.thresholdsCard}>
+            <View style={styles.thresholdsHeader}>
+              <View style={styles.thresholdsIconBox}>
+                <Target color="#22c55e" size={20} />
+              </View>
+              <View>
+                <Text style={styles.thresholdsTitle}>ELITE BIOMECHANICAL TARGETS</Text>
+                <Text style={styles.thresholdsSubtitle}>PRECISION PERFORMANCE MODE ACTIVE</Text>
+              </View>
+            </View>
+            
+            <View style={styles.thresholdsGrid}>
+              {aiReport.drillThresholds.map((t, idx) => (
+                <View key={idx} style={styles.thresholdItem}>
+                  <Text style={styles.thresholdLabel}>{t.description.toUpperCase()}</Text>
+                  <Text style={styles.thresholdValue}>{t.min}{t.unit} - {t.max}{t.unit}</Text>
+                  <View style={styles.thresholdIndicator}>
+                    <View style={styles.thresholdDot} />
+                    <Text style={styles.thresholdStatus}>IDEAL</Text>
+                  </View>
+                </View>
+              ))}
+            </View>
+          </View>
+        )}
+
         {/* 4. Tab 1: TOP 3 BIOMECHANICAL CORRECTIONS */}
         {activeTab === 'corrections' && (
           <View style={styles.tabSection}>
@@ -1166,6 +1194,89 @@ const styles = StyleSheet.create({
   },
   corridorHeader: {
     marginBottom: 6,
+  },
+  thresholdsCard: {
+    backgroundColor: '#121215',
+    borderRadius: 16,
+    padding: 16,
+    borderWidth: 1.5,
+    borderColor: 'rgba(34, 197, 94, 0.3)',
+    marginBottom: 16,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+  },
+  thresholdsHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    marginBottom: 16,
+  },
+  thresholdsIconBox: {
+    width: 40,
+    height: 40,
+    borderRadius: 12,
+    backgroundColor: 'rgba(34, 197, 94, 0.1)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: 'rgba(34, 197, 94, 0.2)',
+  },
+  thresholdsTitle: {
+    color: '#ffffff',
+    fontSize: 12,
+    fontWeight: '900',
+    letterSpacing: 0.5,
+  },
+  thresholdsSubtitle: {
+    color: '#22c55e',
+    fontSize: 8,
+    fontWeight: '900',
+    letterSpacing: 1,
+    marginTop: 2,
+  },
+  thresholdsGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  thresholdItem: {
+    flex: 1,
+    minWidth: '45%',
+    backgroundColor: '#09090b',
+    borderRadius: 12,
+    padding: 10,
+    borderWidth: 1,
+    borderColor: '#27272a',
+  },
+  thresholdLabel: {
+    color: '#71717a',
+    fontSize: 8,
+    fontWeight: '900',
+    marginBottom: 4,
+  },
+  thresholdValue: {
+    color: '#ffffff',
+    fontSize: 14,
+    fontWeight: '900',
+  },
+  thresholdIndicator: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    marginTop: 4,
+  },
+  thresholdDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: '#22c55e',
+  },
+  thresholdStatus: {
+    color: '#22c55e',
+    fontSize: 8,
+    fontWeight: '900',
   },
   sectionTitle: {
     color: '#ffffff',

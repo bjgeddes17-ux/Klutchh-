@@ -159,28 +159,11 @@ export const KineticVideoPlayer: React.FC<KineticVideoPlayerProps> = ({
   const getScreenCoords = (lm?: MediaPipeLandmark) => {
     if (!lm || !renderedRect) return { x: 0, y: 0, visible: false };
     
-    // MediaPipe landmarks are normalized [0, 1]
+    // MediaPipe landmarks are normalized [0, 1] relative to the video frame
     let lx = lm.x;
     let ly = lm.y;
 
-    // HEURISTIC: Detect 90-degree rotation
-    // Mobile videos are often landscape-stored but portrait-displayed.
-    // If source is landscape (W > H) but rendered is portrait (H > W), transform landmarks.
-    const isSourceLandscape = videoDimensions.width > videoDimensions.height;
-    const isRenderPortrait = renderedRect.height > renderedRect.width;
-
-    if (isSourceLandscape && isRenderPortrait) {
-      // 90-degree clockwise: (x, y) -> (1-y, x)
-      const oldX = lx;
-      lx = 1 - ly;
-      ly = oldX;
-    } else if (!isSourceLandscape && !isRenderPortrait && videoDimensions.width < videoDimensions.height && renderedRect.width > renderedRect.height) {
-      // 90-degree counter-clockwise or similar if stored portrait but displayed landscape
-      const oldX = lx;
-      lx = ly;
-      ly = 1 - oldX;
-    }
-
+    // Correct for mirroring if active
     if (isMirrored) {
       lx = 1 - lx;
     }
@@ -188,6 +171,7 @@ export const KineticVideoPlayer: React.FC<KineticVideoPlayerProps> = ({
     const confidenceValid = lm.visibility === undefined || lm.visibility >= 0.25;
     const visible = lx >= 0 && lx <= 1 && ly >= 0 && ly <= 1 && confidenceValid;
     
+    // MARRIED SYNC: Map precisely to the rendered video pixels inside the container
     const screenX = renderedRect.x + (lx * renderedRect.width);
     const screenY = renderedRect.y + (ly * renderedRect.height);
     
@@ -230,7 +214,8 @@ export const KineticVideoPlayer: React.FC<KineticVideoPlayerProps> = ({
       let status: 'optimal' | 'warning' | 'error' = 'optimal';
       if (angleVal < rule.idealMin || angleVal > rule.idealMax) {
         const delta = angleVal < rule.idealMin ? rule.idealMin - angleVal : angleVal - rule.idealMax;
-        status = delta > 15 ? 'error' : 'warning';
+        // AGGRESSIVE RED: Trigger error if off by more than 5 degrees
+        status = delta > 5 ? 'error' : 'warning';
       }
 
       const cleanName = rule.name
@@ -327,6 +312,13 @@ export const KineticVideoPlayer: React.FC<KineticVideoPlayerProps> = ({
             const p1 = getScreenCoords(landmarks[i1]);
             const p2 = getScreenCoords(landmarks[i2]);
             if (!p1.visible || !p2.visible) return null;
+
+            // DYNAMIC COLOR
+            const hasError = visibleRuleCallouts.some(c => 
+              c.status === 'error' && sportRule.jointRules.find(r => r.id === c.id)?.keypoints.some(kp => kp === i1 || kp === i2)
+            );
+            const color = hasError ? '#ef4444' : '#c084fc';
+
             return (
               <Line
                 key={`left-limb-${idx}`}
@@ -334,8 +326,8 @@ export const KineticVideoPlayer: React.FC<KineticVideoPlayerProps> = ({
                 y1={p1.y}
                 x2={p2.x}
                 y2={p2.y}
-                stroke="#c084fc"
-                strokeWidth={2.5}
+                stroke={color}
+                strokeWidth={3}
                 strokeLinecap="round"
               />
             );
@@ -350,6 +342,13 @@ export const KineticVideoPlayer: React.FC<KineticVideoPlayerProps> = ({
             const p1 = getScreenCoords(landmarks[i1]);
             const p2 = getScreenCoords(landmarks[i2]);
             if (!p1.visible || !p2.visible) return null;
+
+            // DYNAMIC COLOR
+            const hasError = visibleRuleCallouts.some(c => 
+              c.status === 'error' && sportRule.jointRules.find(r => r.id === c.id)?.keypoints.some(kp => kp === i1 || kp === i2)
+            );
+            const color = hasError ? '#ef4444' : '#22c55e';
+
             return (
               <Line
                 key={`right-limb-${idx}`}
@@ -357,8 +356,8 @@ export const KineticVideoPlayer: React.FC<KineticVideoPlayerProps> = ({
                 y1={p1.y}
                 x2={p2.x}
                 y2={p2.y}
-                stroke="#22c55e"
-                strokeWidth={2.5}
+                stroke={color}
+                strokeWidth={3}
                 strokeLinecap="round"
               />
             );
@@ -404,22 +403,31 @@ export const KineticVideoPlayer: React.FC<KineticVideoPlayerProps> = ({
             if (!p.visible) return null;
 
             const isLeft = [11, 13, 15, 23, 25, 27, 29, 31].includes(i);
-            const ringColor = isLeft ? '#c084fc' : '#22c55e';
+            
+            // DYNAMIC COLOR: Check if this joint is part of a failing rule
+            const hasError = visibleRuleCallouts.some(c => 
+              c.status === 'error' && sportRule.jointRules.find(r => r.id === c.id)?.keypoints.includes(i)
+            );
+            const hasWarning = !hasError && visibleRuleCallouts.some(c => 
+              c.status === 'warning' && sportRule.jointRules.find(r => r.id === c.id)?.keypoints.includes(i)
+            );
+
+            const ringColor = hasError ? '#ef4444' : hasWarning ? '#f59e0b' : (isLeft ? '#c084fc' : '#22c55e');
 
             return (
               <G key={`joint-${i}`}>
                 <Circle
                   cx={p.x}
                   cy={p.y}
-                  r={4}
-                  fill="rgba(0,0,0,0.7)"
+                  r={5}
+                  fill="rgba(0,0,0,0.8)"
                   stroke={ringColor}
-                  strokeWidth={1.5}
+                  strokeWidth={2}
                 />
                 <Circle
                   cx={p.x}
                   cy={p.y}
-                  r={1.8}
+                  r={2}
                   fill="#ffffff"
                 />
               </G>
@@ -651,6 +659,13 @@ export const KineticVideoPlayer: React.FC<KineticVideoPlayerProps> = ({
                 const p1 = getScreenCoords(landmarks[i1]);
                 const p2 = getScreenCoords(landmarks[i2]);
                 if (!p1.visible || !p2.visible) return null;
+
+                // DYNAMIC COLOR
+                const hasError = visibleRuleCallouts.some(c => 
+                  c.status === 'error' && sportRule.jointRules.find(r => r.id === c.id)?.keypoints.some(kp => kp === i1 || kp === i2)
+                );
+                const color = hasError ? '#ef4444' : '#c084fc';
+
                 return (
                   <Line
                     key={`fs-left-${idx}`}
@@ -658,8 +673,8 @@ export const KineticVideoPlayer: React.FC<KineticVideoPlayerProps> = ({
                     y1={p1.y}
                     x2={p2.x}
                     y2={p2.y}
-                    stroke="#c084fc"
-                    strokeWidth={3}
+                    stroke={color}
+                    strokeWidth={4}
                     strokeLinecap="round"
                   />
                 );
@@ -674,6 +689,13 @@ export const KineticVideoPlayer: React.FC<KineticVideoPlayerProps> = ({
                 const p1 = getScreenCoords(landmarks[i1]);
                 const p2 = getScreenCoords(landmarks[i2]);
                 if (!p1.visible || !p2.visible) return null;
+
+                // DYNAMIC COLOR
+                const hasError = visibleRuleCallouts.some(c => 
+                  c.status === 'error' && sportRule.jointRules.find(r => r.id === c.id)?.keypoints.some(kp => kp === i1 || kp === i2)
+                );
+                const color = hasError ? '#ef4444' : '#22c55e';
+
                 return (
                   <Line
                     key={`fs-right-${idx}`}
@@ -681,8 +703,8 @@ export const KineticVideoPlayer: React.FC<KineticVideoPlayerProps> = ({
                     y1={p1.y}
                     x2={p2.x}
                     y2={p2.y}
-                    stroke="#22c55e"
-                    strokeWidth={3}
+                    stroke={color}
+                    strokeWidth={4}
                     strokeLinecap="round"
                   />
                 );

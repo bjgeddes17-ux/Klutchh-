@@ -230,6 +230,7 @@ export const GhostCorrectionVisualizer: React.FC<GhostCorrectionVisualizerProps>
   const videoRef = useRef<Video>(null);
   const [containerWidth, setContainerWidth] = useState<number>(Dimensions.get('window').width - 48);
   const [containerHeight, setContainerHeight] = useState<number>(220);
+  const [videoNaturalSize, setVideoNaturalSize] = useState<{ width: number; height: number }>({ width: 9, height: 16 });
 
   useEffect(() => {
     if (videoRef.current && activeFault) {
@@ -296,7 +297,16 @@ export const GhostCorrectionVisualizer: React.FC<GhostCorrectionVisualizerProps>
 
     const getGhostCoords = (lm?: MediaPipeLandmark) => {
       if (!lm) return { x: 0, y: 0, visible: false };
-      return mapLandmarkToScreen(lm, W, H, 9, 16, undefined, 0, false);
+      return mapLandmarkToScreen(
+        lm, 
+        W, 
+        H, 
+        videoNaturalSize.width, 
+        videoNaturalSize.height, 
+        undefined, 
+        0, 
+        false
+      );
     };
 
     const connections = [
@@ -479,6 +489,14 @@ export const GhostCorrectionVisualizer: React.FC<GhostCorrectionVisualizerProps>
               isMuted={true}
               shouldPlay={false}
               style={StyleSheet.absoluteFillObject}
+              onLoad={(data) => {
+                if (data.naturalSize) {
+                  setVideoNaturalSize({
+                    width: data.naturalSize.width,
+                    height: data.naturalSize.height,
+                  });
+                }
+              }}
             />
           ) : null}
           <Svg width={W} height={H} pointerEvents="none">

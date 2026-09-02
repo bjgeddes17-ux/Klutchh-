@@ -208,6 +208,58 @@ export const COMPREHENSIVE_DRILL_LIBRARY: DrillItem[] = [
     targetAngleRule: 'Landing Knee Flexion: 105°-125°',
     equipment: 'Rugby Ball & 2 Lifters'
   },
+  {
+    id: 'rugby-tackle-technique-low',
+    sportId: 'rugby',
+    techniqueId: 'tackling',
+    techniqueName: 'Tackling & Contact',
+    phase: 'Contact Wrap',
+    sportName: 'Rugby Union / League',
+    title: 'Cheek-to-Cheek Low Tackle Drill',
+    category: 'Kinetic Chain',
+    targetJoint: 'Spine & Hips',
+    difficulty: 'Intermediate',
+    reps: '10 tackles',
+    sets: '3 sets',
+    coachingCue: '"Head to the side, cheek to cheek; wrap arms tight around the thighs."',
+    description: 'Focuses on safe head placement and powerful arm wrapping during low tackles.',
+    steps: [
+      'Approach target with short, controlled steps.',
+      'Dip hips low while maintaining a flat back.',
+      'Place head safely to the side of the ball carrier.',
+      'Drive shoulder into mid-thigh and wrap arms tightly.'
+    ],
+    photoUrl: 'https://images.unsplash.com/photo-1517649763962-0c623066013b?auto=format&fit=crop&w=800&q=80',
+    biomechanicalBenefit: 'Minimizes head injury risk and ensures a high tackle completion rate.',
+    targetAngleRule: 'Spine Angle: 35°-50°',
+    equipment: 'Tackle Bag'
+  },
+  {
+    id: 'rugby-scrum-sled-drive',
+    sportId: 'rugby',
+    techniqueId: 'scrums',
+    techniqueName: 'Scrums, Rucks & Lineouts',
+    phase: 'Scrum Drive',
+    sportName: 'Rugby Union / League',
+    title: 'Scrum Sled Sustained Drive',
+    category: 'Strength & Power',
+    targetJoint: 'Knees & Hips',
+    difficulty: 'Elite',
+    reps: '5 drives of 10m',
+    sets: '3 sets',
+    coachingCue: '"Short steps, high knees; maintain horizontal spine throughout the drive."',
+    description: 'Develops leg power and spinal stability during sustained scrum pressure.',
+    steps: [
+      'Engage sled with neutral spine and 90-degree knee bend.',
+      'Drive forward with short, explosive steps.',
+      'Maintain constant pressure without allowing hips to rise above shoulders.',
+      'Reset and repeat after 10 meters.'
+    ],
+    photoUrl: 'https://images.unsplash.com/photo-1534438327276-14e5300c3a48?auto=format&fit=crop&w=800&q=80',
+    biomechanicalBenefit: 'Enhances scrummaging endurance and forward-pack dominance.',
+    targetAngleRule: 'Knee Angle: 90°-110°',
+    equipment: 'Scrum Sled'
+  },
 
   // ==========================================
   // 2. SOCCER / FOOTBALL (10 Drills)
@@ -341,6 +393,58 @@ export const COMPREHENSIVE_DRILL_LIBRARY: DrillItem[] = [
     biomechanicalBenefit: 'Maximizes ball spin rate (RPM) while maintaining adductor muscle protection.',
     targetAngleRule: 'Follow-Through Cross Angle: 35°-45°',
     equipment: 'Soccer Balls & Mannequin Wall'
+  },
+  {
+    id: 'soccer-volley-technique',
+    sportId: 'soccer',
+    techniqueId: 'shooting',
+    techniqueName: 'Shooting & Power Strike',
+    phase: 'Volley Contact',
+    sportName: 'Football / Soccer',
+    title: 'Balanced Volley Impact Drill',
+    category: 'Kinetic Chain',
+    targetJoint: 'Hip Flexion & Core Stability',
+    difficulty: 'Elite',
+    reps: '10 volleys each foot',
+    sets: '3 sets',
+    coachingCue: '"Lock your ankle; keep your body slightly over the ball to keep it down."',
+    description: 'Trains the athlete to strike a moving aerial ball with precision and control.',
+    steps: [
+      'Receive an aerial toss from 5 meters away.',
+      'Anticipate the bounce and set your plant foot.',
+      'Swing your striking leg with a locked ankle and pointed toes.',
+      'Strike the ball at waist height, leaning slightly forward.'
+    ],
+    photoUrl: 'https://images.unsplash.com/photo-1579952363873-27f3bade9f55?auto=format&fit=crop&w=800&q=80',
+    biomechanicalBenefit: 'Improves aerial ball striking accuracy and reduces mishit risk.',
+    targetAngleRule: 'Body Lean: 100°-115°',
+    equipment: 'Soccer Balls'
+  },
+  {
+    id: 'soccer-defensive-jockey',
+    sportId: 'soccer',
+    techniqueId: 'defending',
+    techniqueName: 'Defending & Tackling',
+    phase: 'Jockeying',
+    sportName: 'Football / Soccer',
+    title: 'Low-Center Defensive Jockey',
+    category: 'Stability',
+    targetJoint: 'Knees & Ankles',
+    difficulty: 'Intermediate',
+    reps: '1 minute active',
+    sets: '4 sets',
+    coachingCue: '"Stay on your toes; keep your hips low and don\'t dive in."',
+    description: 'Develops lateral agility and defensive positioning to contain attackers.',
+    steps: [
+      'Face the attacker in a side-on stance.',
+      'Sink into a deep quarter squat, keeping weight on the balls of your feet.',
+      'Shuffle laterally, mirroring the attacker\'s movement.',
+      'Maintain a consistent 1.5-meter distance.'
+    ],
+    photoUrl: 'https://images.unsplash.com/photo-1526232761682-d26e03ac148e?auto=format&fit=crop&w=800&q=80',
+    biomechanicalBenefit: 'Reduces defensive reaction time and prevents being easily bypassed.',
+    targetAngleRule: 'Knee Flexion: 110°-130°',
+    equipment: 'Cones'
   },
 
   // ==========================================
@@ -666,6 +770,58 @@ export const COMPREHENSIVE_DRILL_LIBRARY: DrillItem[] = [
     targetAngleRule: 'Crouch Knee Depth: 75°-90°',
     equipment: 'Keeping Gloves, Pads & Stumps'
   },
+  {
+    id: 'cricket-batting-pull-shot',
+    sportId: 'cricket',
+    techniqueId: 'batting_back_foot',
+    techniqueName: 'Back Foot Batting & Pulls',
+    phase: 'Back Foot Impact',
+    sportName: 'Cricket',
+    title: 'Back-Foot Pull Shot Hip Swivel',
+    category: 'Strength & Power',
+    targetJoint: 'Hips & Shoulders',
+    difficulty: 'Intermediate',
+    reps: '15 shots',
+    sets: '3 sets',
+    coachingCue: '"Weight on the back foot; roll the wrists to keep the ball down."',
+    description: 'Develops powerful rotational mechanics for the pull shot against short-pitched bowling.',
+    steps: [
+      'Identify short ball and step back and across towards off-stump.',
+      'Transfer weight to the back foot with a flexed knee.',
+      'Swing the bat horizontally, rotating your hips 90 degrees.',
+      'Roll the wrists over the ball at the point of impact.'
+    ],
+    photoUrl: 'https://images.unsplash.com/photo-1540747913346-19e32dc3e97e?auto=format&fit=crop&w=800&q=80',
+    biomechanicalBenefit: 'Maximizes horizontal power and eliminates dangerous top-edges.',
+    targetAngleRule: 'Back Knee Flexion: 110°-130°',
+    equipment: 'Bat & Bowling Machine / Feeder'
+  },
+  {
+    id: 'cricket-spin-release-snap-drill',
+    sportId: 'cricket',
+    techniqueId: 'spin_bowling',
+    techniqueName: 'Spin Bowling & Grip',
+    phase: 'Release Instant',
+    sportName: 'Cricket',
+    title: 'Spin Release Finger Snap',
+    category: 'Kinetic Chain',
+    targetJoint: 'Wrist & Fingers',
+    difficulty: 'Elite',
+    reps: '30 flicks',
+    sets: '3 sets',
+    coachingCue: '"Feel the seam; rip your fingers across the ball for maximum revs."',
+    description: 'Improves the revolutions on the ball by strengthening the finger-rip at release.',
+    steps: [
+      'Grip the ball firmly across the seam.',
+      'Practice short-arm releases focusing purely on the finger-snap.',
+      'Aim for a consistent vertical seam rotation.',
+      'Maintain a relaxed but fast wrist snap.'
+    ],
+    photoUrl: 'https://images.unsplash.com/photo-1540747913346-19e32dc3e97e?auto=format&fit=crop&w=800&q=80',
+    biomechanicalBenefit: 'Significantly increases ball drift and sharp turn off the pitch.',
+    targetAngleRule: 'Wrist Snap: 75°-90°',
+    equipment: 'Cricket Balls'
+  },
 
   // ==========================================
   // 6. TENNIS (10 Drills)
@@ -881,6 +1037,110 @@ export const COMPREHENSIVE_DRILL_LIBRARY: DrillItem[] = [
     biomechanicalBenefit: 'Guarantees crisp turf contact and high backspin control.',
     targetAngleRule: 'Lead Wrist Flatness: 175°-180°',
     equipment: '56°/60° Wedge & Practice Balls'
+  },
+  {
+    id: 'netball-overhead-intercept',
+    sportId: 'netball',
+    techniqueId: 'defending',
+    techniqueName: 'Defending & Interceptions',
+    phase: 'Interception',
+    sportName: 'Netball',
+    title: 'High Overhead Intercept Reach',
+    category: 'Kinetic Chain',
+    targetJoint: 'Shoulders & Fingers',
+    difficulty: 'Elite',
+    reps: '10 intercepts',
+    sets: '3 sets',
+    coachingCue: '"Extend through the fingertips; time your jump at the peak of the ball\'s arc."',
+    description: 'Focuses on maximum vertical reach and timing to intercept high lob passes.',
+    steps: [
+      'Position yourself between the attacker and the goal.',
+      'Explode vertically, extending both arms fully overhead.',
+      'Time the reach to tip or catch the ball at your highest point.',
+      'Land softly with balanced weight distribution.'
+    ],
+    photoUrl: 'https://images.unsplash.com/photo-1544648397-52ee3bf82abb?auto=format&fit=crop&w=800&q=80',
+    biomechanicalBenefit: 'Maximizes defensive disruption and turnover potential.',
+    targetAngleRule: 'Shoulder Extension: 165°-180°',
+    equipment: 'Netball & Feeder'
+  },
+  {
+    id: 'hockey-reverse-sweep',
+    sportId: 'hockey',
+    techniqueId: 'passing',
+    techniqueName: 'Passing & Receiving',
+    phase: 'Reverse Pass',
+    sportName: 'Field Hockey',
+    title: 'Reverse Edge Sweep Power',
+    category: 'Strength & Power',
+    targetJoint: 'Wrists & Hips',
+    difficulty: 'Intermediate',
+    reps: '15 passes',
+    sets: '3 sets',
+    coachingCue: '"Stay low; sweep the stick flat across the turf using your core."',
+    description: 'Develops power and accuracy for the reverse-edge sweep pass.',
+    steps: [
+      'Adopt a low, wide stance with knees flexed.',
+      'Turn the stick over to the reverse edge.',
+      'Sweep the stick horizontally across the turf.',
+      'Rotate hips through the impact for maximum power.'
+    ],
+    photoUrl: 'https://images.unsplash.com/photo-1517649763962-0c623066013b?auto=format&fit=crop&w=800&q=80',
+    biomechanicalBenefit: 'Enables high-velocity passing from difficult angles.',
+    targetAngleRule: 'Wrist Snap: 140°-165°',
+    equipment: 'Hockey Sticks & Balls'
+  },
+  {
+    id: 'tennis-backhand-slice',
+    sportId: 'tennis',
+    techniqueId: 'backhand',
+    techniqueName: 'Backhand (1H & 2H)',
+    phase: 'Slice Impact',
+    sportName: 'Tennis',
+    title: 'Backhand Slice Carving Drill',
+    category: 'Kinetic Chain',
+    targetJoint: 'Shoulders & Wrists',
+    difficulty: 'Intermediate',
+    reps: '20 slices',
+    sets: '3 sets',
+    coachingCue: '"High-to-low motion; carve around the ball for maximum backspin."',
+    description: 'Develops the technical carving motion required for a deep, skidding slice.',
+    steps: [
+      'Start with the racquet high behind the shoulder.',
+      'Step forward with the lead foot into a closed stance.',
+      'Swing down and through the ball at a 45-degree angle.',
+      'Finish with the racquet extended low and wide.'
+    ],
+    photoUrl: 'https://images.unsplash.com/photo-1595435062638-348f3214582f?auto=format&fit=crop&w=800&q=80',
+    biomechanicalBenefit: 'Creates low bounce and defensive utility on the backhand side.',
+    targetAngleRule: 'Swing Path Angle: 40°-50°',
+    equipment: 'Tennis Racquet & Balls'
+  },
+  {
+    id: 'golf-bunker-explosion',
+    sportId: 'golf',
+    techniqueId: 'short_game',
+    techniqueName: 'Wedge & Short Game',
+    phase: 'Sand Impact',
+    sportName: 'Golf',
+    title: 'Bunker Explosion Splash Drill',
+    category: 'Kinetic Chain',
+    targetJoint: 'Knees & Hips',
+    difficulty: 'Intermediate',
+    reps: '15 shots',
+    sets: '3 sets',
+    coachingCue: '"Hit the sand, not the ball; splash the sand onto the green."',
+    description: 'Trains the athlete to hit behind the ball in bunkers to create an explosion effect.',
+    steps: [
+      'Dig feet into the sand and open the clubface.',
+      'Aim 2 inches behind the ball.',
+      'Swing aggressively through the sand with a full follow-through.',
+      'Focus on the "splash" of sand carrying the ball out.'
+    ],
+    photoUrl: 'https://images.unsplash.com/photo-1535131749006-b7f58c99034b?auto=format&fit=crop&w=800&q=80',
+    biomechanicalBenefit: 'Ensures consistent bunker escapes and distance control.',
+    targetAngleRule: 'Knee Flexion: 115°-135°',
+    equipment: 'Wedge & Bunker'
   }
 ];
 
