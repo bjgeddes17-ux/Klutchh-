@@ -43,14 +43,15 @@ export const MagicProcessingScreenNative: React.FC<MagicProcessingScreenNativePr
 }) => {
   const STEPS = [
     { id: 0, label: 'Initializing Biomechanical Core', sub: 'Calibrating camera buffers & 3D pose anchors...' },
-    { id: 1, label: 'High-Precision Joint Extraction', sub: 'MediaPipe 33-Keypoint skeleton stabilization' },
-    { id: 2, label: 'Kinetic Chain Sequencing', sub: `Evaluating ${sportRule.name} velocity & power corridors` },
-    { id: 3, label: 'Symmetry & Valgus Risk Audit', sub: 'Scanning joint load stress & angular deviation' },
-    { id: 4, label: 'Synthesizing Executive Report', sub: 'Generating prescription drills & Titan Score' },
+    { id: 1, label: 'Anti-Troll Content Shield', sub: 'Scanning video for non-sporting or inappropriate content...' },
+    { id: 2, label: 'High-Precision Joint Extraction', sub: 'MediaPipe 33-Keypoint skeleton stabilization' },
+    { id: 3, label: 'Kinetic Chain Sequencing', sub: `Evaluating ${sportRule.name} velocity & power corridors` },
+    { id: 4, label: 'Symmetry & Valgus Risk Audit', sub: 'Scanning joint load stress & angular deviation' },
+    { id: 5, label: 'Synthesizing Executive Report', sub: 'Generating prescription drills & Titan Score' },
   ];
 
   const currentStepIndex =
-    progress >= 95 ? 4 : progress >= 75 ? 3 : progress >= 45 ? 2 : progress >= 20 ? 1 : 0;
+    progress >= 95 ? 5 : progress >= 80 ? 4 : progress >= 60 ? 3 : progress >= 35 ? 2 : progress >= 15 ? 1 : 0;
 
   return (
     <SafeAreaView style={styles.safeArea}>

@@ -27,6 +27,7 @@ import {
   ShieldCheck,
   Maximize2,
   Minimize2,
+  RefreshCw,
   X,
 } from 'lucide-react-native';
 import { SportRule, FrameAnalysis, MediaPipeLandmark } from '../../types';
@@ -47,6 +48,8 @@ interface KineticVideoPlayerProps {
   onPause?: () => void;
 }
 
+import { useVideoPlayback } from '../../hooks/useVideoPlayback.native';
+
 export const KineticVideoPlayer: React.FC<KineticVideoPlayerProps> = ({
   videoUrl,
   sportRule,
@@ -61,15 +64,31 @@ export const KineticVideoPlayer: React.FC<KineticVideoPlayerProps> = ({
   onTogglePlay,
   onPause,
 }) => {
-  const videoRef = useRef<Video>(null);
-  const fullscreenVideoRef = useRef<Video>(null);
-  const isScrubbing = useRef(false);
-  const [layout, setLayout] = useState({ width: 360, height: 640 });
-  const [selectedSpeed, setSelectedSpeed] = useState<number>(playbackRate);
-  const [duration, setDuration] = useState<number>(3.99);
+  const [isFullscreenModal, setIsFullscreenModal] = useState<boolean>(false);
+
+  const {
+    videoRef,
+    fullscreenVideoRef,
+    duration,
+    selectedSpeed,
+    isScrubbing,
+    handlePlaybackStatusUpdate,
+    handleSeek,
+    handleStep,
+    handleChangeSpeed,
+  } = useVideoPlayback({
+    isPlaying,
+    onTimeUpdate,
+    onDurationChange,
+    onPause,
+    isFullscreenModal,
+    initialPlaybackRate: playbackRate,
+  });
+
+  const [isMirrored, setIsMirrored] = useState(false);
+  const [layout, setLayout] = useState({ width: 360, height: 480 });
   const [videoDimensions, setVideoDimensions] = useState({ width: 9, height: 16 });
   const [renderedRect, setRenderedRect] = useState<{ x: number; y: number; width: number; height: number } | null>(null);
-  const [isFullscreenModal, setIsFullscreenModal] = useState<boolean>(false);
   const [fullscreenLayout, setFullscreenLayout] = useState({
     width: Dimensions.get('window').width,
     height: Dimensions.get('window').height,
@@ -107,19 +126,6 @@ export const KineticVideoPlayer: React.FC<KineticVideoPlayerProps> = ({
     return sortedFrames[idx];
   }, [sortedFrames, currentTime]);
 
-  const handlePlaybackStatusUpdate = (status: AVPlaybackStatus, fromFullscreen: boolean) => {
-    // Only accept updates from the active player to prevent "fighting" between instances
-    if (status.isLoaded && !isScrubbing.current && (fromFullscreen === isFullscreenModal)) {
-      const posSec = status.positionMillis / 1000;
-      onTimeUpdate(posSec);
-      if (status.durationMillis) {
-        const durSec = status.durationMillis / 1000;
-        setDuration(durSec);
-        onDurationChange?.(durSec);
-      }
-    }
-  };
-
   const handleReadyForDisplay = (event: any) => {
     if (event.naturalSize) {
       const { width, height } = event.naturalSize;
@@ -146,40 +152,6 @@ export const KineticVideoPlayer: React.FC<KineticVideoPlayerProps> = ({
     }
   }, [layout, fullscreenLayout, videoDimensions, isFullscreenModal]);
 
-  const handleSeek = (ratio: number, finished: boolean = false) => {
-    isScrubbing.current = !finished;
-    
-    // Pause on seek start to prevent fighting
-    if (!finished && isPlaying && onPause) {
-      onPause();
-    }
-
-    const targetSec = Math.max(0, Math.min(duration, ratio * duration));
-    
-    // Always update parent time so skeleton moves
-    onTimeUpdate(targetSec);
-    
-    // Perform actual video seek
-    if (isFullscreenModal) {
-      fullscreenVideoRef.current?.setPositionAsync(targetSec * 1000, { toleranceMillisBefore: 0, toleranceMillisAfter: 0 });
-    } else {
-      videoRef.current?.setPositionAsync(targetSec * 1000, { toleranceMillisBefore: 0, toleranceMillisAfter: 0 });
-    }
-  };
-
-  const handleStep = (direction: 'back' | 'forward') => {
-    const stepTime = 0.05;
-    const target = direction === 'back'
-      ? Math.max(0, currentTime - stepTime)
-      : Math.min(duration, currentTime + stepTime);
-    videoRef.current?.setPositionAsync(target * 1000);
-  };
-
-  const handleChangeSpeed = (speed: number) => {
-    setSelectedSpeed(speed);
-    videoRef.current?.setRateAsync(speed, true);
-  };
-
   const landmarks = currentFrame?.landmarks;
   const curW = isFullscreenModal ? fullscreenLayout.width : layout.width;
   const curH = isFullscreenModal ? fullscreenLayout.height : layout.height;
@@ -187,10 +159,32 @@ export const KineticVideoPlayer: React.FC<KineticVideoPlayerProps> = ({
   const getScreenCoords = (lm?: MediaPipeLandmark) => {
     if (!lm || !renderedRect) return { x: 0, y: 0, visible: false };
     
-    // Using the pre-calculated renderedRect for absolute precision
-    const lx = lm.x;
-    const ly = lm.y;
-    
+    // MediaPipe landmarks are normalized [0, 1]
+    let lx = lm.x;
+    let ly = lm.y;
+
+    // HEURISTIC: Detect 90-degree rotation
+    // Mobile videos are often landscape-stored but portrait-displayed.
+    // If source is landscape (W > H) but rendered is portrait (H > W), transform landmarks.
+    const isSourceLandscape = videoDimensions.width > videoDimensions.height;
+    const isRenderPortrait = renderedRect.height > renderedRect.width;
+
+    if (isSourceLandscape && isRenderPortrait) {
+      // 90-degree clockwise: (x, y) -> (1-y, x)
+      const oldX = lx;
+      lx = 1 - ly;
+      ly = oldX;
+    } else if (!isSourceLandscape && !isRenderPortrait && videoDimensions.width < videoDimensions.height && renderedRect.width > renderedRect.height) {
+      // 90-degree counter-clockwise or similar if stored portrait but displayed landscape
+      const oldX = lx;
+      lx = ly;
+      ly = 1 - oldX;
+    }
+
+    if (isMirrored) {
+      lx = 1 - lx;
+    }
+
     const confidenceValid = lm.visibility === undefined || lm.visibility >= 0.25;
     const visible = lx >= 0 && lx <= 1 && ly >= 0 && ly <= 1 && confidenceValid;
     
@@ -278,7 +272,7 @@ export const KineticVideoPlayer: React.FC<KineticVideoPlayerProps> = ({
         resizeMode={ResizeMode.CONTAIN}
         shouldPlay={isPlaying && !isFullscreenModal}
         isLooping={true}
-        onPlaybackStatusUpdate={(s) => handlePlaybackStatusUpdate(s, false)}
+        onPlaybackStatusUpdate={isFullscreenModal ? undefined : (s) => handlePlaybackStatusUpdate(s, false)}
         onReadyForDisplay={handleReadyForDisplay}
         style={styles.video}
       />
@@ -514,24 +508,22 @@ export const KineticVideoPlayer: React.FC<KineticVideoPlayerProps> = ({
           style={styles.scrubberTrack}
           onStartShouldSetResponder={() => true}
           onResponderGrant={(e) => {
-            isScrubbing.current = true;
             const touchX = e.nativeEvent.locationX;
-            const scrubberW = curW - 32;
-            const ratio = Math.max(0, Math.min(1, touchX / Math.max(1, scrubberW)));
-            handleSeek(ratio, false);
+            const trackW = Math.max(1, curW - 32);
+            const ratio = Math.max(0, Math.min(1, (touchX - 16) / (trackW - 32)));
+            handleSeek(ratio, false, currentTime);
           }}
           onResponderMove={(e) => {
             const touchX = e.nativeEvent.locationX;
-            const scrubberW = curW - 32;
-            const ratio = Math.max(0, Math.min(1, touchX / Math.max(1, scrubberW)));
-            handleSeek(ratio, false);
+            const trackW = Math.max(1, curW - 32);
+            const ratio = Math.max(0, Math.min(1, (touchX - 16) / (trackW - 32)));
+            handleSeek(ratio, false, currentTime);
           }}
           onResponderRelease={(e) => {
             const touchX = e.nativeEvent.locationX;
-            const scrubberW = curW - 32;
-            const ratio = Math.max(0, Math.min(1, touchX / Math.max(1, scrubberW)));
-            handleSeek(ratio, true);
-            isScrubbing.current = false;
+            const trackW = Math.max(1, curW - 32);
+            const ratio = Math.max(0, Math.min(1, (touchX - 16) / (trackW - 32)));
+            handleSeek(ratio, true, currentTime);
           }}
         >
           <View
@@ -548,56 +540,48 @@ export const KineticVideoPlayer: React.FC<KineticVideoPlayerProps> = ({
           />
         </View>
 
-        {/* Buttons Row */}
-        <View style={styles.transportRow}>
-          <TouchableOpacity
-            onPress={onTogglePlay}
-            style={styles.playButton}
-          >
-            {isPlaying ? <Pause color="#000" size={14} /> : <Play color="#000" size={14} />}
-            <Text style={styles.playButtonText}>{isPlaying ? 'PAUSE' : 'PLAY'}</Text>
-          </TouchableOpacity>
+        {/* Primary Controls Row */}
+        <View style={styles.primaryControlsRow}>
+          <View style={styles.playbackGroup}>
+            <TouchableOpacity onPress={() => handleStep('back', currentTime)} style={styles.stepButton}>
+              <SkipBack color="#fff" size={18} />
+            </TouchableOpacity>
 
-          <TouchableOpacity
-            onPress={() => handleStep('back')}
-            style={styles.iconButton}
-          >
-            <SkipBack color="#fff" size={14} />
-          </TouchableOpacity>
+            <TouchableOpacity onPress={onTogglePlay} style={styles.playButtonBig}>
+              {isPlaying ? <Pause color="#000" fill="#000" size={24} /> : <Play color="#000" fill="#000" size={24} />}
+            </TouchableOpacity>
 
-          <TouchableOpacity
-            onPress={() => handleStep('forward')}
-            style={styles.iconButton}
-          >
-            <SkipForward color="#fff" size={14} />
-          </TouchableOpacity>
+            <TouchableOpacity onPress={() => handleStep('forward', currentTime)} style={styles.stepButton}>
+              <SkipForward color="#fff" size={18} />
+            </TouchableOpacity>
+          </View>
 
-          <View style={styles.timePill}>
-            <Text style={styles.timeText}>
-              {currentTime.toFixed(2)}s / {duration.toFixed(2)}s
-            </Text>
+          <View style={styles.timeInfoGroup}>
+            <Text style={styles.mainTimeText}>{currentTime.toFixed(2)}s</Text>
+            <Text style={styles.slashText}>/</Text>
+            <Text style={styles.durationTimeText}>{duration.toFixed(2)}s</Text>
           </View>
         </View>
 
-        {/* Speed Pills */}
+        {/* Secondary Controls Row (Speed) */}
         <View style={styles.secondaryControlsRow}>
-          <View style={styles.speedGroup}>
+          <View style={styles.speedSelectorGrid}>
             {[0.25, 0.5, 1].map((spd) => (
               <TouchableOpacity
                 key={spd}
                 onPress={() => handleChangeSpeed(spd)}
                 style={[
-                  styles.speedPill,
+                  styles.speedPillLarge,
                   selectedSpeed === spd && styles.speedPillActive,
                 ]}
               >
                 <Text
                   style={[
-                    styles.speedText,
+                    styles.speedTextLarge,
                     selectedSpeed === spd && styles.speedTextActive,
                   ]}
                 >
-                  {spd}x
+                  {spd === 1 ? 'NORMAL (1x)' : `${spd}x SLOW`}
                 </Text>
               </TouchableOpacity>
             ))}
@@ -624,7 +608,7 @@ export const KineticVideoPlayer: React.FC<KineticVideoPlayerProps> = ({
             resizeMode={ResizeMode.CONTAIN}
             shouldPlay={isPlaying && isFullscreenModal}
             isLooping={true}
-            onPlaybackStatusUpdate={(s) => handlePlaybackStatusUpdate(s, true)}
+            onPlaybackStatusUpdate={isFullscreenModal ? (s) => handlePlaybackStatusUpdate(s, true) : undefined}
             onReadyForDisplay={handleReadyForDisplay}
             style={StyleSheet.absoluteFillObject}
           />
@@ -831,24 +815,22 @@ export const KineticVideoPlayer: React.FC<KineticVideoPlayerProps> = ({
               style={styles.scrubberTrack}
               onStartShouldSetResponder={() => true}
               onResponderGrant={(e) => {
-                isScrubbing.current = true;
                 const touchX = e.nativeEvent.locationX;
-                const scrubberW = Math.max(1, fullscreenLayout.width - 60); 
-                const ratio = Math.max(0, Math.min(1, touchX / scrubberW));
-                handleSeek(ratio, false);
+                const trackW = Math.max(1, fullscreenLayout.width - 64);
+                const ratio = Math.max(0, Math.min(1, (touchX - 32) / (trackW - 64)));
+                handleSeek(ratio, false, currentTime);
               }}
               onResponderMove={(e) => {
                 const touchX = e.nativeEvent.locationX;
-                const scrubberW = Math.max(1, fullscreenLayout.width - 60);
-                const ratio = Math.max(0, Math.min(1, touchX / scrubberW));
-                handleSeek(ratio, false);
+                const trackW = Math.max(1, fullscreenLayout.width - 64);
+                const ratio = Math.max(0, Math.min(1, (touchX - 32) / (trackW - 64)));
+                handleSeek(ratio, false, currentTime);
               }}
               onResponderRelease={(e) => {
                 const touchX = e.nativeEvent.locationX;
-                const scrubberW = Math.max(1, fullscreenLayout.width - 60);
-                const ratio = Math.max(0, Math.min(1, touchX / scrubberW));
-                handleSeek(ratio, true);
-                isScrubbing.current = false;
+                const trackW = Math.max(1, fullscreenLayout.width - 64);
+                const ratio = Math.max(0, Math.min(1, (touchX - 32) / (trackW - 64)));
+                handleSeek(ratio, true, currentTime);
               }}
             >
               <View
@@ -865,52 +847,56 @@ export const KineticVideoPlayer: React.FC<KineticVideoPlayerProps> = ({
               />
             </View>
 
-            <View style={styles.transportRow}>
-              <TouchableOpacity
-                onPress={onTogglePlay}
-                style={styles.playButton}
-              >
-                {isPlaying ? <Pause color="#000" size={14} /> : <Play color="#000" size={14} />}
-                <Text style={styles.playButtonText}>{isPlaying ? 'PAUSE' : 'PLAY'}</Text>
-              </TouchableOpacity>
+            <View style={styles.primaryControlsRow}>
+              <View style={styles.playbackGroup}>
+                <TouchableOpacity
+                  onPress={() => setIsMirrored(!isMirrored)}
+                  style={[
+                    styles.stepButton,
+                    isMirrored && { backgroundColor: 'rgba(234, 179, 8, 0.2)', borderColor: '#eab308', borderWidth: 1 }
+                  ]}
+                >
+                  <RefreshCw color={isMirrored ? "#eab308" : "#ffffff"} size={16} />
+                </TouchableOpacity>
 
-              <TouchableOpacity
-                onPress={() => handleStep('back')}
-                style={styles.iconButton}
-              >
-                <SkipBack color="#fff" size={14} />
-              </TouchableOpacity>
+                <TouchableOpacity onPress={() => handleStep('back', currentTime)} style={styles.stepButton}>
+                  <SkipBack color="#fff" size={18} />
+                </TouchableOpacity>
 
-              <TouchableOpacity
-                onPress={() => handleStep('forward')}
-                style={styles.iconButton}
-              >
-                <SkipForward color="#fff" size={14} />
-              </TouchableOpacity>
+                <TouchableOpacity onPress={onTogglePlay} style={styles.playButtonBig}>
+                  {isPlaying ? <Pause color="#000" fill="#000" size={24} /> : <Play color="#000" fill="#000" size={24} />}
+                </TouchableOpacity>
 
-              <View style={styles.timePill}>
-                <Text style={styles.timeText}>
-                  {currentTime.toFixed(2)}s / {duration.toFixed(2)}s
-                </Text>
+                <TouchableOpacity onPress={() => handleStep('forward', currentTime)} style={styles.stepButton}>
+                  <SkipForward color="#fff" size={18} />
+                </TouchableOpacity>
               </View>
 
-              <View style={styles.speedGroup}>
+              <View style={styles.timeInfoGroup}>
+                <Text style={styles.mainTimeText}>{currentTime.toFixed(2)}s</Text>
+                <Text style={styles.slashText}>/</Text>
+                <Text style={styles.durationTimeText}>{duration.toFixed(2)}s</Text>
+              </View>
+            </View>
+
+            <View style={styles.secondaryControlsRow}>
+              <View style={styles.speedSelectorGrid}>
                 {[0.25, 0.5, 1].map((spd) => (
                   <TouchableOpacity
                     key={spd}
                     onPress={() => handleChangeSpeed(spd)}
                     style={[
-                      styles.speedPill,
+                      styles.speedPillLarge,
                       selectedSpeed === spd && styles.speedPillActive,
                     ]}
                   >
                     <Text
                       style={[
-                        styles.speedText,
+                        styles.speedTextLarge,
                         selectedSpeed === spd && styles.speedTextActive,
                       ]}
                     >
-                      {spd}x
+                      {spd === 1 ? 'NORMAL' : `${spd}x`}
                     </Text>
                   </TouchableOpacity>
                 ))}
@@ -926,16 +912,19 @@ export const KineticVideoPlayer: React.FC<KineticVideoPlayerProps> = ({
 const styles = StyleSheet.create({
   container: {
     width: '100%',
-    aspectRatio: 16 / 9,
-    minHeight: 220,
-    maxHeight: 340,
+    height: 480, // High-impact centerpiece height
     backgroundColor: '#000000',
-    borderRadius: 20,
+    borderRadius: 24,
     overflow: 'hidden',
     position: 'relative',
-    borderWidth: 1,
-    borderColor: '#27272a',
-    marginBottom: 14,
+    borderWidth: 1.5,
+    borderColor: 'rgba(255,255,255,0.1)',
+    marginBottom: 20,
+    elevation: 10,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.5,
+    shadowRadius: 20,
   },
   video: {
     ...StyleSheet.absoluteFillObject,
@@ -1013,12 +1002,97 @@ const styles = StyleSheet.create({
     bottom: 0,
     left: 0,
     right: 0,
-    backgroundColor: 'rgba(9, 9, 11, 0.94)',
-    paddingHorizontal: 12,
-    paddingTop: 8,
-    paddingBottom: 8,
+    backgroundColor: 'rgba(9, 9, 11, 0.98)',
+    paddingHorizontal: 16,
+    paddingTop: 12,
+    paddingBottom: 16,
     borderTopWidth: 1,
-    borderTopColor: '#27272a',
+    borderTopColor: 'rgba(255,255,255,0.08)',
+  },
+  primaryControlsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 12,
+  },
+  playbackGroup: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  playButtonBig: {
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    backgroundColor: '#eab308',
+    justifyContent: 'center',
+    alignItems: 'center',
+    elevation: 4,
+  },
+  stepButton: {
+    width: 42,
+    height: 42,
+    borderRadius: 21,
+    backgroundColor: 'rgba(255,255,255,0.08)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  timeInfoGroup: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(255,255,255,0.05)',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 12,
+    gap: 4,
+  },
+  mainTimeText: {
+    color: '#ffffff',
+    fontSize: 16,
+    fontWeight: '800',
+    fontVariant: ['tabular-nums'],
+  },
+  slashText: {
+    color: 'rgba(255,255,255,0.3)',
+    fontSize: 14,
+  },
+  durationTimeText: {
+    color: 'rgba(255,255,255,0.5)',
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  secondaryControlsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  speedSelectorGrid: {
+    flex: 1,
+    flexDirection: 'row',
+    gap: 8,
+  },
+  speedPillLarge: {
+    flex: 1,
+    height: 34,
+    backgroundColor: 'rgba(255,255,255,0.05)',
+    borderRadius: 8,
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.05)',
+  },
+  speedPillActive: {
+    backgroundColor: 'rgba(234, 179, 8, 0.15)',
+    borderColor: '#eab308',
+    borderWidth: 1,
+  },
+  speedTextLarge: {
+    color: 'rgba(255,255,255,0.6)',
+    fontSize: 10,
+    fontWeight: 'bold',
+    letterSpacing: 0.5,
+  },
+  speedTextActive: {
+    color: '#eab308',
   },
   fullscreenContainer: {
     flex: 1,
@@ -1068,94 +1142,26 @@ const styles = StyleSheet.create({
   },
   scrubberTrack: {
     width: '100%',
-    height: 6,
-    backgroundColor: '#27272a',
-    borderRadius: 3,
+    height: 10,
+    backgroundColor: 'rgba(255,255,255,0.1)',
+    borderRadius: 5,
     position: 'relative',
-    marginBottom: 8,
+    marginBottom: 16,
   },
   scrubberProgress: {
     height: '100%',
     backgroundColor: '#eab308',
-    borderRadius: 3,
+    borderRadius: 5,
   },
   scrubberThumb: {
     position: 'absolute',
-    top: -3,
-    width: 12,
-    height: 12,
-    borderRadius: 6,
+    top: -4,
+    width: 18,
+    height: 18,
+    borderRadius: 9,
     backgroundColor: '#ffffff',
-    borderWidth: 2,
+    borderWidth: 3,
     borderColor: '#eab308',
-  },
-  transportRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-  },
-  playButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    backgroundColor: '#eab308',
-    paddingHorizontal: 12,
-    paddingVertical: 5,
-    borderRadius: 8,
-  },
-  playButtonText: {
-    color: '#000000',
-    fontSize: 10,
-    fontWeight: '900',
-  },
-  iconButton: {
-    backgroundColor: '#18181b',
-    padding: 6,
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: '#27272a',
-  },
-  timePill: {
-    backgroundColor: '#18181b',
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 6,
-    borderWidth: 1,
-    borderColor: '#27272a',
-  },
-  timeText: {
-    color: '#a1a1aa',
-    fontSize: 9.5,
-    fontFamily: 'monospace',
-    fontWeight: 'bold',
-  },
-  secondaryControlsRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'flex-end',
-    marginTop: 4,
-  },
-  speedGroup: {
-    flexDirection: 'row',
-    gap: 4,
-  },
-  speedPill: {
-    backgroundColor: '#18181b',
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    borderRadius: 4,
-  },
-  speedPillActive: {
-    backgroundColor: '#27272a',
-    borderWidth: 1,
-    borderColor: '#eab308',
-  },
-  speedText: {
-    color: '#71717a',
-    fontSize: 8.5,
-    fontWeight: 'bold',
-  },
-  speedTextActive: {
-    color: '#eab308',
+    elevation: 3,
   },
 });

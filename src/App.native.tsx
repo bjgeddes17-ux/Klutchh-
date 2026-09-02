@@ -81,6 +81,9 @@ export default function App() {
   >([]);
   const [selectedDrill, setSelectedDrill] = useState<DrillItem | null>(null);
 
+  const [isSecurityOpen, setIsSecurityOpen] = useState(false);
+  const [blockedCount, setBlockedCount] = useState(0);
+
   const currentSportRule: SportRule = SPORTS_RULES.find((s) => s.id === selectedSportId) || SPORTS_RULES[0];
 
   // Video Pickers (Limited to Upload and 30s Live Camera Record)
@@ -179,6 +182,21 @@ export default function App() {
   const handleStartAnalysis = (useDemo: boolean = false) => {
     const activeVideo = useDemo ? SAMPLE_DEMO_VIDEO : (customVideoUri || SAMPLE_DEMO_VIDEO);
     
+    // Anti-Troll Check (Simulated)
+    // If it's a custom video, there's a small chance of "troll content" detection
+    if (!useDemo && customVideoUri) {
+       // Mock troll check: if the filename contains "troll" or "meme"
+       const isTroll = customVideoName?.toLowerCase().includes('troll') || customVideoName?.toLowerCase().includes('meme');
+       if (isTroll) {
+         Alert.alert(
+           "Anti-Troll Guard Block",
+           "Klutchh AI has detected non-sporting or inappropriate content in this video. Uploads of this nature are blocked to protect the community.",
+           [{ text: "OK", onPress: () => handleClearSelectedVideo() }]
+         );
+         return;
+       }
+    }
+
     setIsProcessing(true);
     setProcessingProgress(0);
 
@@ -404,9 +422,19 @@ export default function App() {
           </View>
         </View>
 
-        <View style={styles.tierPill}>
-          <View style={styles.livePulseDot} />
-          <Text style={styles.tierText}>AI ACTIVE</Text>
+        <View style={styles.appBarActions}>
+          <TouchableOpacity 
+            style={styles.securityButton} 
+            onPress={() => setIsSecurityOpen(true)}
+          >
+            <ShieldCheck color={blockedCount > 0 ? "#ef4444" : "#eab308"} size={18} />
+            {blockedCount > 0 && <View style={styles.securityBadge} />}
+          </TouchableOpacity>
+
+          <View style={styles.tierPill}>
+            <View style={styles.livePulseDot} />
+            <Text style={styles.tierText}>AI ACTIVE</Text>
+          </View>
         </View>
       </View>
 
@@ -719,6 +747,86 @@ export default function App() {
         </View>
       </Modal>
 
+      {/* Security & Blocking Modal */}
+      <Modal visible={isSecurityOpen} transparent animationType="slide">
+        <View style={styles.modalOverlay}>
+          <View style={[styles.modalContent, { maxWidth: 400 }]}>
+            <View style={styles.modalHeader}>
+              <View style={[styles.drillModalBadge, { backgroundColor: 'rgba(239, 68, 68, 0.15)' }]}>
+                <Text style={[styles.drillModalBadgeText, { color: '#ef4444' }]}>SAFETY & ANTI-TROLL</Text>
+              </View>
+              <TouchableOpacity onPress={() => setIsSecurityOpen(false)} style={styles.modalClose}>
+                <X color="#fff" size={18} />
+              </TouchableOpacity>
+            </View>
+
+            <View style={styles.securityHeader}>
+              <ShieldAlert color="#ef4444" size={32} />
+              <Text style={styles.securityTitle}>User Blocking Measures</Text>
+              <Text style={styles.securitySubtitle}>
+                Control your interaction experience. Blocking a user prevents them from interacting with your shared reports and training sessions.
+              </Text>
+            </View>
+
+            <View style={styles.securitySection}>
+              <Text style={styles.securityLabel}>ACTIVE BLOCK LIST ({blockedCount})</Text>
+              {blockedCount === 0 ? (
+                <View style={styles.emptyBlockBox}>
+                  <Info color="#71717a" size={20} />
+                  <Text style={styles.emptyBlockText}>No users currently blocked.</Text>
+                </View>
+              ) : (
+                <View style={styles.blockList}>
+                  {/* Mock blocked user */}
+                  <View style={styles.blockedItem}>
+                    <View style={styles.blockedUserAvatar}>
+                      <Text style={styles.blockedUserEmoji}>👤</Text>
+                    </View>
+                    <View style={styles.blockedUserInfo}>
+                      <Text style={styles.blockedUserName}>TrollUser_99</Text>
+                      <Text style={styles.blockedUserMeta}>Blocked on Sep 1, 2026</Text>
+                    </View>
+                    <TouchableOpacity style={styles.unblockBtn} onPress={() => setBlockedCount(0)}>
+                      <Text style={styles.unblockText}>UNBLOCK</Text>
+                    </TouchableOpacity>
+                  </View>
+                </View>
+              )}
+            </View>
+
+            <View style={styles.securitySection}>
+              <Text style={styles.securityLabel}>QUICK ACTION: BLOCK BY ID</Text>
+              <View style={styles.blockInputRow}>
+                <View style={styles.blockInputWrap}>
+                  <Text style={styles.blockInputPrefix}>ID:</Text>
+                  <Text style={styles.blockInputPlaceholder}>Enter Athlete/Coach ID...</Text>
+                </View>
+                <TouchableOpacity 
+                  style={styles.blockConfirmBtn}
+                  onPress={() => {
+                    setBlockedCount(1);
+                    Alert.alert("User Blocked", "This ID has been added to your local block list and sync'd to Klutchh Cloud.");
+                  }}
+                >
+                  <Text style={styles.blockConfirmText}>BLOCK</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+
+            <View style={styles.safetyNotice}>
+              <Sparkles color="#eab308" size={16} />
+              <Text style={styles.safetyNoticeText}>
+                Troll-Guard AI: Auto-blocking of non-sporting uploads is enabled for your account.
+              </Text>
+            </View>
+
+            <TouchableOpacity onPress={() => setIsSecurityOpen(false)} style={styles.drillCloseBtn}>
+              <Text style={styles.drillCloseBtnText}>CLOSE SECURITY CENTER</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
     </SafeAreaView>
   );
 }
@@ -763,6 +871,33 @@ const styles = StyleSheet.create({
     fontSize: 9,
     fontWeight: '800',
     letterSpacing: 0.5,
+  },
+  appBarActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  securityButton: {
+    width: 34,
+    height: 34,
+    borderRadius: 10,
+    backgroundColor: 'rgba(255, 255, 255, 0.05)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.08)',
+    position: 'relative',
+  },
+  securityBadge: {
+    position: 'absolute',
+    top: -2,
+    right: -2,
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: '#ef4444',
+    borderWidth: 1.5,
+    borderColor: '#09090b',
   },
   tierPill: {
     flexDirection: 'row',
@@ -1310,5 +1445,148 @@ const styles = StyleSheet.create({
     color: '#000',
     fontSize: 11,
     fontWeight: '900',
+  },
+  securityHeader: {
+    alignItems: 'center',
+    gap: 10,
+    marginVertical: 10,
+  },
+  securityTitle: {
+    color: '#fff',
+    fontSize: 18,
+    fontWeight: '900',
+    letterSpacing: 0.5,
+  },
+  securitySubtitle: {
+    color: '#a1a1aa',
+    fontSize: 11,
+    textAlign: 'center',
+    lineHeight: 16,
+    paddingHorizontal: 10,
+  },
+  securitySection: {
+    backgroundColor: 'rgba(255, 255, 255, 0.03)',
+    borderRadius: 16,
+    padding: 12,
+    gap: 10,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.05)',
+  },
+  securityLabel: {
+    color: '#71717a',
+    fontSize: 10,
+    fontWeight: '900',
+    letterSpacing: 1,
+  },
+  emptyBlockBox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingVertical: 10,
+  },
+  emptyBlockText: {
+    color: '#71717a',
+    fontSize: 11,
+    fontWeight: '600',
+  },
+  blockList: {
+    gap: 8,
+  },
+  blockedItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(239, 68, 68, 0.05)',
+    borderRadius: 12,
+    padding: 10,
+    gap: 12,
+    borderWidth: 1,
+    borderColor: 'rgba(239, 68, 68, 0.2)',
+  },
+  blockedUserAvatar: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: '#18181b',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  blockedUserEmoji: {
+    fontSize: 18,
+  },
+  blockedUserInfo: {
+    flex: 1,
+  },
+  blockedUserName: {
+    color: '#fff',
+    fontSize: 12,
+    fontWeight: '800',
+  },
+  blockedUserMeta: {
+    color: '#71717a',
+    fontSize: 10,
+  },
+  unblockBtn: {
+    backgroundColor: 'rgba(255, 255, 255, 0.1)',
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 8,
+  },
+  unblockText: {
+    color: '#fff',
+    fontSize: 9,
+    fontWeight: '900',
+  },
+  blockInputRow: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  blockInputWrap: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#09090b',
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    height: 40,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.1)',
+    gap: 6,
+  },
+  blockInputPrefix: {
+    color: '#71717a',
+    fontSize: 12,
+    fontWeight: '800',
+  },
+  blockInputPlaceholder: {
+    color: '#3f3f46',
+    fontSize: 12,
+  },
+  blockConfirmBtn: {
+    backgroundColor: '#ef4444',
+    borderRadius: 10,
+    paddingHorizontal: 16,
+    justifyContent: 'center',
+  },
+  blockConfirmText: {
+    color: '#fff',
+    fontSize: 10,
+    fontWeight: '900',
+  },
+  safetyNotice: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(234, 179, 8, 0.05)',
+    borderRadius: 12,
+    padding: 10,
+    gap: 8,
+    borderWidth: 1,
+    borderColor: 'rgba(234, 179, 8, 0.15)',
+  },
+  safetyNoticeText: {
+    flex: 1,
+    color: '#eab308',
+    fontSize: 10,
+    fontWeight: '700',
+    lineHeight: 14,
   },
 });

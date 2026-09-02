@@ -64,6 +64,14 @@
     "/trophyCards/{cardId}": {
       "schema": "trophyCards",
       "description": "User-designed Athlete Trading cards"
+    },
+    "/users/{userId}/blockedUsers/{blockedUserId}": {
+      "schema": "users",
+      "description": "Users blocked by this account"
+    },
+    "/globalBans/{userId}": {
+      "schema": "users",
+      "description": "Users banned from the platform for trolling/abuse"
     }
   }
 }
