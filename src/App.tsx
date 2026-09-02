@@ -40,6 +40,7 @@ function App() {
   const [selectedTechniqueId, setSelectedTechniqueId] = useState<string>(SPORTS_RULES[0].techniques[0]?.id || '');
   const [selectedMovementPhase, setSelectedMovementPhase] = useState<string>(SPORTS_RULES[0].phases[0]);
   const [selectedDrillId, setSelectedDrillId] = useState<string | null>(null);
+  const [isSimulatingNative, setIsSimulatingNative] = useState(false);
   const [customVideoUrl, setCustomVideoUrl] = useState<string | null>(null);
   const [customVideoFile, setCustomVideoFile] = useState<File | null>(null);
   const [targetAthleteAnchor, setTargetAthleteAnchor] = useState<'auto' | 'left' | 'center' | 'right'>('auto');
@@ -205,6 +206,20 @@ function App() {
 
   return (
     <div className="min-h-screen bg-zinc-950 text-zinc-100 flex flex-col font-sans selection:bg-red-600 selection:text-white">
+      {/* Floating Debug Toggle for Native Verification */}
+      <div className="fixed bottom-4 right-4 z-[9999] flex flex-col items-end gap-2">
+        <button
+          onClick={() => setIsSimulatingNative(!isSimulatingNative)}
+          className={`px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest border transition-all shadow-2xl flex items-center gap-2 ${
+            isSimulatingNative 
+              ? 'bg-red-600 border-red-400 text-white animate-pulse' 
+              : 'bg-zinc-900 border-zinc-800 text-zinc-400 hover:text-white'
+          }`}
+        >
+          {isSimulatingNative ? '🔴 SIMULATING NATIVE METADATA TRAP' : '📱 TEST NATIVE LOGIC'}
+        </button>
+      </div>
+
       <Header 
         selectedSportId={selectedSportId}
         onSelectSport={handleSportChange}
@@ -282,6 +297,7 @@ function App() {
             startTime={currentStartTime}
             endTime={currentEndTime}
             cropBox={currentCropBox}
+            debugForceNativeRotation={isSimulatingNative}
           />
         )}
 

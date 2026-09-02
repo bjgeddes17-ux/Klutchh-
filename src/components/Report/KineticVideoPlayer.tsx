@@ -20,6 +20,7 @@ interface KineticVideoPlayerProps {
   onToggleFullscreen?: () => void;
   isFullscreen?: boolean;
   onError?: (error: boolean) => void;
+  debugForceNativeRotation?: boolean;
 }
 
 export const KineticVideoPlayer: React.FC<KineticVideoPlayerProps> = ({
@@ -37,7 +38,8 @@ export const KineticVideoPlayer: React.FC<KineticVideoPlayerProps> = ({
   onTogglePlay,
   onToggleFullscreen,
   isFullscreen = false,
-  onError
+  onError,
+  debugForceNativeRotation = false
 }) => {
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -178,7 +180,10 @@ export const KineticVideoPlayer: React.FC<KineticVideoPlayerProps> = ({
               anglesToDraw,
               sportRule,
               activeFramePhase,
-              false
+              false,
+              width,
+              height,
+              debugForceNativeRotation
             );
           }
         }

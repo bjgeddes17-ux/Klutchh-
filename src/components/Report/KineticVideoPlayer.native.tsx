@@ -157,25 +157,19 @@ export const KineticVideoPlayer: React.FC<KineticVideoPlayerProps> = ({
   const curH = isFullscreenModal ? fullscreenLayout.height : layout.height;
 
   const getScreenCoords = (lm?: MediaPipeLandmark) => {
-    if (!lm || !renderedRect) return { x: 0, y: 0, visible: false };
-    
-    // MediaPipe landmarks are normalized [0, 1] relative to the video frame
-    let lx = lm.x;
-    let ly = lm.y;
-
-    // Correct for mirroring if active
-    if (isMirrored) {
-      lx = 1 - lx;
-    }
-
-    const confidenceValid = lm.visibility === undefined || lm.visibility >= 0.25;
-    const visible = lx >= 0 && lx <= 1 && ly >= 0 && ly <= 1 && confidenceValid;
-    
-    // MARRIED SYNC: Map precisely to the rendered video pixels inside the container
-    const screenX = renderedRect.x + (lx * renderedRect.width);
-    const screenY = renderedRect.y + (ly * renderedRect.height);
-    
-    return { x: screenX, y: screenY, visible };
+    return mapLandmarkToScreen(
+      lm!,
+      isFullscreenModal ? fullscreenLayout.width : layout.width,
+      isFullscreenModal ? fullscreenLayout.height : layout.height,
+      videoDimensions.width,
+      videoDimensions.height,
+      undefined,
+      0,
+      isMirrored,
+      false, // debugForceNativeRotation
+      true,  // isNative: TRUE
+      landmarks
+    );
   };
 
   // Render Real Biometric Rules Callouts (Computing real angles from landmarks)
@@ -327,7 +321,7 @@ export const KineticVideoPlayer: React.FC<KineticVideoPlayerProps> = ({
                 x2={p2.x}
                 y2={p2.y}
                 stroke={color}
-                strokeWidth={3}
+                strokeWidth={5}
                 strokeLinecap="round"
               />
             );
@@ -357,7 +351,7 @@ export const KineticVideoPlayer: React.FC<KineticVideoPlayerProps> = ({
                 x2={p2.x}
                 y2={p2.y}
                 stroke={color}
-                strokeWidth={3}
+                strokeWidth={5}
                 strokeLinecap="round"
               />
             );
@@ -419,7 +413,7 @@ export const KineticVideoPlayer: React.FC<KineticVideoPlayerProps> = ({
                 <Circle
                   cx={p.x}
                   cy={p.y}
-                  r={5}
+                  r={8}
                   fill="rgba(0,0,0,0.8)"
                   stroke={ringColor}
                   strokeWidth={2}
@@ -427,7 +421,7 @@ export const KineticVideoPlayer: React.FC<KineticVideoPlayerProps> = ({
                 <Circle
                   cx={p.x}
                   cy={p.y}
-                  r={2}
+                  r={3}
                   fill="#ffffff"
                 />
               </G>

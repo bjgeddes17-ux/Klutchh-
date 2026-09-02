@@ -41,6 +41,7 @@ interface GhostCorrectionVisualizerProps {
   sportRule: SportRule;
   onSeekTimestamp?: (timestamp: number) => void;
   videoUrl?: string;
+  debugForceNativeRotation?: boolean;
 }
 
 export const GhostCorrectionVisualizer: React.FC<GhostCorrectionVisualizerProps> = ({
@@ -49,6 +50,7 @@ export const GhostCorrectionVisualizer: React.FC<GhostCorrectionVisualizerProps>
   sportRule,
   onSeekTimestamp,
   videoUrl,
+  debugForceNativeRotation = false
 }) => {
   const [selectedFaultIdx, setSelectedFaultIdx] = useState<number>(0);
   const [isPlayingAnimation, setIsPlayingAnimation] = useState<boolean>(true);

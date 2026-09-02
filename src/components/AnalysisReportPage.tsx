@@ -127,6 +127,7 @@ interface AnalysisReportPageProps {
   startTime?: number;
   endTime?: number;
   cropBox?: { x: number; y: number; width: number; height: number };
+  debugForceNativeRotation?: boolean;
 }
 
 export const AnalysisReportPage: React.FC<AnalysisReportPageProps> = ({
@@ -154,7 +155,8 @@ export const AnalysisReportPage: React.FC<AnalysisReportPageProps> = ({
   onUpdateDrillProgress,
   startTime = 0,
   endTime,
-  cropBox
+  cropBox,
+  debugForceNativeRotation = false
 }) => {
   const videoRef = useRef<HTMLVideoElement>(null);
   const stageContainerRef = useRef<HTMLDivElement>(null);
@@ -619,6 +621,7 @@ export const AnalysisReportPage: React.FC<AnalysisReportPageProps> = ({
           onToggleFullscreen={toggleFullscreen}
           isFullscreen={isFullscreen}
           onError={setVideoError}
+          debugForceNativeRotation={debugForceNativeRotation}
         />
         <div className="absolute inset-x-0 bottom-0 z-30">
           <TimelineScrubber
@@ -684,6 +687,7 @@ export const AnalysisReportPage: React.FC<AnalysisReportPageProps> = ({
               sportRule={sportRule}
               onSeekTimestamp={handleSeek}
               videoUrl={videoUrl}
+              debugForceNativeRotation={debugForceNativeRotation}
             />
           )}
 

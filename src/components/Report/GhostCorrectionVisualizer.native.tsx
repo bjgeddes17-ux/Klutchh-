@@ -305,7 +305,10 @@ export const GhostCorrectionVisualizer: React.FC<GhostCorrectionVisualizerProps>
         videoNaturalSize.height, 
         undefined, 
         0, 
-        false
+        false,
+        false, // debugForceNativeRotation
+        true,  // isNative: TRUE
+        lms
       );
     };
 
@@ -381,10 +384,10 @@ export const GhostCorrectionVisualizer: React.FC<GhostCorrectionVisualizerProps>
               key={`joint-${i}`}
               cx={p.x}
               cy={p.y}
-              r={color === '#22c55e' ? 3.5 : 3}
+              r={color === '#22c55e' ? 7 : 6}
               fill="#09090b"
               stroke={color}
-              strokeWidth={1.5}
+              strokeWidth={2}
             />
           );
         })}
@@ -489,7 +492,7 @@ export const GhostCorrectionVisualizer: React.FC<GhostCorrectionVisualizerProps>
               isMuted={true}
               shouldPlay={false}
               style={StyleSheet.absoluteFillObject}
-              onLoad={(data) => {
+              onReadyForDisplay={(data) => {
                 if (data.naturalSize) {
                   setVideoNaturalSize({
                     width: data.naturalSize.width,
@@ -507,10 +510,10 @@ export const GhostCorrectionVisualizer: React.FC<GhostCorrectionVisualizerProps>
             {viewMode === 'ghost_overlay' && (
               <>
                 {/* 1. Actual Detected Skeleton (Red) */}
-                {renderSkeleton(actualLms, '#ef4444', 3, 0.95)}
+                {renderSkeleton(actualLms, '#ef4444', 5.5, 0.95)}
 
                 {/* 2. Optimal Ghost Skeleton (Glowing Emerald Green) */}
-                {renderSkeleton(ghostLms, '#22c55e', 2.5, 0.85)}
+                {renderSkeleton(ghostLms, '#22c55e', 4.5, 0.85)}
               </>
             )}
 
@@ -520,7 +523,7 @@ export const GhostCorrectionVisualizer: React.FC<GhostCorrectionVisualizerProps>
                 {renderSkeleton(
                   interpolatedLms,
                   morphInterpolation < 0.5 ? '#ef4444' : '#22c55e',
-                  3,
+                  5.5,
                   1
                 )}
               </>
@@ -530,11 +533,11 @@ export const GhostCorrectionVisualizer: React.FC<GhostCorrectionVisualizerProps>
               <>
                 {/* Left side actual */}
                 <G transform={`translate(${-W * 0.22}, 0) scale(0.85)`}>
-                  {renderSkeleton(actualLms, '#ef4444', 3, 0.9)}
+                  {renderSkeleton(actualLms, '#ef4444', 5.5, 0.9)}
                 </G>
                 {/* Right side optimal */}
                 <G transform={`translate(${W * 0.22}, 0) scale(0.85)`}>
-                  {renderSkeleton(ghostLms, '#22c55e', 3, 0.9)}
+                  {renderSkeleton(ghostLms, '#22c55e', 5.5, 0.9)}
                 </G>
               </>
             )}

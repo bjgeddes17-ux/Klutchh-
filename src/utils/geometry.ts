@@ -151,13 +151,32 @@ export function drawPoseSkeleton(
   angles: Record<string, number> = {},
   sportRule?: SportRule,
   activePhase?: string,
-  shouldClear = true
+  shouldClear = true,
+  videoWidth: number = 640,
+  videoHeight: number = 360,
+  debugForceNativeRotation: boolean = false
 ) {
   if (shouldClear) {
     ctx.clearRect(0, 0, width, height);
   }
 
   if (!landmarks || landmarks.length === 0) return;
+
+  const getCoord = (lm: MediaPipeLandmark) => {
+    return mapLandmarkToScreen(
+      lm,
+      width,
+      height,
+      videoWidth,
+      videoHeight,
+      undefined,
+      0,
+      false,
+      debugForceNativeRotation,
+      false, // isNative: false for web drawing
+      landmarks
+    );
+  };
 
   // HIGH-TECH BIOMECHANICAL VOLUMETRIC ATHLETE SILHOUETTE UNDERLAY
   const sportId = (sportRule?.id as string) || 'rugby';
@@ -170,17 +189,17 @@ export function drawPoseSkeleton(
   ctx.lineCap = 'round';
 
   // 1. Draw stylized torso polygon frame (11=L Shoulder, 12=R Shoulder, 24=R Hip, 23=L Hip)
-  const p11 = landmarks[11];
-  const p12 = landmarks[12];
-  const p24 = landmarks[24];
-  const p23 = landmarks[23];
+  const c11 = getCoord(landmarks[11]);
+  const c12 = getCoord(landmarks[12]);
+  const c24 = getCoord(landmarks[24]);
+  const c23 = getCoord(landmarks[23]);
 
-  if (p11 && p12 && p24 && p23) {
+  if (c11.visible && c12.visible && c24.visible && c23.visible) {
     ctx.beginPath();
-    ctx.moveTo(p11.x * width, p11.y * height);
-    ctx.lineTo(p12.x * width, p12.y * height);
-    ctx.lineTo(p24.x * width, p24.y * height);
-    ctx.lineTo(p23.x * width, p23.y * height);
+    ctx.moveTo(c11.x, c11.y);
+    ctx.lineTo(c12.x, c12.y);
+    ctx.lineTo(c24.x, c24.y);
+    ctx.lineTo(c23.x, c23.y);
     ctx.closePath();
     ctx.fillStyle = activeThemeColor.replace('0.3', '0.08'); // light inner body volume
     ctx.fill();
@@ -199,20 +218,20 @@ export function drawPoseSkeleton(
   ];
 
   limbPairs.forEach(([i1, i2]) => {
-    const pt1 = landmarks[i1];
-    const pt2 = landmarks[i2];
-    if (pt1 && pt2 && (pt1.visibility === undefined || pt1.visibility > 0.3)) {
+    const c1 = getCoord(landmarks[i1]);
+    const c2 = getCoord(landmarks[i2]);
+    if (c1.visible && c2.visible) {
       ctx.beginPath();
-      ctx.moveTo(pt1.x * width, pt1.y * height);
-      ctx.lineTo(pt2.x * width, pt2.y * height);
+      ctx.moveTo(c1.x, c1.y);
+      ctx.lineTo(c2.x, c2.y);
       ctx.strokeStyle = activeThemeColor.replace('0.3', '0.12');
       ctx.lineWidth = 5; // Sleeker volumetric bone outline (reduced from 14 to 5)
       ctx.stroke();
 
       // Additional center core glow
       ctx.beginPath();
-      ctx.moveTo(pt1.x * width, pt1.y * height);
-      ctx.lineTo(pt2.x * width, pt2.y * height);
+      ctx.moveTo(c1.x, c1.y);
+      ctx.lineTo(c2.x, c2.y);
       ctx.strokeStyle = '#ffffff';
       ctx.globalAlpha = 0.04;
       ctx.lineWidth = 3;
@@ -222,10 +241,10 @@ export function drawPoseSkeleton(
   });
 
   // 3. Glowing helmet/head capsule (centered around Nose 0)
-  const nose = landmarks[0];
-  if (nose) {
+  const cNose = getCoord(landmarks[0]);
+  if (cNose.visible) {
     ctx.beginPath();
-    ctx.arc(nose.x * width, nose.y * height - 8, 12, 0, 2 * Math.PI);
+    ctx.arc(cNose.x, cNose.y - 8, 12, 0, 2 * Math.PI);
     ctx.fillStyle = activeThemeColor.replace('0.3', '0.1');
     ctx.fill();
     ctx.strokeStyle = activeThemeColor.replace('0.3', '0.2');
@@ -271,13 +290,13 @@ export function drawPoseSkeleton(
   const rightJoints = new Set([12, 14, 16, 24, 26, 28, 30, 32]);
 
   POSE_CONNECTIONS.forEach(({ points: [i1, i2] }) => {
-    const pt1 = landmarks[i1];
-    const pt2 = landmarks[i2];
+    const c1 = getCoord(landmarks[i1]);
+    const c2 = getCoord(landmarks[i2]);
 
-    if (pt1 && pt2 && (pt1.visibility === undefined || pt1.visibility > 0.25)) {
+    if (c1.visible && c2.visible) {
       ctx.beginPath();
-      ctx.moveTo(pt1.x * width, pt1.y * height);
-      ctx.lineTo(pt2.x * width, pt2.y * height);
+      ctx.moveTo(c1.x, c1.y);
+      ctx.lineTo(c2.x, c2.y);
 
       const isLeftLimb = leftJoints.has(i1) && leftJoints.has(i2);
       const isRightLimb = rightJoints.has(i1) && rightJoints.has(i2);
@@ -304,11 +323,12 @@ export function drawPoseSkeleton(
 
   // 2. Draw Keypoint Joint Dots & Target Rings
   landmarks.forEach((pt, idx) => {
-    if (pt && (pt.visibility === undefined || pt.visibility > 0.25)) {
+    const c = getCoord(pt);
+    if (c.visible) {
       if (idx > 0 && idx < 11) return; // Skip facial keypoint clutter
 
-      const cx = pt.x * width;
-      const cy = pt.y * height;
+      const cx = c.x;
+      const cy = c.y;
 
       const isLeft = leftJoints.has(idx);
       const defaultColor = isLeft ? '#c084fc' : '#22c55e';
@@ -362,21 +382,21 @@ export function drawPoseSkeleton(
 
     visibleRules.forEach((rule, idx) => {
       const [kp1, kp2, kp3] = rule.keypoints;
-      const p1 = landmarks[kp1];
-      const vertex = landmarks[kp2];
-      const p3 = landmarks[kp3];
+      const c1 = getCoord(landmarks[kp1]);
+      const vertexCoord = getCoord(landmarks[kp2]);
+      const c3 = getCoord(landmarks[kp3]);
 
-      if (p1 && vertex && p3) {
-        const vx = vertex.x * width;
-        const vy = vertex.y * height;
-        const angleVal = angles[rule.id] ?? calculateAngle(p1, vertex, p3);
+      if (c1.visible && vertexCoord.visible && c3.visible) {
+        const vx = vertexCoord.x;
+        const vy = vertexCoord.y;
+        const angleVal = angles[rule.id] ?? calculateAngle(landmarks[kp1], landmarks[kp2], landmarks[kp3]);
         const status = ruleResults[rule.id] || 'optimal';
         const statusColor = getColorForStatus(status);
 
         // Draw Angle Arc
         ctx.beginPath();
-        const startAngle = Math.atan2((p1.y - vertex.y) * height, (p1.x - vertex.x) * width);
-        const endAngle = Math.atan2((p3.y - vertex.y) * height, (p3.x - vertex.x) * width);
+        const startAngle = Math.atan2(c1.y - vy, c1.x - vx);
+        const endAngle = Math.atan2(c3.y - vy, c3.x - vx);
         ctx.arc(vx, vy, 20, startAngle, endAngle);
         ctx.strokeStyle = statusColor;
         ctx.lineWidth = 2;
@@ -618,6 +638,36 @@ export function getVideoRenderRect(
 }
 
 /**
+ * Heuristically detects if a skeleton is "lying down" in a portrait container
+ * and returns the necessary rotation (90 for CCW, 270 for CW, 0 for none).
+ */
+export function detectAutoRotation(
+  landmarks: MediaPipeLandmark[],
+  isPortraitContainer: boolean
+): number {
+  if (!landmarks || landmarks.length < 25 || !isPortraitContainer) return 0;
+
+  const nose = landmarks[0];
+  const lHip = landmarks[23];
+  const rHip = landmarks[24];
+
+  if (!nose || !lHip || !rHip) return 0;
+
+  const avgHipX = (lHip.x + rHip.x) / 2;
+  const avgHipY = (lHip.y + rHip.y) / 2;
+  const dx = nose.x - avgHipX;
+  const dy = nose.y - avgHipY;
+
+  // If the skeleton's head-to-hip axis is more horizontal than vertical, it's rotated
+  if (Math.abs(dx) > Math.abs(dy)) {
+    // dx > 0 means head is to the right of hips -> Rotate 90 CCW to stand up
+    return dx > 0 ? 90 : 270;
+  }
+
+  return 0;
+}
+
+/**
  * Transforms a normalized landmark coordinate (0..1) into screen pixel coordinates 
  * accounting for letterboxing, cropping, and sensor orientation rotation.
  */
@@ -629,7 +679,10 @@ export function mapLandmarkToScreen(
   videoHeight: number = 16,
   cropBox?: { x: number; y: number; width: number; height: number },
   rotation: number = 0,
-  isMirrored: boolean = false
+  isMirrored: boolean = false,
+  debugForceNativeRotation: boolean = false,
+  isNative: boolean = false,
+  allLandmarks?: MediaPipeLandmark[]
 ): { x: number; y: number; visible: boolean } {
   if (!landmark || containerWidth <= 0 || containerHeight <= 0) {
     return { x: 0, y: 0, visible: false };
@@ -638,21 +691,59 @@ export function mapLandmarkToScreen(
   let lx = landmark.x;
   let ly = landmark.y;
 
+  // AUTO-DETECTION: Detect 90-degree rotation (Landscape storage but Portrait display)
+  // This is the #1 cause of 'Ghosting' on mobile.
+  const isSourceLandscape = videoWidth > videoHeight;
+  const isTargetPortrait = containerHeight > containerWidth;
+  
+  let finalVW = videoWidth;
+  let finalVH = videoHeight;
+  let finalRotation = rotation;
+
+  // AGGRESSIVE HEURISTIC: Handle mismatch between video metadata and visual orientation.
+  // On Native Mobile, landmarks are often calculated on the raw 1920x1080 buffer 
+  // while the display is 1080x1920. We must detect and fix this "Sideways Skeleton" trap.
+  
+  // Dynamic Auto-Orientation: Check if the skeleton seems to be lying down in a portrait container
+  if ((isNative || debugForceNativeRotation) && isTargetPortrait && finalRotation === 0) {
+    const autoRot = allLandmarks ? detectAutoRotation(allLandmarks, true) : 0;
+    
+    if (autoRot !== 0) {
+      finalRotation = autoRot;
+      // If we are rotating landmarks to stand them up, we only swap the source dimensions 
+      // if they were reported as Landscape. If they are already Portrait, swapping them 
+      // back to Landscape would break the letterbox/aspect mapping.
+      if (videoWidth > videoHeight) {
+        finalVW = videoHeight;
+        finalVH = videoWidth;
+      }
+    }
+  }
+
+  // Standard Source/Target mismatch backup (if landmarks logic didn't trigger)
+  if (finalRotation === 0 && (debugForceNativeRotation || (isSourceLandscape && isTargetPortrait))) {
+    finalRotation = 90; // Default to CCW as it's common
+    if (videoWidth > videoHeight) {
+      finalVW = videoHeight;
+      finalVH = videoWidth;
+    }
+  }
+
   // 0. Handle selfie camera horizontal mirroring
   if (isMirrored) {
     lx = 1.0 - lx;
   }
 
-  // 1. Handle sensor/camera orientation rotation if specified
-  if (rotation === 90) {
+  // 1. Handle sensor/camera orientation rotation
+  if (finalRotation === 90) {
     const temp = lx;
     lx = ly;
     ly = 1.0 - temp;
-  } else if (rotation === 270) {
+  } else if (finalRotation === 270) {
     const temp = lx;
     lx = 1.0 - ly;
     ly = temp;
-  } else if (rotation === 180) {
+  } else if (finalRotation === 180) {
     lx = 1.0 - lx;
     ly = 1.0 - ly;
   }
@@ -663,15 +754,15 @@ export function mapLandmarkToScreen(
     ly = (ly - cropBox.y) / cropBox.height;
   }
 
-  // Check visibility bounds and strict confidence threshold (>= 0.5)
-  const confidenceValid = landmark.visibility === undefined || landmark.visibility >= 0.5;
+  // Check visibility bounds
+  const confidenceValid = landmark.visibility === undefined || landmark.visibility >= 0.25;
   const visible = lx >= 0 && lx <= 1 && ly >= 0 && ly <= 1 && confidenceValid;
 
   // 3. Calculate video letterbox render rect
-  const videoRect = getVideoRenderRect(containerWidth, containerHeight, videoWidth, videoHeight);
+  const videoRect = getVideoRenderRect(containerWidth, containerHeight, finalVW, finalVH);
 
-  const screenX = Math.round(videoRect.x + (lx * videoRect.width));
-  const screenY = Math.round(videoRect.y + (ly * videoRect.height));
+  const screenX = videoRect.x + (lx * videoRect.width);
+  const screenY = videoRect.y + (ly * videoRect.height);
 
   return { x: screenX, y: screenY, visible };
 }
