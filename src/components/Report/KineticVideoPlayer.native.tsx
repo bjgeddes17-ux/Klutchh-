@@ -93,6 +93,15 @@ export const KineticVideoPlayer: React.FC<KineticVideoPlayerProps> = ({
     width: Dimensions.get('window').width,
     height: Dimensions.get('window').height,
   });
+  const [showTelemetry, setShowTelemetry] = useState<boolean>(true);
+
+  // Auto-hide telemetry after 2 seconds on load
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setShowTelemetry(false);
+    }, 2000);
+    return () => clearTimeout(timer);
+  }, []);
 
   const handleLayout = (e: LayoutChangeEvent) => {
     const { width, height } = e.nativeEvent.layout;
@@ -242,6 +251,41 @@ export const KineticVideoPlayer: React.FC<KineticVideoPlayerProps> = ({
 
   return (
     <View style={styles.container} onLayout={handleLayout}>
+      {/* 2-Second Telemetry Diagnostic HUD for Android/Oppo */}
+      {showTelemetry && (
+        <View style={{
+          position: 'absolute',
+          top: 12,
+          left: 12,
+          right: 12,
+          backgroundColor: 'rgba(9, 9, 11, 0.95)',
+          borderColor: '#eab308',
+          borderWidth: 1.5,
+          borderRadius: 14,
+          padding: 12,
+          zIndex: 1000,
+          elevation: 10,
+        }}>
+          <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
+            <Text style={{ color: '#eab308', fontSize: 11, fontWeight: '900', letterSpacing: 0.5 }}>
+              📱 ANDROID TELEMETRY (OPPO VERIFIED)
+            </Text>
+            <TouchableOpacity onPress={() => setShowTelemetry(false)}>
+              <Text style={{ color: '#a1a1aa', fontSize: 11, fontWeight: 'bold' }}>✕</Text>
+            </TouchableOpacity>
+          </View>
+          <Text style={{ color: '#ffffff', fontSize: 10, fontFamily: 'monospace' }}>
+            Container: {Math.round(curW)} x {Math.round(curH)}
+          </Text>
+          <Text style={{ color: '#ffffff', fontSize: 10, fontFamily: 'monospace' }}>
+            Video Natural Size: {videoDimensions.width} x {videoDimensions.height}
+          </Text>
+          <Text style={{ color: '#ffffff', fontSize: 10, fontFamily: 'monospace' }}>
+            Letterbox Rect: {renderedRect ? `x:${Math.round(renderedRect.x)} y:${Math.round(renderedRect.y)} w:${Math.round(renderedRect.width)} h:${Math.round(renderedRect.height)}` : 'Computing...'}
+          </Text>
+        </View>
+      )}
+
       {/* Video Surface */}
       <Video
         ref={videoRef}
@@ -493,14 +537,23 @@ export const KineticVideoPlayer: React.FC<KineticVideoPlayerProps> = ({
           </View>
         </View>
 
-        {/* Overlay Fullscreen Toggle Button */}
-        <TouchableOpacity
-          onPress={() => setIsFullscreenModal(true)}
-          style={styles.fullscreenOverlayBtn}
-        >
-          <Maximize2 color="#eab308" size={14} />
-          <Text style={styles.fullscreenOverlayText}>FULLSCREEN</Text>
-        </TouchableOpacity>
+        {/* Telemetry Toggle & Fullscreen Buttons */}
+        <View style={{ flexDirection: 'row', gap: 8, alignItems: 'center' }}>
+          <TouchableOpacity
+            onPress={() => setShowTelemetry(prev => !prev)}
+            style={[styles.fullscreenOverlayBtn, { borderColor: '#eab308', backgroundColor: 'rgba(234, 179, 8, 0.15)' }]}
+          >
+            <Text style={[styles.fullscreenOverlayText, { color: '#eab308' }]}>📱 INFO</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            onPress={() => setIsFullscreenModal(true)}
+            style={styles.fullscreenOverlayBtn}
+          >
+            <Maximize2 color="#eab308" size={14} />
+            <Text style={styles.fullscreenOverlayText}>FULLSCREEN</Text>
+          </TouchableOpacity>
+        </View>
       </View>
 
       {/* Bottom Transport Controls */}

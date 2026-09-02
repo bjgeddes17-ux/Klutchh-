@@ -640,6 +640,7 @@ export function getVideoRenderRect(
 /**
  * Heuristically detects if a skeleton is "lying down" in a portrait container
  * and returns the necessary rotation (90 for CCW, 270 for CW, 0 for none).
+ * Uses a multi-point check (torso + legs) to avoid false positives on leaning athletes.
  */
 export function detectAutoRotation(
   landmarks: MediaPipeLandmark[],
@@ -647,21 +648,40 @@ export function detectAutoRotation(
 ): number {
   if (!landmarks || landmarks.length < 25 || !isPortraitContainer) return 0;
 
+  // Key points for skeletal orientation
   const nose = landmarks[0];
   const lHip = landmarks[23];
   const rHip = landmarks[24];
+  const lKnee = landmarks[25];
+  const rKnee = landmarks[26];
 
-  if (!nose || !lHip || !rHip) return 0;
+  if (!nose || !lHip || !rHip || !lKnee || !rKnee) return 0;
 
   const avgHipX = (lHip.x + rHip.x) / 2;
   const avgHipY = (lHip.y + rHip.y) / 2;
-  const dx = nose.x - avgHipX;
-  const dy = nose.y - avgHipY;
+  const avgKneeX = (lKnee.x + rKnee.x) / 2;
+  const avgKneeY = (lKnee.y + rKnee.y) / 2;
 
-  // If the skeleton's head-to-hip axis is more horizontal than vertical, it's rotated
-  if (Math.abs(dx) > Math.abs(dy)) {
-    // dx > 0 means head is to the right of hips -> Rotate 90 CCW to stand up
-    return dx > 0 ? 90 : 270;
+  // 1. Torso vector (Hips to Nose)
+  const tDx = nose.x - avgHipX;
+  const tDy = nose.y - avgHipY;
+
+  // 2. Leg vector (Knees to Hips)
+  // In a forward lean (bowling/golf), the torso is horizontal but legs remain mostly vertical.
+  // In a sideways-recorded video, BOTH torso and legs will appear horizontal.
+  const lDx = avgHipX - avgKneeX;
+  const lDy = avgHipY - avgKneeY;
+
+  const absTDx = Math.abs(tDx);
+  const absTDy = Math.abs(tDy);
+  const absLDx = Math.abs(lDx);
+  const absLDy = Math.abs(lDy);
+
+  // Sideways Detection: Both torso AND legs are significantly more horizontal than vertical.
+  // We use a 1.3x threshold to be reasonably sensitive but the double-check makes it safe.
+  if (absTDx > absTDy * 1.3 && absLDx > absLDy * 1.3) {
+    // dx > 0 means head is to the right of hips in the raw buffer
+    return tDx > 0 ? 90 : 270;
   }
 
   return 0;
@@ -691,50 +711,44 @@ export function mapLandmarkToScreen(
   let lx = landmark.x;
   let ly = landmark.y;
 
-  // AUTO-DETECTION: Detect 90-degree rotation (Landscape storage but Portrait display)
-  // This is the #1 cause of 'Ghosting' on mobile.
+  // 1. Determine Effective Rotation and Source Dimensions
   const isSourceLandscape = videoWidth > videoHeight;
   const isTargetPortrait = containerHeight > containerWidth;
   
-  let finalVW = videoWidth;
-  let finalVH = videoHeight;
   let finalRotation = rotation;
 
-  // AGGRESSIVE HEURISTIC: Handle mismatch between video metadata and visual orientation.
-  // On Native Mobile, landmarks are often calculated on the raw 1920x1080 buffer 
-  // while the display is 1080x1920. We must detect and fix this "Sideways Skeleton" trap.
-  
-  // Dynamic Auto-Orientation: Check if the skeleton seems to be lying down in a portrait container
-  if ((isNative || debugForceNativeRotation) && isTargetPortrait && finalRotation === 0) {
-    const autoRot = allLandmarks ? detectAutoRotation(allLandmarks, true) : 0;
+  // UNIVERSAL NATIVE FIX: 
+  // If the metadata is missing (0) but we are in a portrait view, check if we need a 90-degree Stand-Up.
+  if (finalRotation === 0 && (isNative || debugForceNativeRotation)) {
+    // A: Try the smart skeletal heuristic first (most accurate for mismatched buffers)
+    const autoRot = allLandmarks ? detectAutoRotation(allLandmarks, isTargetPortrait) : 0;
     
     if (autoRot !== 0) {
       finalRotation = autoRot;
-      // If we are rotating landmarks to stand them up, we only swap the source dimensions 
-      // if they were reported as Landscape. If they are already Portrait, swapping them 
-      // back to Landscape would break the letterbox/aspect mapping.
-      if (videoWidth > videoHeight) {
-        finalVW = videoHeight;
-        finalVH = videoWidth;
-      }
+    } 
+    // B: Fallback to dimension-based fix if no skeletal data but clear mismatch
+    else if (isSourceLandscape && isTargetPortrait) {
+      finalRotation = 90;
     }
   }
 
-  // Standard Source/Target mismatch backup (if landmarks logic didn't trigger)
-  if (finalRotation === 0 && (debugForceNativeRotation || (isSourceLandscape && isTargetPortrait))) {
-    finalRotation = 90; // Default to CCW as it's common
-    if (videoWidth > videoHeight) {
-      finalVW = videoHeight;
-      finalVH = videoWidth;
-    }
+  // 2. Determine Effective Source Dimensions for letterboxing
+  // If we are rotating 90 or 270, the "Effective" video source dimensions are swapped.
+  let finalVW = videoWidth;
+  let finalVH = videoHeight;
+
+  if (finalRotation === 90 || finalRotation === 270) {
+    // Force swap dimensions to ensure aspect ratio scaling is correct
+    finalVW = videoHeight;
+    finalVH = videoWidth;
   }
 
-  // 0. Handle selfie camera horizontal mirroring
+  // 3. Handle Mirroring
   if (isMirrored) {
     lx = 1.0 - lx;
   }
 
-  // 1. Handle sensor/camera orientation rotation
+  // 4. Apply coordinate rotation to the normalized landmarks [0..1]
   if (finalRotation === 90) {
     const temp = lx;
     lx = ly;
@@ -748,18 +762,17 @@ export function mapLandmarkToScreen(
     ly = 1.0 - ly;
   }
 
-  // 2. Apply cropBox transform if present
+  // 5. Handle cropBox transform if present
   if (cropBox && cropBox.width > 0 && cropBox.height > 0) {
     lx = (lx - cropBox.x) / cropBox.width;
     ly = (ly - cropBox.y) / cropBox.height;
   }
 
-  // Check visibility bounds
-  const confidenceValid = landmark.visibility === undefined || landmark.visibility >= 0.25;
-  const visible = lx >= 0 && lx <= 1 && ly >= 0 && ly <= 1 && confidenceValid;
-
-  // 3. Calculate video letterbox render rect
+  // 6. Calculate video letterbox render rect using CORRECTED source dimensions
   const videoRect = getVideoRenderRect(containerWidth, containerHeight, finalVW, finalVH);
+
+  const confidenceValid = landmark.visibility === undefined || landmark.visibility >= 0.2;
+  const visible = lx >= 0 && lx <= 1 && ly >= 0 && ly <= 1 && confidenceValid;
 
   const screenX = videoRect.x + (lx * videoRect.width);
   const screenY = videoRect.y + (ly * videoRect.height);
