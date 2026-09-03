@@ -19,6 +19,7 @@
     },
     "plugins": [
       "expo-av",
+      "./plugins/withPoseDetection.js",
       [
         "react-native-vision-camera",
         {

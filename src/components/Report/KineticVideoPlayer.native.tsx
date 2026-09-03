@@ -46,6 +46,8 @@ interface KineticVideoPlayerProps {
   viewMode?: 'student' | 'coach';
   onTogglePlay?: () => void;
   onPause?: () => void;
+  hideSkeleton?: boolean;
+  initialSkeletonScale?: number;
 }
 
 import { useVideoPlayback } from '../../hooks/useVideoPlayback.native';
@@ -63,8 +65,13 @@ export const KineticVideoPlayer: React.FC<KineticVideoPlayerProps> = ({
   viewMode = 'student',
   onTogglePlay,
   onPause,
+  hideSkeleton = false,
+  initialSkeletonScale = 1.0,
 }) => {
   const [isFullscreenModal, setIsFullscreenModal] = useState<boolean>(false);
+  const [showSkeleton, setShowSkeleton] = useState<boolean>(!hideSkeleton);
+  const [skeletonScale, setSkeletonScale] = useState<number>(initialSkeletonScale || 1.0);
+  const [skeletonOffsetY, setSkeletonOffsetY] = useState<number>(0);
 
   const {
     videoRef,
@@ -166,8 +173,29 @@ export const KineticVideoPlayer: React.FC<KineticVideoPlayerProps> = ({
   const curH = isFullscreenModal ? fullscreenLayout.height : layout.height;
 
   const getScreenCoords = (lm?: MediaPipeLandmark) => {
+    if (!lm) return { x: 0, y: 0, visible: false };
+
+    let targetLm = lm;
+    if (skeletonScale !== 1.0 || skeletonOffsetY !== 0) {
+      // Calculate center anchor of body using hips (landmarks 23 and 24)
+      const anchorX = (landmarks && landmarks[23]?.x !== undefined && landmarks[24]?.x !== undefined)
+        ? (landmarks[23].x + landmarks[24].x) / 2
+        : 0.5;
+      const anchorY = (landmarks && landmarks[23]?.y !== undefined && landmarks[24]?.y !== undefined)
+        ? (landmarks[23].y + landmarks[24].y) / 2
+        : 0.55;
+
+      const scaledX = anchorX + (lm.x - anchorX) * skeletonScale;
+      const scaledY = anchorY + (lm.y - anchorY) * skeletonScale + skeletonOffsetY;
+      targetLm = {
+        ...lm,
+        x: scaledX,
+        y: scaledY,
+      };
+    }
+
     return mapLandmarkToScreen(
-      lm!,
+      targetLm,
       isFullscreenModal ? fullscreenLayout.width : layout.width,
       isFullscreenModal ? fullscreenLayout.height : layout.height,
       videoDimensions.width,
@@ -301,7 +329,7 @@ export const KineticVideoPlayer: React.FC<KineticVideoPlayerProps> = ({
       />
 
       {/* Svg Biomechanical Overlay */}
-      {landmarks && landmarks.length >= 29 && (
+      {showSkeleton && landmarks && landmarks.length >= 29 && (
         <Svg style={styles.svgOverlay} width={curW} height={curH}>
           {/* 1. Torso Volume Polygon */}
           {landmarks[11] && landmarks[12] && landmarks[24] && landmarks[23] && (() => {
@@ -642,6 +670,76 @@ export const KineticVideoPlayer: React.FC<KineticVideoPlayerProps> = ({
             ))}
           </View>
         </View>
+
+        {/* Skeleton Scale & Calibration Bar */}
+        <View style={{
+          flexDirection: 'row',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          marginTop: 8,
+          paddingTop: 8,
+          borderTopWidth: 1,
+          borderTopColor: '#27272a',
+        }}>
+          <TouchableOpacity
+            onPress={() => setShowSkeleton(prev => !prev)}
+            style={{
+              flexDirection: 'row',
+              alignItems: 'center',
+              gap: 5,
+              backgroundColor: showSkeleton ? 'rgba(56, 189, 248, 0.15)' : '#27272a',
+              paddingHorizontal: 8,
+              paddingVertical: 5,
+              borderRadius: 8,
+              borderWidth: 1,
+              borderColor: showSkeleton ? 'rgba(56, 189, 248, 0.4)' : '#3f3f46',
+            }}
+          >
+            <Text style={{ color: showSkeleton ? '#38bdf8' : '#a1a1aa', fontSize: 10, fontWeight: '800' }}>
+              {showSkeleton ? '🦴 SKELETON: ON' : '🦴 SKELETON: OFF'}
+            </Text>
+          </TouchableOpacity>
+
+          {showSkeleton && (
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+              <Text style={{ color: '#71717a', fontSize: 9, fontWeight: '700', marginRight: 2 }}>SIZE:</Text>
+              {[
+                { label: 'KID 0.45x', scale: 0.45, offsetY: 0.10 },
+                { label: 'MID 0.7x', scale: 0.7, offsetY: 0.05 },
+                { label: 'FULL 1.0x', scale: 1.0, offsetY: 0 },
+              ].map((item) => {
+                const isActive = Math.abs(skeletonScale - item.scale) < 0.05;
+                return (
+                  <TouchableOpacity
+                    key={item.label}
+                    onPress={() => {
+                      setSkeletonScale(item.scale);
+                      setSkeletonOffsetY(item.offsetY);
+                    }}
+                    style={{
+                      paddingHorizontal: 7,
+                      paddingVertical: 4,
+                      borderRadius: 6,
+                      backgroundColor: isActive ? '#eab308' : '#27272a',
+                      borderWidth: 1,
+                      borderColor: isActive ? '#fde047' : '#3f3f46',
+                    }}
+                  >
+                    <Text
+                      style={{
+                        color: isActive ? '#000000' : '#d4d4d8',
+                        fontSize: 9,
+                        fontWeight: '900',
+                      }}
+                    >
+                      {item.label}
+                    </Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+          )}
+        </View>
       </View>
 
       {/* Fullscreen Player Modal */}
@@ -669,7 +767,7 @@ export const KineticVideoPlayer: React.FC<KineticVideoPlayerProps> = ({
           />
 
           {/* Fullscreen SVG Overlay */}
-          {landmarks && landmarks.length >= 29 && renderedRect && (
+          {showSkeleton && landmarks && landmarks.length >= 29 && renderedRect && (
             <Svg
               style={StyleSheet.absoluteFillObject}
               width={fullscreenLayout.width}

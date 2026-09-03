@@ -69,6 +69,8 @@ export interface FrameAnalysis {
   detectedPhase: string;
   activeLevel: SkillLevel;
   isRealDetection?: boolean;
+  isSynthetic?: boolean;
+  isFallback?: boolean;
   velocity?: Record<string, number>; // Angular velocity in deg/s
   jointVelocities?: Record<string, number>; // Linear velocity for heatmap
   torque?: Record<string, number>; // Estimated relative torque
@@ -333,6 +335,10 @@ export interface AnalysisResult {
   cloudVideoUrl?: string;
   processingMode?: 'pro_30fps_cloud' | 'standard_client';
   preRenderedFrames?: { timestamp: number; dataUrl: string }[];
+  isFallback?: boolean;
+  isSynthetic?: boolean;
+  isLowConfidence?: boolean;
+  lowConfidenceReason?: string;
 }
 
 export interface TrophyCard {

@@ -54,6 +54,7 @@ import {
 import { AnalysisReportPage } from './components/AnalysisReportPage.native';
 import { MagicProcessingScreenNative } from './components/MagicProcessingScreen.native';
 import { generateSyntheticSportsPose } from './utils/mediapipePose.native';
+import { analyzeNativeVideoBiometrics } from './services/nativeVideoAnalyzer';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
@@ -200,152 +201,23 @@ export default function App() {
     setIsProcessing(true);
     setProcessingProgress(0);
 
-    let prog = 0;
-    const interval = setInterval(() => {
-      prog += 12;
-      if (prog >= 100) {
-        clearInterval(interval);
-        setProcessingProgress(100);
-
-        // Generate dynamic high-precision synthetic telemetry frames matching selected sport
-        const frames: FrameAnalysis[] = [];
-        const frameCount = 36;
-        const totalDuration = customVideoDuration || 3.8;
-
-        for (let i = 0; i < frameCount; i++) {
-          const ts = (i / frameCount) * totalDuration;
-          const landmarks = generateSyntheticSportsPose(ts * 1000, ts);
-          
-          // Sport-specific angle synthesis
-          const baseKnee = selectedSportId === 'rugby' ? 116 : selectedSportId === 'soccer' ? 128 : selectedSportId === 'tennis' ? 122 : 115;
-          const baseHip = selectedSportId === 'rugby' ? 134 : selectedSportId === 'golf' ? 142 : 138;
-          const baseShoulder = selectedSportId === 'cricket' ? 168 : selectedSportId === 'tennis' ? 162 : 98;
-
-          const kneeWave = Math.sin((i / frameCount) * Math.PI * 2) * 16;
-          const hipWave = Math.cos((i / frameCount) * Math.PI * 2) * 12;
-          const shoulderWave = Math.sin((i / frameCount) * Math.PI * 3) * 20;
-
-          const phase = i < 9 ? 'Base Setup & Stance' : i < 24 ? 'Kinetic Drive' : 'Follow-Through';
-
-          frames.push({
-            frameNumber: i,
-            timestamp: ts,
-            landmarks,
-            detectedPhase: phase,
-            angles: {
-              knee: Math.round(baseKnee + kneeWave),
-              hip: Math.round(baseHip + hipWave),
-              shoulder: Math.round(baseShoulder + shoulderWave),
-            },
-            ruleResults: {
-              knee: i === 14 ? 'warning' : 'optimal',
-              hip: 'optimal',
-              shoulder: 'optimal',
-            },
-            symmetryScore: 91 + Math.floor(Math.sin(i) * 6),
-            kneeSafetyScore: i === 14 ? 82 : 96,
-            activeLevel: skillLevel,
-            isRealDetection: true,
-          });
-        }
-
-        // Dynamic coaching report tailored to sport and skill level
-        const report: AICoachingReport = {
-          overallGrade: skillLevel === 'elite_pro' ? 'A+' : skillLevel === 'academy' ? 'A' : 'A-',
-          summaryTitle: `Biomechanical Mastery: ${currentSportRule.name}`,
-          keyStrengths: [
-            `High Ground Reaction Force (GRF) velocity across ${currentSportRule.name} drive phase`,
-            `Torso forward angle maintained within optimal safety corridor`,
-            `Consistent kinetic chain timing from pelvic coil to distal release`,
-          ],
-          biomechanicInsights: [
-            `Triple-extension through ankle, knee, and hip generating high kinetic power output.`,
-            `Minor inward knee deviation during deceleration phase (controlled within 8° tolerance).`,
-            `Spine and neck posture maintained safely throughout the movement window.`,
-          ],
-          injuryRiskAssessment: {
-            level: 'low',
-            findings: ['Minor deceleration knee load; balanced bilateral ground absorption.'],
-            preventionDrills: ['Single-Leg Balance Stability', 'Banded Hip Activation Walks'],
-          },
-          funCorrectiveDrills: [
-            {
-              name: `${currentSportRule.name} Low-Hip Kinetic Hinge`,
-              description: 'Eliminates upright bending under dynamic load by locking thoracic spine.',
-              reps: '3 sets x 10 reps',
-              targetJoint: 'Hip & Lumbar Spine',
-            },
-            {
-              name: 'Rotational Kinetic Whip Extension',
-              description: 'Strengthens proximal-to-distal kinetic firing order from pelvis to lead arm.',
-              reps: '3 sets x 12 reps',
-              targetJoint: 'Thoracic Spine & Shoulders',
-            },
-            {
-              name: 'Deceleration Foot Plant & Knee Tracking',
-              description: 'Eliminates knee valgus inward deviation and improves ground reaction absorption.',
-              reps: '3 sets x 8 reps each side',
-              targetJoint: 'Knee & Ankle Complex',
-            },
-          ],
-          coachEncouragement: `Phenomenal kinetic rhythm! Focusing on deceleration knee tracking will unlock peak ${currentSportRule.name} explosive power.`,
-        };
-
-        const syntheticResult: AnalysisResult = {
-          keyframes: [frames[4], frames[14], frames[26]],
-          allFrames: frames,
-          aiReport: report,
-          overallSymmetry: 93,
-          overallKneeSafety: 91,
-          measuredAngles: {
-            kneeAngle: 118,
-            hipAngle: 136,
-            torsoLean: 32,
-          },
-          ruleResultsSummary: {
-            kneeAlignment: 'optimal',
-            hipExtension: 'optimal',
-            torsoAngle: 'optimal',
-          },
-          sequenceComparison: {
-            ideal: ['Base Setup & Stance', 'Kinetic Drive', 'Follow-Through'],
-            actual: ['Base Setup & Stance', 'Kinetic Drive', 'Follow-Through'],
-            isCorrect: true,
-            feedback: 'Kinetic chain sequencing matches elite movement standards.',
-          },
-          kineticSequence: {
-            steps: [
-              { name: 'Base Setup & Stance', timestamp: 0.5, score: 94, status: 'optimal' },
-              { name: 'Kinetic Drive', timestamp: 1.6, score: 91, status: 'optimal' },
-              { name: 'Follow-Through', timestamp: 2.8, score: 93, status: 'optimal' },
-            ],
-            firingOrder: [
-              { joint: 'Pelvis / Hips', peakTime: 0.7, peakVelocity: 360 },
-              { joint: 'Torso / Spine', peakTime: 1.1, peakVelocity: 440 },
-              { joint: 'Lead Arm / Wrists', peakTime: 1.5, peakVelocity: 530 },
-            ],
-            isCorrectOrder: true,
-            sequenceEfficiency: 94,
-          },
-          dynamicMetrics: {
-            peakAngularVelocity: 530,
-            estimatedPeakTorque: 88,
-            explosivenessScore: 94,
-            overallBiometricScore: 9.2,
-            overallSymmetry: 93,
-            overallKneeSafety: 91,
-            precisionScore: 92,
-            kineticFlowScore: 94,
-            jointArmorScore: 91,
-          },
-        };
-
-        setAnalysisResult(syntheticResult);
+    analyzeNativeVideoBiometrics({
+      videoUri: activeVideo,
+      sportRule: currentSportRule,
+      skillLevel,
+      athleteCategory,
+      durationSec: customVideoDuration || 3.8,
+      onProgress: (p) => setProcessingProgress(p),
+    })
+      .then((result) => {
+        setAnalysisResult(result);
         setIsProcessing(false);
-      } else {
-        setProcessingProgress(prog);
-      }
-    }, 180);
+      })
+      .catch((err) => {
+        console.error('Native analysis error:', err);
+        setIsProcessing(false);
+        Alert.alert('Analysis Failed', 'Could not process video with biometric engine. Please try again.');
+      });
   };
 
   const sportsList: { id: SportId; name: string; icon: string }[] = [
@@ -389,6 +261,8 @@ export default function App() {
         kineticSequence={analysisResult.kineticSequence}
         overallSymmetry={analysisResult.overallSymmetry}
         overallKneeSafety={analysisResult.overallKneeSafety}
+        isLowConfidence={analysisResult.isLowConfidence}
+        isFallback={analysisResult.isFallback}
         onBack={() => {
           setAnalysisResult(null);
           handleClearSelectedVideo();

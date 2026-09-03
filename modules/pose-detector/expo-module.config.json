@@ -1,0 +1,8 @@
+{
+  "name": "pose-detector",
+  "platforms": ["android", "ios"],
+  "android": {
+    "package": "com.klutchh.posedetector",
+    "modules": ["com.klutchh.posedetector.PoseDetectorModule"]
+  }
+}

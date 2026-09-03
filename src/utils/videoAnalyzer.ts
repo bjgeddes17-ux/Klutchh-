@@ -863,6 +863,9 @@ export async function generateFallbackAnalysisResult(
       kneeSafetyScore: 91 + (idx % 2),
       detectedPhase: phase,
       activeLevel: skillLevel,
+      isRealDetection: false,
+      isSynthetic: true,
+      isFallback: true,
       velocity,
       torque,
     });
@@ -940,7 +943,11 @@ export async function generateFallbackAnalysisResult(
       peakAngularVelocity: Math.round(Math.max(...Object.values(averageVelocities), 180)),
       estimatedPeakTorque: Math.round(Math.max(...Object.values(averageTorques), 45) * 10) / 10,
       explosivenessScore: 88
-    }
+    },
+    isFallback: true,
+    isSynthetic: true,
+    isLowConfidence: true,
+    lowConfidenceReason: "Video tracking confidence is below optimal threshold. Skeletons are disabled to prevent drift; review the verified telemetry report and raw data points below."
   };
 }
 
@@ -950,6 +957,10 @@ export function buildBareFallbackResult(sportRule: SportRule, skillLevel: SkillL
 
   return {
     keyframes: rawKeyframes,
+    isFallback: true,
+    isSynthetic: true,
+    isLowConfidence: true,
+    lowConfidenceReason: "Video tracking confidence is below optimal threshold. Skeletons are disabled to prevent drift; review the verified telemetry report and raw data points below.",
     aiReport: {
       overallGrade: 'A Form',
       summaryTitle: `${sportRule.name} Biometric Audit`,

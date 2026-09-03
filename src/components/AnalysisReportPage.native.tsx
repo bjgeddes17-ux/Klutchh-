@@ -59,6 +59,8 @@ interface AnalysisReportPageProps {
   kineticSequence?: any;
   sequenceComparison?: any;
   dynamicMetrics?: any;
+  isLowConfidence?: boolean;
+  isFallback?: boolean;
   onBack: () => void;
   onSaveReport?: (reportData: any) => void;
 }
@@ -74,6 +76,8 @@ export const AnalysisReportPage: React.FC<AnalysisReportPageProps> = ({
   kineticSequence,
   sequenceComparison,
   dynamicMetrics,
+  isLowConfidence: propIsLowConfidence,
+  isFallback: propIsFallback,
   onBack,
   onSaveReport,
 }) => {
@@ -86,6 +90,7 @@ export const AnalysisReportPage: React.FC<AnalysisReportPageProps> = ({
   const [isPlaying, setIsPlaying] = useState<boolean>(false);
   const [selectedPhaseFilter, setSelectedPhaseFilter] = useState<string>('All');
   const [expandedDrillIdx, setExpandedDrillIdx] = useState<number | null>(0);
+  const [userVideoMode, setUserVideoMode] = useState<'hidden' | 'clean_video' | 'calibrated_skeleton'>('hidden');
 
   // Drill Progress State
   const [drillProgress, setDrillProgress] = useState<Record<number, 'pending' | 'completed' | 'mastered'>>({
@@ -116,11 +121,16 @@ export const AnalysisReportPage: React.FC<AnalysisReportPageProps> = ({
   }, [allFrames, keyframeList]);
 
   const isLowConfidence = useMemo(() => {
+    if (propIsLowConfidence || propIsFallback) return true;
     const list = allFrames && allFrames.length > 0 ? allFrames : keyframeList;
-    if (!list || list.length === 0) return false;
+    if (!list || list.length === 0) return true;
     let totalVis = 0;
     let count = 0;
+    let syntheticCount = 0;
     for (const f of list) {
+      if (f.isSynthetic || f.isFallback || f.isRealDetection === false) {
+        syntheticCount++;
+      }
       if (f.landmarks) {
         for (const lm of f.landmarks) {
           if (lm.visibility !== undefined) {
@@ -130,9 +140,10 @@ export const AnalysisReportPage: React.FC<AnalysisReportPageProps> = ({
         }
       }
     }
+    if (syntheticCount > list.length / 2) return true;
     const avgVis = count > 0 ? totalVis / count : 0.9;
     return avgVis < 0.35 || (dynamicMetrics?.overallBiometricScore !== undefined && dynamicMetrics.overallBiometricScore < 4.0);
-  }, [allFrames, keyframeList, dynamicMetrics]);
+  }, [allFrames, keyframeList, dynamicMetrics, propIsLowConfidence, propIsFallback]);
 
   useEffect(() => {
     if (isLowConfidence && activeTab === 'corrections') {
@@ -493,30 +504,60 @@ export const AnalysisReportPage: React.FC<AnalysisReportPageProps> = ({
         </View>
 
         {/* 2. Kinetic Video Player with Dynamic Biomechanical Skeleton or Low Confidence Warning */}
-        {isLowConfidence ? (
-          <View style={{ backgroundColor: '#18181b', borderRadius: 20, padding: 24, alignItems: 'center', justifyContent: 'center', marginVertical: 10, borderWidth: 1, borderColor: 'rgba(245, 158, 11, 0.3)' }}>
-            <View style={{ width: 50, height: 50, borderRadius: 16, backgroundColor: 'rgba(245, 158, 11, 0.1)', alignItems: 'center', justifyContent: 'center', marginBottom: 12, borderWidth: 1, borderColor: 'rgba(245, 158, 11, 0.3)' }}>
-              <Info color="#f59e0b" size={24} />
+        {isLowConfidence && userVideoMode === 'hidden' ? (
+          <View style={{ backgroundColor: '#18181b', borderRadius: 20, padding: 22, alignItems: 'center', marginVertical: 10, borderWidth: 1, borderColor: 'rgba(245, 158, 11, 0.4)' }}>
+            <View style={{ width: 44, height: 44, borderRadius: 14, backgroundColor: 'rgba(245, 158, 11, 0.12)', alignItems: 'center', justifyContent: 'center', marginBottom: 12, borderWidth: 1, borderColor: 'rgba(245, 158, 11, 0.3)' }}>
+              <Info color="#f59e0b" size={22} />
             </View>
-            <Text style={{ color: '#fff', fontWeight: '900', fontSize: 14, textAlign: 'center', marginBottom: 6, textTransform: 'uppercase' }}>
+            <Text style={{ color: '#fff', fontWeight: '900', fontSize: 13, textAlign: 'center', marginBottom: 6, textTransform: 'uppercase', letterSpacing: 0.5 }}>
               Can't Render Skeletons with High Confidence
             </Text>
-            <Text style={{ color: '#a1a1aa', fontSize: 11, textAlign: 'center', lineHeight: 16 }}>
+            <Text style={{ color: '#a1a1aa', fontSize: 11, textAlign: 'center', lineHeight: 16, marginBottom: 16, paddingHorizontal: 6 }}>
               Video tracking confidence is below optimal threshold. Skeletons are disabled to prevent drift; review the verified telemetry report and raw data points below.
             </Text>
+            <View style={{ flexDirection: 'row', gap: 10, flexWrap: 'wrap', justifyContent: 'center' }}>
+              <TouchableOpacity
+                onPress={() => setUserVideoMode('clean_video')}
+                style={{ flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: '#27272a', paddingVertical: 8, paddingHorizontal: 14, borderRadius: 10, borderWidth: 1, borderColor: '#3f3f46' }}
+              >
+                <Play color="#eab308" size={13} fill="#eab308" />
+                <Text style={{ color: '#ffffff', fontSize: 11, fontWeight: '700' }}>Watch Video (Skeletons Off)</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                onPress={() => setUserVideoMode('calibrated_skeleton')}
+                style={{ flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: 'rgba(56, 189, 248, 0.12)', paddingVertical: 8, paddingHorizontal: 14, borderRadius: 10, borderWidth: 1, borderColor: 'rgba(56, 189, 248, 0.3)' }}
+              >
+                <Sliders color="#38bdf8" size={13} />
+                <Text style={{ color: '#38bdf8', fontSize: 11, fontWeight: '700' }}>Calibrate Skeleton Size</Text>
+              </TouchableOpacity>
+            </View>
           </View>
         ) : (
-          <KineticVideoPlayer
-            videoUrl={videoUrl}
-            sportRule={sportRule}
-            sortedFrames={sortedFrames}
-            isPlaying={isPlaying}
-            currentTime={currentTime}
-            onTimeUpdate={setCurrentTime}
-            isDataReady={true}
-            onTogglePlay={() => setIsPlaying(!isPlaying)}
-            onPause={() => setIsPlaying(false)}
-          />
+          <View>
+            {isLowConfidence && (
+              <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', backgroundColor: '#18181b', paddingHorizontal: 12, paddingVertical: 6, borderRadius: 10, marginBottom: 8, borderWidth: 1, borderColor: '#27272a' }}>
+                <Text style={{ color: '#f59e0b', fontSize: 10, fontWeight: '700' }}>
+                  {userVideoMode === 'clean_video' ? '📺 Clean Video Mode (Overlay Off)' : '🦴 Calibrated Skeleton Mode'}
+                </Text>
+                <TouchableOpacity onPress={() => setUserVideoMode('hidden')}>
+                  <Text style={{ color: '#71717a', fontSize: 10, fontWeight: '600' }}>Hide Video</Text>
+                </TouchableOpacity>
+              </View>
+            )}
+            <KineticVideoPlayer
+              videoUrl={videoUrl}
+              sportRule={sportRule}
+              sortedFrames={sortedFrames}
+              isPlaying={isPlaying}
+              currentTime={currentTime}
+              onTimeUpdate={setCurrentTime}
+              isDataReady={true}
+              onTogglePlay={() => setIsPlaying(!isPlaying)}
+              onPause={() => setIsPlaying(false)}
+              hideSkeleton={userVideoMode === 'clean_video'}
+              initialSkeletonScale={userVideoMode === 'calibrated_skeleton' ? 0.45 : 1.0}
+            />
+          </View>
         )}
 
         {/* 3. Navigation Tab Bar */}
