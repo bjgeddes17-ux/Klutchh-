@@ -951,7 +951,7 @@ export const AnalysisReportPage: React.FC<AnalysisReportPageProps> = ({
                     </View>
 
                     <Text style={styles.corridorDesc}>
-                      Phase: {frame.phase || frame.detectedPhase || 'Dynamic Execution'} • Landmarks: {frame.landmarks?.length || 33} pts
+                      Phase: {frame.detectedPhase || 'Dynamic Execution'} • Landmarks: {frame.landmarks?.length || 33} pts
                     </Text>
 
                     {/* Where You Went Wrong / Rule Violations */}
@@ -979,9 +979,9 @@ export const AnalysisReportPage: React.FC<AnalysisReportPageProps> = ({
                       </View>
                     )}
 
-                    {frame.jointAngles && Object.keys(frame.jointAngles).length > 0 && (
+                    {frame.angles && Object.keys(frame.angles).length > 0 && (
                       <View style={{ marginTop: 8, flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
-                        {Object.entries(frame.jointAngles).slice(0, 6).map(([joint, angle]: [string, any], jIdx) => (
+                        {Object.entries(frame.angles).slice(0, 6).map(([joint, angle]: [string, any], jIdx) => (
                           <View key={jIdx} style={{ backgroundColor: '#27272a', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 4 }}>
                             <Text style={{ color: '#a1a1aa', fontSize: 10, fontWeight: '700' }}>
                               {joint}: <Text style={{ color: '#ffffff' }}>{Math.round(Number(angle))}°</Text>

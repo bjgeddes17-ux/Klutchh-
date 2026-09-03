@@ -485,7 +485,7 @@ export default function App() {
               {/* Start Analysis Button */}
               <TouchableOpacity
                 style={styles.primaryActionBtn}
-                onPress={() => handleStartAnalysis(false)}
+                onPress={() => handleStartAnalysis()}
               >
                 <Play color="#000" size={18} />
                 <Text style={styles.primaryActionText}>

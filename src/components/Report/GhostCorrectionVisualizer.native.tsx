@@ -46,6 +46,7 @@ interface MovementFault {
   causeDescription: string;
   correctionCues: string;
   biomechanicalConsequence: string;
+  speedLossPercent?: number;
 }
 
 interface GhostCorrectionVisualizerProps {

@@ -425,8 +425,8 @@ export async function analyzeNativeVideoBiometrics({
     overallSymmetry: avgSymmetry,
     overallKneeSafety: avgKneeSafety,
     measuredAngles: {
-      kneeAngle: apexCandidate?.angles?.knee || 120,
-      hipAngle: apexCandidate?.angles?.hip || 135,
+      kneeAngle: impactCandidate?.angles?.knee || 120,
+      hipAngle: impactCandidate?.angles?.hip || 135,
       torsoLean: 32,
     },
     ruleResultsSummary: {
