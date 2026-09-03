@@ -1,7 +1,11 @@
-name: Build Android APK (Expo + NDK + ML Kit)
+name: Build Android APK (GitHub Cloud Runner)
 
 on:
   workflow_dispatch: # Allows manual trigger from GitHub Actions tab
+  push:
+    branches:
+      - main
+      - master
 
 jobs:
   build:
