@@ -28,8 +28,6 @@ import {
   Maximize2,
   Minimize2,
   RefreshCw,
-  X,
-  Crosshair,
 } from 'lucide-react-native';
 import { SportRule, FrameAnalysis, MediaPipeLandmark } from '../../types';
 import { calculateAngle, mapLandmarkToScreen, getVideoRenderRect } from '../../utils/geometry';
@@ -76,7 +74,6 @@ export const KineticVideoPlayer: React.FC<KineticVideoPlayerProps> = ({
   const [skeletonScale, setSkeletonScale] = useState<number>(initialSkeletonScale || 1.0);
   const [skeletonOffsetX, setSkeletonOffsetX] = useState<number>(0);
   const [skeletonOffsetY, setSkeletonOffsetY] = useState<number>(0);
-  const [showSyncControls, setShowSyncControls] = useState<boolean>(false);
 
   const [trackWidth, setTrackWidth] = useState<number>(0);
   const [fsTrackWidth, setFsTrackWidth] = useState<number>(0);
@@ -134,15 +131,6 @@ export const KineticVideoPlayer: React.FC<KineticVideoPlayerProps> = ({
     width: Dimensions.get('window').width,
     height: Dimensions.get('window').height,
   });
-  const [showTelemetry, setShowTelemetry] = useState<boolean>(false);
-
-  // Auto-hide telemetry after 2 seconds on load
-  useEffect(() => {
-    const timer = setTimeout(() => {
-      setShowTelemetry(false);
-    }, 2000);
-    return () => clearTimeout(timer);
-  }, []);
 
   const handleLayout = (e: LayoutChangeEvent) => {
     const { width, height } = e.nativeEvent.layout;
@@ -351,209 +339,8 @@ export const KineticVideoPlayer: React.FC<KineticVideoPlayerProps> = ({
     return selected;
   }, [landmarks, currentFrame, sportRule, curW, curH, renderedRect]);
 
-  const renderSyncControls = (isModal: boolean = false) => (
-    <View
-      style={{
-        backgroundColor: 'rgba(15, 15, 18, 0.97)',
-        borderRadius: 14,
-        padding: 10,
-        marginTop: isModal ? 0 : 8,
-        borderWidth: 1.5,
-        borderColor: '#eab308',
-        shadowColor: '#000',
-        shadowOffset: { width: 0, height: 4 },
-        shadowOpacity: 0.4,
-        shadowRadius: 8,
-        elevation: 6,
-      }}
-    >
-      <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-          <Crosshair color="#eab308" size={13} />
-          <Text style={{ color: '#eab308', fontSize: 11, fontWeight: '900', letterSpacing: 0.5 }}>
-            BODY SYNC & CALIBRATION
-          </Text>
-        </View>
-        <TouchableOpacity
-          onPress={() => setShowSyncControls(false)}
-          style={{ padding: 2 }}
-        >
-          <X color="#a1a1aa" size={15} />
-        </TouchableOpacity>
-      </View>
-
-      {/* 1. Stance Position Presets */}
-      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 8 }}>
-        <Text style={{ color: '#71717a', fontSize: 9.5, fontWeight: '800', width: 44 }}>STANCE:</Text>
-        {[
-          { label: '⇦ GOLF / LEFT', offset: -0.22 },
-          { label: 'CENTER', offset: 0 },
-          { label: 'RIGHT ⇨', offset: 0.22 },
-        ].map((item) => {
-          const isActive = Math.abs(skeletonOffsetX - item.offset) < 0.05;
-          return (
-            <TouchableOpacity
-              key={item.label}
-              onPress={() => setSkeletonOffsetX(item.offset)}
-              style={{
-                flex: 1,
-                paddingVertical: 5,
-                paddingHorizontal: 4,
-                borderRadius: 8,
-                backgroundColor: isActive ? '#eab308' : '#27272a',
-                borderWidth: 1,
-                borderColor: isActive ? '#fde047' : '#3f3f46',
-                alignItems: 'center',
-              }}
-            >
-              <Text
-                style={{
-                  color: isActive ? '#000000' : '#d4d4d8',
-                  fontSize: 9.5,
-                  fontWeight: '900',
-                }}
-              >
-                {item.label}
-              </Text>
-            </TouchableOpacity>
-          );
-        })}
-      </View>
-
-      {/* 2. Micro Nudge (X & Y) */}
-      <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
-          <Text style={{ color: '#71717a', fontSize: 9.5, fontWeight: '800', width: 44 }}>NUDGE:</Text>
-          <TouchableOpacity
-            onPress={() => setSkeletonOffsetX(prev => Math.max(-0.45, prev - 0.02))}
-            style={styles.syncNudgeBtn}
-          >
-            <Text style={styles.syncNudgeText}>⇦ -2%</Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            onPress={() => setSkeletonOffsetX(prev => Math.min(0.45, prev + 0.02))}
-            style={styles.syncNudgeBtn}
-          >
-            <Text style={styles.syncNudgeText}>+2% ⇨</Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            onPress={() => setSkeletonOffsetY(prev => Math.max(-0.35, prev - 0.02))}
-            style={styles.syncNudgeBtn}
-          >
-            <Text style={styles.syncNudgeText}>⇧ UP</Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            onPress={() => setSkeletonOffsetY(prev => Math.min(0.35, prev + 0.02))}
-            style={styles.syncNudgeBtn}
-          >
-            <Text style={styles.syncNudgeText}>DOWN ⇩</Text>
-          </TouchableOpacity>
-        </View>
-
-        <TouchableOpacity
-          onPress={() => {
-            setSkeletonOffsetX(sportRule?.id === 'golf' ? -0.22 : 0);
-            setSkeletonOffsetY(sportRule?.id === 'golf' ? 0.05 : 0);
-            setSkeletonScale(0.45);
-          }}
-          style={{ paddingHorizontal: 8, paddingVertical: 4, borderRadius: 6, backgroundColor: '#3f3f46' }}
-        >
-          <Text style={{ color: '#e4e4e7', fontSize: 9, fontWeight: '800' }}>⟲ RESET</Text>
-        </TouchableOpacity>
-      </View>
-
-      {/* 3. Skeleton Scale */}
-      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}>
-        <Text style={{ color: '#71717a', fontSize: 9.5, fontWeight: '800', width: 44 }}>SCALE:</Text>
-        {[
-          { label: 'KID 0.45x', scale: 0.45, offsetY: 0.05 },
-          { label: 'MID 0.7x', scale: 0.70, offsetY: 0.03 },
-          { label: 'FULL 1.0x', scale: 1.0, offsetY: 0 },
-        ].map((item) => {
-          const isActive = Math.abs(skeletonScale - item.scale) < 0.05;
-          return (
-            <TouchableOpacity
-              key={item.label}
-              onPress={() => {
-                setSkeletonScale(item.scale);
-                setSkeletonOffsetY(item.offsetY);
-              }}
-              style={{
-                flex: 1,
-                paddingVertical: 4,
-                paddingHorizontal: 4,
-                borderRadius: 7,
-                backgroundColor: isActive ? '#38bdf8' : '#27272a',
-                borderWidth: 1,
-                borderColor: isActive ? '#7dd3fc' : '#3f3f46',
-                alignItems: 'center',
-              }}
-            >
-              <Text
-                style={{
-                  color: isActive ? '#000000' : '#d4d4d8',
-                  fontSize: 9,
-                  fontWeight: '900',
-                }}
-              >
-                {item.label}
-              </Text>
-            </TouchableOpacity>
-          );
-        })}
-        <TouchableOpacity
-          onPress={() => setSkeletonScale(prev => Math.max(0.25, prev - 0.05))}
-          style={styles.syncNudgeBtn}
-        >
-          <Text style={styles.syncNudgeText}>-</Text>
-        </TouchableOpacity>
-        <TouchableOpacity
-          onPress={() => setSkeletonScale(prev => Math.min(1.5, prev + 0.05))}
-          style={styles.syncNudgeBtn}
-        >
-          <Text style={styles.syncNudgeText}>+</Text>
-        </TouchableOpacity>
-      </View>
-    </View>
-  );
-
   return (
     <View style={styles.container} onLayout={handleLayout}>
-      {/* 2-Second Telemetry Diagnostic HUD for Android/Oppo */}
-      {showTelemetry && (
-        <View style={{
-          position: 'absolute',
-          top: 12,
-          left: 12,
-          right: 12,
-          backgroundColor: 'rgba(9, 9, 11, 0.95)',
-          borderColor: '#eab308',
-          borderWidth: 1.5,
-          borderRadius: 14,
-          padding: 12,
-          zIndex: 1000,
-          elevation: 10,
-        }}>
-          <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
-            <Text style={{ color: '#eab308', fontSize: 11, fontWeight: '900', letterSpacing: 0.5 }}>
-              📱 ANDROID TELEMETRY (OPPO VERIFIED)
-            </Text>
-            <TouchableOpacity onPress={() => setShowTelemetry(false)}>
-              <Text style={{ color: '#a1a1aa', fontSize: 11, fontWeight: 'bold' }}>✕</Text>
-            </TouchableOpacity>
-          </View>
-          <Text style={{ color: '#ffffff', fontSize: 10, fontFamily: 'monospace' }}>
-            Container: {Math.round(curW)} x {Math.round(curH)}
-          </Text>
-          <Text style={{ color: '#ffffff', fontSize: 10, fontFamily: 'monospace' }}>
-            Video Natural Size: {videoDimensions.width} x {videoDimensions.height}
-          </Text>
-          <Text style={{ color: '#ffffff', fontSize: 10, fontFamily: 'monospace' }}>
-            Letterbox Rect: {renderedRect ? `x:${Math.round(renderedRect.x)} y:${Math.round(renderedRect.y)} w:${Math.round(renderedRect.width)} h:${Math.round(renderedRect.height)}` : 'Computing...'}
-          </Text>
-        </View>
-      )}
-
       {/* Video Surface */}
       <Video
         ref={videoRef}
@@ -806,15 +593,8 @@ export const KineticVideoPlayer: React.FC<KineticVideoPlayerProps> = ({
           </View>
         </View>
 
-        {/* Telemetry Toggle & Fullscreen Buttons */}
+        {/* Fullscreen Button */}
         <View style={{ flexDirection: 'row', gap: 8, alignItems: 'center' }}>
-          <TouchableOpacity
-            onPress={() => setShowTelemetry(prev => !prev)}
-            style={[styles.fullscreenOverlayBtn, { borderColor: '#eab308', backgroundColor: 'rgba(234, 179, 8, 0.15)' }]}
-          >
-            <Text style={[styles.fullscreenOverlayText, { color: '#eab308' }]}>📱 INFO</Text>
-          </TouchableOpacity>
-
           <TouchableOpacity
             onPress={() => setIsFullscreenModal(true)}
             style={styles.fullscreenOverlayBtn}
@@ -981,73 +761,8 @@ export const KineticVideoPlayer: React.FC<KineticVideoPlayerProps> = ({
                   </Text>
                 </View>
               )}
-
-              {showSkeleton && (
-                <TouchableOpacity
-                  onPress={() => setShowSyncControls(prev => !prev)}
-                  style={{
-                    flexDirection: 'row',
-                    alignItems: 'center',
-                    gap: 4,
-                    backgroundColor: showSyncControls ? '#eab308' : '#27272a',
-                    paddingHorizontal: 8,
-                    paddingVertical: 5,
-                    borderRadius: 8,
-                    borderWidth: 1,
-                    borderColor: showSyncControls ? '#fde047' : '#3f3f46',
-                  }}
-                >
-                  <Crosshair color={showSyncControls ? '#000000' : '#eab308'} size={11} />
-                  <Text style={{ color: showSyncControls ? '#000000' : '#eab308', fontSize: 10, fontWeight: '900' }}>
-                    SYNC ON BODY
-                  </Text>
-                </TouchableOpacity>
-              )}
             </View>
-
-            {showSkeleton && !showSyncControls && (
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
-                <Text style={{ color: '#71717a', fontSize: 9, fontWeight: '700', marginRight: 2 }}>SIZE:</Text>
-                {[
-                  { label: 'KID 0.45x', scale: 0.45, offsetY: 0.05 },
-                  { label: 'MID 0.7x', scale: 0.7, offsetY: 0.03 },
-                  { label: 'FULL 1.0x', scale: 1.0, offsetY: 0 },
-                ].map((item) => {
-                  const isActive = Math.abs(skeletonScale - item.scale) < 0.05;
-                  return (
-                    <TouchableOpacity
-                      key={item.label}
-                      onPress={() => {
-                        setSkeletonScale(item.scale);
-                        setSkeletonOffsetY(item.offsetY);
-                      }}
-                      style={{
-                        paddingHorizontal: 7,
-                        paddingVertical: 4,
-                        borderRadius: 6,
-                        backgroundColor: isActive ? '#eab308' : '#27272a',
-                        borderWidth: 1,
-                        borderColor: isActive ? '#fde047' : '#3f3f46',
-                      }}
-                    >
-                      <Text
-                        style={{
-                          color: isActive ? '#000000' : '#d4d4d8',
-                          fontSize: 9,
-                          fontWeight: '900',
-                        }}
-                      >
-                        {item.label}
-                      </Text>
-                    </TouchableOpacity>
-                  );
-                })}
-              </View>
-            )}
           </View>
-
-          {/* Body Sync Drawer */}
-          {showSkeleton && showSyncControls && renderSyncControls(false)}
         </View>
       </View>
 
@@ -1279,26 +994,6 @@ export const KineticVideoPlayer: React.FC<KineticVideoPlayerProps> = ({
 
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
               <TouchableOpacity
-                onPress={() => setShowSyncControls((prev) => !prev)}
-                style={{
-                  flexDirection: 'row',
-                  alignItems: 'center',
-                  gap: 5,
-                  backgroundColor: showSyncControls ? '#eab308' : 'rgba(24, 24, 27, 0.9)',
-                  paddingHorizontal: 10,
-                  paddingVertical: 7,
-                  borderRadius: 12,
-                  borderWidth: 1,
-                  borderColor: showSyncControls ? '#fde047' : '#3f3f46',
-                }}
-              >
-                <Crosshair color={showSyncControls ? '#000000' : '#eab308'} size={13} />
-                <Text style={{ color: showSyncControls ? '#000000' : '#eab308', fontSize: 10, fontWeight: '900' }}>
-                  SYNC BODY
-                </Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity
                 onPress={() => setIsFullscreenModal(false)}
                 style={styles.exitFullscreenBtn}
               >
@@ -1307,13 +1002,6 @@ export const KineticVideoPlayer: React.FC<KineticVideoPlayerProps> = ({
               </TouchableOpacity>
             </View>
           </View>
-
-          {/* Fullscreen Body Sync Controls Overlay */}
-          {showSyncControls && (
-            <View style={{ position: 'absolute', top: 62, left: 16, right: 16, zIndex: 100 }}>
-              {renderSyncControls(true)}
-            </View>
-          )}
 
           {/* Bottom Fullscreen Transport Bar */}
           <View style={styles.fullscreenBottomBar}>
@@ -1673,18 +1361,5 @@ const styles = StyleSheet.create({
     borderWidth: 3,
     borderColor: '#eab308',
     elevation: 3,
-  },
-  syncNudgeBtn: {
-    paddingHorizontal: 7,
-    paddingVertical: 4,
-    borderRadius: 6,
-    backgroundColor: '#27272a',
-    borderWidth: 1,
-    borderColor: '#3f3f46',
-  },
-  syncNudgeText: {
-    color: '#e4e4e7',
-    fontSize: 9,
-    fontWeight: '800',
   },
 });

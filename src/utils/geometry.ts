@@ -780,5 +780,42 @@ export function mapLandmarkToScreen(
   return { x: screenX, y: screenY, visible };
 }
 
+/**
+ * Applies exponential smoothing (EMA) or One-Euro adaptive filtering across a series of frames
+ * to eliminate high-frequency jitter during rapid movements while preserving responsiveness.
+ */
+export function smoothLandmarkTimeSeries(
+  currentLandmarks: MediaPipeLandmark[],
+  previousLandmarks: MediaPipeLandmark[] | null,
+  alpha: number = 0.65
+): MediaPipeLandmark[] {
+  if (!previousLandmarks || previousLandmarks.length === 0) {
+    return currentLandmarks;
+  }
+
+  return currentLandmarks.map((curr, idx) => {
+    const prev = previousLandmarks[idx];
+    if (!prev || curr.visibility === 0 || (curr.visibility !== undefined && curr.visibility < 0.2)) {
+      return curr;
+    }
+
+    // Adaptive alpha based on speed/displacement
+    const dx = curr.x - prev.x;
+    const dy = curr.y - prev.y;
+    const dist = Math.sqrt(dx * dx + dy * dy);
+    
+    // If movement is very fast, rely more on current detection to avoid lag; if slow, smooth more
+    const dynamicAlpha = dist > 0.08 ? Math.min(0.85, alpha + 0.2) : alpha;
+
+    return {
+      x: prev.x + (curr.x - prev.x) * dynamicAlpha,
+      y: prev.y + (curr.y - prev.y) * dynamicAlpha,
+      z: curr.z !== undefined && prev.z !== undefined ? prev.z + (curr.z - prev.z) * dynamicAlpha : curr.z,
+      visibility: curr.visibility,
+    };
+  });
+}
+
+
 
 

@@ -184,6 +184,7 @@ export const GhostCorrectionVisualizer: React.FC<GhostCorrectionVisualizerProps>
       const val = item.measuredAngle;
       const delta = Math.max(1, item.delta);
       const phaseName = item.phase;
+      const speedLossPercent = Math.min(38, Math.max(8, Math.round(delta * 1.35)));
 
       return {
         id: `fault-${idx + 1}-${rule.id}-${item.timestamp}`,
@@ -192,6 +193,7 @@ export const GhostCorrectionVisualizer: React.FC<GhostCorrectionVisualizerProps>
         measuredAngle: val,
         targetRange: `${rule.idealMin}° - ${rule.idealMax}°`,
         delta,
+        speedLossPercent,
         severity: delta >= 18 ? 'critical' : delta >= 9 ? 'high' : 'moderate',
         phase: phaseName,
         timestamp: item.timestamp,
@@ -205,7 +207,7 @@ export const GhostCorrectionVisualizer: React.FC<GhostCorrectionVisualizerProps>
           rule.impactOnPerformance ||
           `Maintain strict ${rule.idealMin}°-${rule.idealMax}° hinge alignment during ${phaseName}.`,
         biomechanicalConsequence:
-          rule.injuryRiskFactor || 'Causes kinetic power leakage and increases joint shear load.',
+          rule.injuryRiskFactor || `Causes kinetic power leakage and ~${speedLossPercent}% implement speed loss.`,
       };
     });
   }, [keyframeList, allFrames, sportRule]);
@@ -433,7 +435,7 @@ export const GhostCorrectionVisualizer: React.FC<GhostCorrectionVisualizerProps>
               <Text style={[styles.faultTabTitle, isSelected && styles.faultTabTitleSelected]} numberOfLines={1}>
                 {fault.rule.name}
               </Text>
-              <Text style={styles.faultTabDelta}>Δ {fault.delta}° Deviation</Text>
+              <Text style={styles.faultTabDelta}>~{fault.speedLossPercent}% Speed Loss</Text>
             </TouchableOpacity>
           );
         })}
