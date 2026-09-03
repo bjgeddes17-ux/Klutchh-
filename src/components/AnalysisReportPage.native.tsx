@@ -111,6 +111,7 @@ export const AnalysisReportPage: React.FC<AnalysisReportPageProps> = ({
   );
   const [saveModalOpen, setSaveModalOpen] = useState<boolean>(false);
   const [activeExplainer, setActiveExplainer] = useState<any | null>(null);
+  const [inspectorFilter, setInspectorFilter] = useState<'all' | 'faults'>('all');
 
   // Sorted Frames
   const sortedFrames = useMemo(() => {
@@ -118,6 +119,17 @@ export const AnalysisReportPage: React.FC<AnalysisReportPageProps> = ({
     if (!list || list.length === 0) return [];
     return [...list].sort((a, b) => a.timestamp - b.timestamp);
   }, [allFrames, keyframeList]);
+
+  const filteredInspectorFrames = useMemo(() => {
+    if (inspectorFilter === 'faults') {
+      return sortedFrames.filter(f => {
+        const hasRuleError = f.ruleResults && Object.values(f.ruleResults).some(r => r === 'error' || r === 'warning');
+        const hasValidationIssue = f.validationStatus === 'flagged_review' || (f.validationIssues && f.validationIssues.length > 0);
+        return hasRuleError || hasValidationIssue;
+      });
+    }
+    return sortedFrames;
+  }, [sortedFrames, inspectorFilter]);
 
   // Biomechanical Executive Ratings
   const titanRating = useMemo(() => {
@@ -856,51 +868,131 @@ export const AnalysisReportPage: React.FC<AnalysisReportPageProps> = ({
         {activeTab === 'inspector' && (
           <View style={styles.tabSection}>
             <View style={styles.corridorHeader}>
-              <Text style={styles.sectionTitle}>KINEMATIC FRAME INSPECTOR</Text>
+              <Text style={styles.sectionTitle}>KINEMATIC FRAME INSPECTOR & FAULT AUDIT</Text>
               <Text style={styles.sectionSubtitle}>
-                Tap any frame timestamp to instantly scrub the video to that exact pose sample and inspect joint metrics.
+                Inspect every captured frame, identify where movement deviations occurred, and tap any timestamp to jump instantly.
               </Text>
             </View>
 
-            {sortedFrames.length === 0 ? (
+            {/* Filter Pills */}
+            <View style={{ flexDirection: 'row', gap: 10, marginBottom: 16 }}>
+              <TouchableOpacity
+                onPress={() => setInspectorFilter('all')}
+                style={{
+                  flex: 1,
+                  paddingVertical: 10,
+                  borderRadius: 8,
+                  backgroundColor: inspectorFilter === 'all' ? '#38bdf8' : '#1e1e24',
+                  alignItems: 'center',
+                }}
+              >
+                <Text style={{ color: inspectorFilter === 'all' ? '#000000' : '#a1a1aa', fontWeight: 'bold', fontSize: 12 }}>
+                  All Frames ({sortedFrames.length})
+                </Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                onPress={() => setInspectorFilter('faults')}
+                style={{
+                  flex: 1,
+                  paddingVertical: 10,
+                  borderRadius: 8,
+                  backgroundColor: inspectorFilter === 'faults' ? '#ef4444' : '#1e1e24',
+                  alignItems: 'center',
+                }}
+              >
+                <Text style={{ color: inspectorFilter === 'faults' ? '#ffffff' : '#a1a1aa', fontWeight: 'bold', fontSize: 12 }}>
+                  ⚠️ Faults & Warnings
+                </Text>
+              </TouchableOpacity>
+            </View>
+
+            {filteredInspectorFrames.length === 0 ? (
               <View style={styles.corridorCard}>
-                <Text style={styles.corridorDesc}>No frame pose data recorded for this session.</Text>
+                <Text style={styles.corridorDesc}>
+                  {inspectorFilter === 'faults'
+                    ? '🎉 Zero biomechanical faults or warnings detected across all frames! Perfect execution.'
+                    : 'No frame pose data recorded for this session.'}
+                </Text>
               </View>
             ) : (
-              sortedFrames.map((frame, fIdx) => (
-                <View key={fIdx} style={styles.corridorCard}>
-                  <View style={styles.corridorTopRow}>
-                    <View style={styles.corridorTitleBox}>
-                      <View style={[styles.statusDot, { backgroundColor: '#38bdf8' }]} />
-                      <Text style={styles.corridorName}>
-                        Frame #{fIdx + 1} ({frame.timestamp.toFixed(2)}s)
-                      </Text>
+              filteredInspectorFrames.map((frame, fIdx) => {
+                const ruleEntries = Object.entries(frame.ruleResults || {});
+                const failedRules = ruleEntries.filter(([k, v]) => v === 'error' || v === 'warning');
+                const hasFaults = failedRules.length > 0 || frame.validationStatus === 'flagged_review';
+
+                return (
+                  <View
+                    key={fIdx}
+                    style={[
+                      styles.corridorCard,
+                      hasFaults && { borderColor: 'rgba(239, 68, 68, 0.4)', borderWidth: 1.5 },
+                    ]}
+                  >
+                    <View style={styles.corridorTopRow}>
+                      <View style={styles.corridorTitleBox}>
+                        <View
+                          style={[
+                            styles.statusDot,
+                            { backgroundColor: hasFaults ? '#ef4444' : '#22c55e' },
+                          ]}
+                        />
+                        <Text style={styles.corridorName}>
+                          Frame #{frame.frameNumber ?? fIdx + 1} ({frame.timestamp.toFixed(2)}s)
+                        </Text>
+                      </View>
+                      <TouchableOpacity
+                        onPress={() => {
+                          setCurrentTime(frame.timestamp);
+                        }}
+                        style={{ backgroundColor: '#38bdf8', paddingHorizontal: 12, paddingVertical: 6, borderRadius: 6 }}
+                      >
+                        <Text style={{ color: '#000000', fontSize: 11, fontWeight: '900' }}>JUMP TO FRAME</Text>
+                      </TouchableOpacity>
                     </View>
-                    <TouchableOpacity
-                      onPress={() => {
-                        setCurrentTime(frame.timestamp);
-                      }}
-                      style={{ backgroundColor: '#38bdf8', paddingHorizontal: 12, paddingVertical: 6, borderRadius: 6 }}
-                    >
-                      <Text style={{ color: '#000000', fontSize: 11, fontWeight: '900' }}>JUMP TO FRAME</Text>
-                    </TouchableOpacity>
-                  </View>
-                  <Text style={styles.corridorDesc}>
-                    Phase: {frame.phase || 'Dynamic Execution'} • Landmarks Tracked: {frame.landmarks?.length || 33} points
-                  </Text>
-                  {frame.jointAngles && Object.keys(frame.jointAngles).length > 0 && (
-                    <View style={{ marginTop: 8, flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
-                      {Object.entries(frame.jointAngles).slice(0, 4).map(([joint, angle]: [string, any], jIdx) => (
-                        <View key={jIdx} style={{ backgroundColor: '#27272a', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 4 }}>
-                          <Text style={{ color: '#a1a1aa', fontSize: 10, fontWeight: '700' }}>
-                            {joint}: <Text style={{ color: '#ffffff' }}>{Math.round(Number(angle))}°</Text>
+
+                    <Text style={styles.corridorDesc}>
+                      Phase: {frame.phase || frame.detectedPhase || 'Dynamic Execution'} • Landmarks: {frame.landmarks?.length || 33} pts
+                    </Text>
+
+                    {/* Where You Went Wrong / Rule Violations */}
+                    {hasFaults ? (
+                      <View style={{ marginTop: 8, backgroundColor: 'rgba(239, 68, 68, 0.15)', padding: 8, borderRadius: 6 }}>
+                        <Text style={{ color: '#ef4444', fontSize: 11, fontWeight: 'bold', marginBottom: 4 }}>
+                          ❌ Where You Went Wrong (Biomechanical Deviation):
+                        </Text>
+                        {failedRules.map(([ruleId, status], rIdx) => (
+                          <Text key={rIdx} style={{ color: '#fca5a5', fontSize: 11, marginLeft: 6, marginBottom: 2 }}>
+                            • Rule <Text style={{ fontWeight: 'bold', color: '#ffffff' }}>{ruleId}</Text> flagged as <Text style={{ fontWeight: 'bold' }}>{status.toUpperCase()}</Text>
                           </Text>
-                        </View>
-                      ))}
-                    </View>
-                  )}
-                </View>
-              ))
+                        ))}
+                        {frame.validationIssues?.map((issue, iIdx) => (
+                          <Text key={iIdx} style={{ color: '#fca5a5', fontSize: 11, marginLeft: 6, marginBottom: 2 }}>
+                            • {issue}
+                          </Text>
+                        ))}
+                      </View>
+                    ) : (
+                      <View style={{ marginTop: 6, backgroundColor: 'rgba(34, 197, 94, 0.1)', padding: 6, borderRadius: 4 }}>
+                        <Text style={{ color: '#22c55e', fontSize: 11, fontWeight: '600' }}>
+                          ✅ All joint angles and posture constraints optimal in this frame.
+                        </Text>
+                      </View>
+                    )}
+
+                    {frame.jointAngles && Object.keys(frame.jointAngles).length > 0 && (
+                      <View style={{ marginTop: 8, flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
+                        {Object.entries(frame.jointAngles).slice(0, 6).map(([joint, angle]: [string, any], jIdx) => (
+                          <View key={jIdx} style={{ backgroundColor: '#27272a', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 4 }}>
+                            <Text style={{ color: '#a1a1aa', fontSize: 10, fontWeight: '700' }}>
+                              {joint}: <Text style={{ color: '#ffffff' }}>{Math.round(Number(angle))}°</Text>
+                            </Text>
+                          </View>
+                        ))}
+                      </View>
+                    )}
+                  </View>
+                );
+              })
             )}
           </View>
         )}

@@ -42,7 +42,7 @@ export async function extractFramesPipelined(
   videoUrl: string,
   onFrame: (frame: ExtractedFrame) => Promise<void>,
   onProgress: (progress: number) => void,
-  targetFps: number = 20,
+  targetFps: number = 15,
   targetHeight: number = 480,
   cropBox?: { x: number; y: number; width: number; height: number },
   startTime: number = 0,

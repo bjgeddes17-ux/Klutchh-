@@ -58,8 +58,6 @@ import { analyzeNativeVideoBiometrics } from './services/nativeVideoAnalyzer';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
-const SAMPLE_DEMO_VIDEO = 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4';
-
 export default function App() {
   const [selectedSportId, setSelectedSportId] = useState<SportId>('rugby');
   const [athleteCategory, setAthleteCategory] = useState<AthleteCategory>('middle_school');
@@ -180,22 +178,26 @@ export default function App() {
   };
 
   // Dynamic Analysis pipeline generator
-  const handleStartAnalysis = (useDemo: boolean = false) => {
-    const activeVideo = useDemo ? SAMPLE_DEMO_VIDEO : (customVideoUri || SAMPLE_DEMO_VIDEO);
+  const handleStartAnalysis = () => {
+    if (!customVideoUri) {
+      Alert.alert(
+        'No Video Selected',
+        'Please upload or record an athlete video (max 30s) before starting the biomechanical audit.'
+      );
+      return;
+    }
+
+    const activeVideo = customVideoUri;
     
     // Anti-Troll Check (Simulated)
-    // If it's a custom video, there's a small chance of "troll content" detection
-    if (!useDemo && customVideoUri) {
-       // Mock troll check: if the filename contains "troll" or "meme"
-       const isTroll = customVideoName?.toLowerCase().includes('troll') || customVideoName?.toLowerCase().includes('meme');
-       if (isTroll) {
-         Alert.alert(
-           "Anti-Troll Guard Block",
-           "Klutchh AI has detected non-sporting or inappropriate content in this video. Uploads of this nature are blocked to protect the community.",
-           [{ text: "OK", onPress: () => handleClearSelectedVideo() }]
-         );
-         return;
-       }
+    const isTroll = customVideoName?.toLowerCase().includes('troll') || customVideoName?.toLowerCase().includes('meme');
+    if (isTroll) {
+      Alert.alert(
+        "Anti-Troll Guard Block",
+        "Klutchh AI has detected non-sporting or inappropriate content in this video. Uploads of this nature are blocked to protect the community.",
+        [{ text: "OK", onPress: () => handleClearSelectedVideo() }]
+      );
+      return;
     }
 
     setIsProcessing(true);
@@ -235,7 +237,7 @@ export default function App() {
     return (
       <MagicProcessingScreenNative
         sportRule={currentSportRule}
-        videoUrl={customVideoUri || SAMPLE_DEMO_VIDEO}
+        videoUrl={customVideoUri || ''}
         skillLevel={skillLevel}
         athleteCategory={athleteCategory}
         progress={processingProgress}
@@ -252,7 +254,7 @@ export default function App() {
     return (
       <AnalysisReportPage
         sportRule={currentSportRule}
-        videoUrl={customVideoUri || SAMPLE_DEMO_VIDEO}
+        videoUrl={customVideoUri || ''}
         keyframeList={analysisResult.keyframes || []}
         allFrames={analysisResult.allFrames || []}
         aiReport={analysisResult.aiReport}

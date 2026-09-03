@@ -67,12 +67,10 @@ export async function analyzeNativeVideoBiometrics({
   // Ensure reasonable bounds (1.0s to 60.0s)
   const validDuration = Math.max(1.0, Math.min(60, resolvedDuration));
   
-  // Calculate dynamic frame sampling density:
-  // For short clips (3s): ~25 frames (~8 fps)
-  // For medium clips (10s-16s): ~40-50 frames (~3-4 fps)
-  // For long clips (20s-30s): ~60 frames (~2-3 fps)
-  const totalFrames = Math.min(60, Math.max(24, Math.round(validDuration * 3.2)));
-  console.log(`[NativeBiometrics] Extracting ${totalFrames} frames across ${validDuration.toFixed(2)}s timeline`);
+  // 15 FPS sampling density for high-precision kinematic sync (e.g. 30s clip = 450 frames)
+  const targetFps = 15;
+  const totalFrames = Math.min(450, Math.max(30, Math.round(validDuration * targetFps)));
+  console.log(`[NativeBiometrics] Extracting ${totalFrames} frames at ${targetFps} FPS across ${validDuration.toFixed(2)}s timeline`);
 
   const sportPhases = sportRule?.phases && sportRule.phases.length > 0
     ? sportRule.phases
@@ -346,8 +344,12 @@ export async function analyzeNativeVideoBiometrics({
     }
   });
 
-  const setupCandidate = selectBestCandidateFrame(0, Math.max(0, peakVelIdx - 1), false);
-  const apexCandidate = selectBestCandidateFrame(
+  const q1 = Math.floor(frames.length * 0.25);
+  const q3 = Math.floor(frames.length * 0.75);
+
+  const setupCandidate = selectBestCandidateFrame(0, Math.min(q1, Math.max(0, peakVelIdx - 2)), false);
+  const loadCandidate = selectBestCandidateFrame(Math.max(0, q1 - 1), Math.max(0, peakVelIdx - 1), false);
+  const impactCandidate = selectBestCandidateFrame(
     Math.max(0, peakVelIdx - 2),
     Math.min(frames.length - 1, peakVelIdx + 2),
     true
@@ -358,7 +360,17 @@ export async function analyzeNativeVideoBiometrics({
     false
   );
 
-  const keyframes = [setupCandidate, apexCandidate, finishCandidate];
+  // Assign precise sport-accurate phase titles to keyframes
+  const sportPhasesList = sportRule.phases && sportRule.phases.length >= 4
+    ? sportRule.phases
+    : ['Address / Setup', 'Backswing / Load Apex', 'Force Impact / Release', 'Follow-Through / Completion'];
+
+  const keyframes = [
+    { ...setupCandidate, detectedPhase: sportPhasesList[0] || 'Address / Setup' },
+    { ...loadCandidate, detectedPhase: sportPhasesList[1] || 'Backswing / Load Apex' },
+    { ...impactCandidate, detectedPhase: sportPhasesList[2] || 'Force Impact / Release' },
+    { ...finishCandidate, detectedPhase: sportPhasesList[3] || 'Follow-Through / Completion' },
+  ];
 
   // Coaching & Biomechanical Report
   const coachingReport: AICoachingReport = {
