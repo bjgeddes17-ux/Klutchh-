@@ -339,6 +339,10 @@ export interface AnalysisResult {
   isSynthetic?: boolean;
   isLowConfidence?: boolean;
   lowConfidenceReason?: string;
+  realFramesDetected?: number;
+  totalFramesAnalyzed?: number;
+  detectorEngine?: string;
+  sourceDimensions?: { width: number; height: number };
 }
 
 export interface TrophyCard {

@@ -1,4 +1,4 @@
-import { NativeModulesProxy } from 'expo-modules-core';
+import { requireOptionalNativeModule } from 'expo-modules-core';
 import { NativeModules, Platform } from 'react-native';
 
 export interface NativePoseLandmark {
@@ -9,21 +9,22 @@ export interface NativePoseLandmark {
 }
 
 // Check for Expo Module or standard NativeModules bridge
-let NativePoseDetector: any = null;
-try {
-  // Expo SDK 52 requireOptionalNativeModule
-  const { requireOptionalNativeModule } = require('expo-modules-core');
-  NativePoseDetector = requireOptionalNativeModule('PoseDetector');
-} catch {
-  NativePoseDetector = NativeModules.PoseDetector;
+function getNativePoseDetector(): any {
+  if (Platform.OS === 'web') return null;
+  try {
+    return requireOptionalNativeModule('PoseDetector') || NativeModules?.PoseDetector || null;
+  } catch {
+    return NativeModules?.PoseDetector || null;
+  }
 }
 
 export const isNativePoseDetectorAvailable = async (): Promise<boolean> => {
   if (Platform.OS === 'web') return false;
-  if (!NativePoseDetector) return false;
+  const detector = getNativePoseDetector();
+  if (!detector) return false;
   try {
-    if (typeof NativePoseDetector.isAvailable === 'function') {
-      return await NativePoseDetector.isAvailable();
+    if (typeof detector.isAvailable === 'function') {
+      return await detector.isAvailable();
     }
     return true;
   } catch {
@@ -32,9 +33,10 @@ export const isNativePoseDetectorAvailable = async (): Promise<boolean> => {
 };
 
 export const detectPoseFromUri = async (imageUri: string): Promise<NativePoseLandmark[] | null> => {
-  if (!NativePoseDetector) return null;
+  const detector = getNativePoseDetector();
+  if (!detector) return null;
   try {
-    const results = await NativePoseDetector.detectPoseFromUri(imageUri);
+    const results = await detector.detectPoseFromUri(imageUri);
     if (Array.isArray(results) && results.length > 0) {
       return results as NativePoseLandmark[];
     }

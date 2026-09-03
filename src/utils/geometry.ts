@@ -771,8 +771,8 @@ export function mapLandmarkToScreen(
   // 6. Calculate video letterbox render rect using CORRECTED source dimensions
   const videoRect = getVideoRenderRect(containerWidth, containerHeight, finalVW, finalVH);
 
-  const confidenceValid = landmark.visibility === undefined || landmark.visibility >= 0.2;
-  const visible = lx >= 0 && lx <= 1 && ly >= 0 && ly <= 1 && confidenceValid;
+  const confidenceValid = landmark.visibility === undefined || landmark.visibility >= 0.15;
+  const visible = lx >= -0.3 && lx <= 1.3 && ly >= -0.3 && ly <= 1.3 && confidenceValid;
 
   const screenX = videoRect.x + (lx * videoRect.width);
   const screenY = videoRect.y + (ly * videoRect.height);
