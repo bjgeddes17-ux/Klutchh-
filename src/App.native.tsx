@@ -206,7 +206,7 @@ export default function App() {
       sportRule: currentSportRule,
       skillLevel,
       athleteCategory,
-      durationSec: customVideoDuration || 3.8,
+      durationSec: customVideoDuration || undefined,
       onProgress: (p) => setProcessingProgress(p),
     })
       .then((result) => {

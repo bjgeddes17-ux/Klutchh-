@@ -67,35 +67,16 @@ export const KineticVideoPlayer: React.FC<KineticVideoPlayerProps> = ({
   onTogglePlay,
   onPause,
   hideSkeleton = false,
-  initialSkeletonScale = 0.45,
+  initialSkeletonScale = 1.0,
 }) => {
   const [isFullscreenModal, setIsFullscreenModal] = useState<boolean>(false);
   const [showSkeleton, setShowSkeleton] = useState<boolean>(!hideSkeleton);
 
-  // Smart Biomechanical Alignment:
-  // When real on-device ML Kit detections are present, use exact 1.0 natural scale and 0 offsets (locks directly on athlete).
-  // Only fall back to estimated shift if running synthetic fallback frames.
-  const hasRealDetection = useMemo(() => {
-    return sortedFrames.some((f) => f.isRealDetection === true);
-  }, [sortedFrames]);
-
-  const defaultOffsetX = hasRealDetection ? 0 : (sportRule?.id === 'golf' ? -0.22 : 0);
-  const defaultScale = hasRealDetection ? 1.0 : (initialSkeletonScale || (sportRule?.id === 'golf' ? 0.45 : 1.0));
-  const defaultOffsetY = hasRealDetection ? 0 : (sportRule?.id === 'golf' ? 0.05 : 0);
-
-  const [skeletonScale, setSkeletonScale] = useState<number>(defaultScale);
-  const [skeletonOffsetX, setSkeletonOffsetX] = useState<number>(defaultOffsetX);
-  const [skeletonOffsetY, setSkeletonOffsetY] = useState<number>(defaultOffsetY);
+  // Smart Biomechanical Alignment: 1:1 natural scale and 0 offsets for frame-perfect tracking
+  const [skeletonScale, setSkeletonScale] = useState<number>(1.0);
+  const [skeletonOffsetX, setSkeletonOffsetX] = useState<number>(0);
+  const [skeletonOffsetY, setSkeletonOffsetY] = useState<number>(0);
   const [showSyncControls, setShowSyncControls] = useState<boolean>(false);
-
-  // Automatically reset to 1:1 natural sync if real detection is active
-  useEffect(() => {
-    if (hasRealDetection) {
-      setSkeletonScale(1.0);
-      setSkeletonOffsetX(0);
-      setSkeletonOffsetY(0);
-    }
-  }, [hasRealDetection]);
 
   const {
     videoRef,
@@ -148,11 +129,24 @@ export const KineticVideoPlayer: React.FC<KineticVideoPlayerProps> = ({
     }
   };
 
-  // Find closest analyzed frame based on currentTime (Binary Search)
-  const currentFrame = useMemo(() => {
-    if (!sortedFrames.length) return null;
+  // Continuous Dynamic Pose Interpolation across the playback timeline
+  const { currentFrame, interpolatedLandmarks } = useMemo(() => {
+    if (!sortedFrames || sortedFrames.length === 0) {
+      return { currentFrame: null, interpolatedLandmarks: null };
+    }
+
+    // Boundary cases: before first frame or after last frame
+    if (currentTime <= sortedFrames[0].timestamp) {
+      return { currentFrame: sortedFrames[0], interpolatedLandmarks: sortedFrames[0].landmarks };
+    }
+    const lastIdx = sortedFrames.length - 1;
+    if (currentTime >= sortedFrames[lastIdx].timestamp) {
+      return { currentFrame: sortedFrames[lastIdx], interpolatedLandmarks: sortedFrames[lastIdx].landmarks };
+    }
+
+    // Binary search for bounding frames: f1 (<= currentTime) and f2 (> currentTime)
     let low = 0;
-    let high = sortedFrames.length - 1;
+    let high = lastIdx;
     let idx = 0;
     while (low <= high) {
       const mid = (low + high) >> 1;
@@ -163,7 +157,34 @@ export const KineticVideoPlayer: React.FC<KineticVideoPlayerProps> = ({
         high = mid - 1;
       }
     }
-    return sortedFrames[idx];
+
+    const f1 = sortedFrames[idx];
+    const f2 = sortedFrames[Math.min(lastIdx, idx + 1)];
+
+    if (!f2 || f1 === f2 || f2.timestamp <= f1.timestamp) {
+      return { currentFrame: f1, interpolatedLandmarks: f1.landmarks };
+    }
+
+    // Smooth Linear Interpolation (Lerp) between adjacent sampled frames
+    const timeDelta = f2.timestamp - f1.timestamp;
+    const alpha = Math.max(0, Math.min(1, (currentTime - f1.timestamp) / timeDelta));
+
+    if (!f1.landmarks || !f2.landmarks) {
+      return { currentFrame: f1, interpolatedLandmarks: f1.landmarks || f2.landmarks };
+    }
+
+    const lerped: MediaPipeLandmark[] = f1.landmarks.map((lm1, i) => {
+      const lm2 = f2.landmarks[i];
+      if (!lm2) return lm1;
+      return {
+        x: lm1.x + (lm2.x - lm1.x) * alpha,
+        y: lm1.y + (lm2.y - lm1.y) * alpha,
+        z: (lm1.z !== undefined && lm2.z !== undefined) ? lm1.z + (lm2.z - lm1.z) * alpha : lm1.z,
+        visibility: Math.min(lm1.visibility ?? 1, lm2.visibility ?? 1),
+      };
+    });
+
+    return { currentFrame: f1, interpolatedLandmarks: lerped };
   }, [sortedFrames, currentTime]);
 
   const handleReadyForDisplay = (event: any) => {
@@ -192,7 +213,7 @@ export const KineticVideoPlayer: React.FC<KineticVideoPlayerProps> = ({
     }
   }, [layout, fullscreenLayout, videoDimensions, isFullscreenModal]);
 
-  const landmarks = currentFrame?.landmarks;
+  const landmarks = interpolatedLandmarks || currentFrame?.landmarks;
   const curW = isFullscreenModal ? fullscreenLayout.width : layout.width;
   const curH = isFullscreenModal ? fullscreenLayout.height : layout.height;
 
@@ -513,6 +534,7 @@ export const KineticVideoPlayer: React.FC<KineticVideoPlayerProps> = ({
         resizeMode={ResizeMode.CONTAIN}
         shouldPlay={isPlaying && !isFullscreenModal}
         isLooping={true}
+        progressUpdateIntervalMillis={40}
         onPlaybackStatusUpdate={isFullscreenModal ? undefined : (s) => handlePlaybackStatusUpdate(s, false)}
         onReadyForDisplay={handleReadyForDisplay}
         style={styles.video}
@@ -1015,6 +1037,7 @@ export const KineticVideoPlayer: React.FC<KineticVideoPlayerProps> = ({
             resizeMode={ResizeMode.CONTAIN}
             shouldPlay={isPlaying && isFullscreenModal}
             isLooping={true}
+            progressUpdateIntervalMillis={40}
             onPlaybackStatusUpdate={isFullscreenModal ? (s) => handlePlaybackStatusUpdate(s, true) : undefined}
             onReadyForDisplay={handleReadyForDisplay}
             style={StyleSheet.absoluteFillObject}

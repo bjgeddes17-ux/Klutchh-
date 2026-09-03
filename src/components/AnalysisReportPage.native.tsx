@@ -650,45 +650,75 @@ export const AnalysisReportPage: React.FC<AnalysisReportPageProps> = ({
               </Text>
             </View>
 
-            {(sportRule.phases || ['Approach', 'Load / Coil', 'Delivery / Strike', 'Follow Through']).map((phaseName, idx) => {
-              const phaseTimes = [
-                { start: 0.0, end: 0.8, desc: 'Initial momentum generation and balance setup.' },
-                { start: 0.8, end: 1.6, desc: 'Maximum hip-shoulder separation and kinetic loading.' },
-                { start: 1.6, end: 2.4, desc: 'Explosive force transfer and peak angular velocity.' },
-                { start: 2.4, end: 3.39, desc: 'Deceleration and safe kinetic energy dissipation.' },
-              ];
-              const pt = phaseTimes[idx] || { start: idx * 0.8, end: (idx + 1) * 0.8, desc: 'Milestone execution phase.' };
-              const isCurrent = currentTime >= pt.start && currentTime <= pt.end;
+            {(() => {
+              const activePhases = sportRule.phases || ['Approach', 'Load / Coil', 'Delivery / Strike', 'Follow Through'];
+              const totalDuration = sortedFrames.length > 0
+                ? sortedFrames[sortedFrames.length - 1].timestamp
+                : 3.5;
+              const phaseDuration = totalDuration / Math.max(1, activePhases.length);
 
-              return (
-                <TouchableOpacity
-                  key={phaseName}
-                  onPress={() => handleSeek(pt.start)}
-                  style={[styles.corridorCard, isCurrent && { borderColor: '#38bdf8', borderWidth: 2 }]}
-                >
-                  <View style={styles.corridorTopRow}>
-                    <View style={styles.corridorTitleBox}>
-                      <View style={[styles.statusDot, { backgroundColor: isCurrent ? '#38bdf8' : '#22c55e' }]} />
-                      <Text style={styles.corridorName}>{phaseName}</Text>
-                    </View>
-                    <View style={[styles.targetPill, { borderColor: '#38bdf8' }]}>
-                      <Text style={[styles.targetPillText, { color: '#38bdf8' }]}>
-                        {pt.start.toFixed(1)}s - {pt.end.toFixed(1)}s
-                      </Text>
-                    </View>
-                  </View>
+              return activePhases.map((phaseName, idx) => {
+                const start = Math.round(idx * phaseDuration * 10) / 10;
+                const end = Math.round(Math.min(totalDuration, (idx + 1) * phaseDuration) * 10) / 10;
+                const isCurrent = currentTime >= start && currentTime <= end;
 
-                  <Text style={styles.corridorDesc}>{pt.desc}</Text>
+                // Dynamically find a representative frame in this phase
+                const phaseFrame = sortedFrames.find(
+                  (f) => f.timestamp >= start && f.timestamp <= end
+                );
 
-                  <View style={styles.corridorFooter}>
-                    <View style={styles.footerTag}>
-                      <Text style={styles.footerTagText}>STATUS: {isCurrent ? 'ACTIVE PHASE' : 'RECORDED'}</Text>
+                return (
+                  <TouchableOpacity
+                    key={phaseName}
+                    onPress={() => handleSeek(start)}
+                    style={[styles.corridorCard, isCurrent && { borderColor: '#38bdf8', borderWidth: 2 }]}
+                  >
+                    <View style={styles.corridorTopRow}>
+                      <View style={styles.corridorTitleBox}>
+                        <View style={[styles.statusDot, { backgroundColor: isCurrent ? '#38bdf8' : '#22c55e' }]} />
+                        <Text style={styles.corridorName}>{phaseName}</Text>
+                      </View>
+                      <View style={[styles.targetPill, { borderColor: '#38bdf8' }]}>
+                        <Text style={[styles.targetPillText, { color: '#38bdf8' }]}>
+                          {start.toFixed(1)}s - {end.toFixed(1)}s
+                        </Text>
+                      </View>
                     </View>
-                    <Text style={styles.impactText}>Tap to Jump to Frame →</Text>
-                  </View>
-                </TouchableOpacity>
-              );
-            })}
+
+                    <Text style={styles.corridorDesc}>
+                      {idx === 0
+                        ? 'Initial stance stability, center of gravity setup, and prep alignment.'
+                        : idx === 1
+                        ? 'Kinetic loading, pelvic-thoracic separation, and elastic energy storage.'
+                        : idx === 2
+                        ? 'Explosive force transfer, peak segment acceleration, and contact/release.'
+                        : 'Deceleration corridor and safe dissipation of ground reaction energy.'}
+                    </Text>
+
+                    {phaseFrame?.angles && (
+                      <View style={{ flexDirection: 'row', gap: 12, marginTop: 8, padding: 8, backgroundColor: '#18181b', borderRadius: 8 }}>
+                        <Text style={{ fontSize: 11, color: '#a1a1aa' }}>
+                          Knee: <Text style={{ color: '#38bdf8', fontWeight: 'bold' }}>{phaseFrame.angles.knee ?? '—'}°</Text>
+                        </Text>
+                        <Text style={{ fontSize: 11, color: '#a1a1aa' }}>
+                          Hip: <Text style={{ color: '#22c55e', fontWeight: 'bold' }}>{phaseFrame.angles.hip ?? '—'}°</Text>
+                        </Text>
+                        <Text style={{ fontSize: 11, color: '#a1a1aa' }}>
+                          Torso: <Text style={{ color: '#fbbf24', fontWeight: 'bold' }}>{phaseFrame.angles.shoulder ?? '—'}°</Text>
+                        </Text>
+                      </View>
+                    )}
+
+                    <View style={styles.corridorFooter}>
+                      <View style={styles.footerTag}>
+                        <Text style={styles.footerTagText}>STATUS: {isCurrent ? 'ACTIVE PHASE' : 'RECORDED'}</Text>
+                      </View>
+                      <Text style={styles.impactText}>Tap to Jump to Frame →</Text>
+                    </View>
+                  </TouchableOpacity>
+                );
+              });
+            })()}
           </View>
         )}
 
