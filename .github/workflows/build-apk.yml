@@ -1,0 +1,53 @@
+name: Build Android APK (Expo + NDK + ML Kit)
+
+on:
+  workflow_dispatch: # Allows manual trigger from GitHub Actions tab
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: 📥 Checkout repository
+        uses: actions/checkout@v4
+
+      - name: ☕ Setup Java 17 (Zulu)
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'zulu'
+          java-version: '17'
+
+      - name: 🛠️ Setup Node.js 18
+        uses: actions/setup-node@v4
+        with:
+          node-version: 18
+          cache: 'npm'
+
+      - name: 📱 Setup Android SDK Tools & CMake
+        uses: android-actions/setup-android@v3
+        with:
+          packages: 'tools platform-tools platforms;android-34 build-tools;34.0.0 cmake;3.22.1'
+
+      - name: 🧩 Setup Android NDK (r26b / 26.1.10909125)
+        uses: nopenopenope/setup-android-ndk@v1.1
+        with:
+          ndk-version: r26b
+
+      - name: 📦 Install npm dependencies
+        run: npm ci
+
+      - name: 🚀 Expo Prebuild (Generate Native Android Project)
+        run: npx expo prebuild --platform android --clean
+
+      - name: 🔨 Compile Android Release APK with Gradle
+        run: |
+          cd android
+          chmod +x gradlew
+          ./gradlew assembleRelease --no-daemon -Dorg.gradle.jvmargs="-Xmx4096m -XX:MaxMetaspaceSize=1024m"
+
+      - name: 📤 Upload Release APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: Klutchh-AI-Release-APK
+          path: android/app/build/outputs/apk/release/*.apk
+          retention-days: 14
