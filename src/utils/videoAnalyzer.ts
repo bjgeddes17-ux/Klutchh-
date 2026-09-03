@@ -8,6 +8,7 @@ import { validateKinematicSportFit } from './antiTrollValidator';
 import { PoseLandmarkSmoother } from './oneEuroFilter';
 import { KinematicBoneStabilizer } from './boneStabilizer';
 import { generateDeterministicBiomechanicalReport } from './biomechanicsEngine';
+import { validateBiomechanicalFrame } from './biomechanicalValidation';
 
 // Device Capability Detector
 export function detectCapableDevice(): boolean {
@@ -239,6 +240,16 @@ export async function analyzeVideoBiometrics(
           const sym = calculateSymmetry(biomechanicLandmarks);
           const knee = calculateKneeValgusScore(biomechanicLandmarks);
           
+          const phaseIdx = sportRule.phases.indexOf(bestPhase);
+          const validation = validateBiomechanicalFrame(
+            biomechanicLandmarks,
+            bestPhase,
+            phaseIdx >= 0 ? phaseIdx : 0,
+            sportRule.phases.length,
+            sportRule,
+            frameData.timestamp
+          );
+
           const frame: FrameAnalysis = {
             timestamp: frameData.timestamp,
             frameNumber: frameData.index,
@@ -249,12 +260,20 @@ export async function analyzeVideoBiometrics(
             kneeSafetyScore: knee,
             detectedPhase: bestPhase,
             activeLevel: skillLevel,
-            matchScore: biometricResult.matchScore
+            matchScore: biometricResult.matchScore,
+            validationStatus: validation.status,
+            validationIssues: validation.issues,
+            isFlaggedForManualReview: validation.isFlaggedForReview,
+            isDiscardedOutlier: validation.isDiscarded,
+            phaseConstraintScore: validation.score,
           };
 
           allSampledFrames.push(frame);
 
-          if (!phaseWinners[bestPhase] || biometricResult.score > phaseWinners[bestPhase].score) {
+          if (
+            !frame.isDiscardedOutlier &&
+            (!phaseWinners[bestPhase] || biometricResult.score > phaseWinners[bestPhase].score)
+          ) {
             phaseWinners[bestPhase] = { frame, score: biometricResult.score };
           }
 
@@ -414,20 +433,22 @@ async function synthesizeAnalysis(
   const timeSpan = Math.max(0.5, effectiveEnd - effectiveStart);
 
   const actualSteps = biomechanicalSteps.map((step, stepIdx) => {
-    // 1. Find frames that match this phase name directly or by sportRule phase
+    // 1. Find frames that match this phase name directly or by sportRule phase and are not discarded outliers
     const phaseFrames = allSampledFrames.filter(f => 
-      f.detectedPhase === step.phaseName || 
-      (sportRule.phases && sportRule.phases[stepIdx] && f.detectedPhase === sportRule.phases[stepIdx])
+      !f.isDiscardedOutlier &&
+      (f.detectedPhase === step.phaseName || 
+      (sportRule.phases && sportRule.phases[stepIdx] && f.detectedPhase === sportRule.phases[stepIdx]))
     );
     
     // 2. Proportional target timestamp across the active motion window
     const targetTimeRatio = (stepIdx + 0.5) / Math.max(1, biomechanicalSteps.length);
     const targetTimestamp = effectiveStart + timeSpan * targetTimeRatio;
     
-    // 3. Find closest frame from allSampledFrames to targetTimestamp
+    // 3. Find closest valid frame from allSampledFrames to targetTimestamp
     let closestFrame: FrameAnalysis | undefined = undefined;
     let minDiff = Infinity;
     for (const f of allSampledFrames) {
+      if (f.isDiscardedOutlier) continue;
       const diff = Math.abs(f.timestamp - targetTimestamp);
       if (diff < minDiff) {
         minDiff = diff;
@@ -435,12 +456,17 @@ async function synthesizeAnalysis(
       }
     }
 
-    // Winner: Prefer middle frame of matched phase, then closest temporal frame
+    // Winner: Prefer middle frame of matched phase, then non-outlier phaseWinner, then closest temporal frame
     const middleIdx = Math.floor(phaseFrames.length / 2);
+    const validPhaseWinner = phaseWinners[step.phaseName]?.frame && !phaseWinners[step.phaseName]?.frame.isDiscardedOutlier
+      ? phaseWinners[step.phaseName]?.frame
+      : undefined;
+
+    const validFallback = allSampledFrames.filter(f => !f.isDiscardedOutlier);
     const winner = phaseFrames[middleIdx] || 
-                   phaseWinners[step.phaseName]?.frame || 
+                   validPhaseWinner || 
                    closestFrame || 
-                   allSampledFrames[Math.min(allSampledFrames.length - 1, Math.floor((stepIdx / biomechanicalSteps.length) * allSampledFrames.length))] ||
+                   validFallback[Math.min(validFallback.length - 1, Math.floor((stepIdx / biomechanicalSteps.length) * validFallback.length))] ||
                    allSampledFrames[0];
     
     if (winner && !kineticKeyframes.some(kf => Math.abs(kf.timestamp - winner.timestamp) < 0.05)) {
@@ -611,6 +637,10 @@ async function synthesizeAnalysis(
   const jointArmor = Math.min(99, Math.max(30, overallKneeSafety));
   const kineticFlow = Math.min(99, Math.max(30, Math.round((overallSymmetry + (kineticSequence?.sequenceEfficiency || 80)) / 2)));
 
+  const flaggedFramesCount = allSampledFrames.filter(f => f.validationStatus === 'flagged_review').length;
+  const discardedOutliersCount = allSampledFrames.filter(f => f.validationStatus === 'discarded_outlier').length;
+  const validFramesCount = allSampledFrames.filter(f => f.validationStatus === 'valid').length;
+
   return {
     startTime,
     endTime,
@@ -636,7 +666,16 @@ async function synthesizeAnalysis(
       jointArmorScore: jointArmor
     },
     isPro30FpsPipeline: useOptionBPipeline,
-    processingMode: useOptionBPipeline ? 'pro_30fps_cloud' : 'standard_client'
+    processingMode: useOptionBPipeline ? 'pro_30fps_cloud' : 'standard_client',
+    flaggedFramesCount,
+    discardedOutliersCount,
+    validationReport: {
+      totalFrames: allSampledFrames.length,
+      validFrames: validFramesCount,
+      flaggedFrames: flaggedFramesCount,
+      discardedFrames: discardedOutliersCount,
+      summary: `${validFramesCount}/${allSampledFrames.length} frames verified within physiological bounds (${discardedOutliersCount} outliers rejected, ${flaggedFramesCount} flagged for coach review).`,
+    },
   };
 }
 
@@ -745,7 +784,9 @@ export function ensureMinimumKeyframes(
 
   if (result.length < minCount) {
     const existingTimestamps = new Set(result.map(k => Math.round(k.timestamp * 100) / 100));
-    const extraSampled = allSampledFrames.filter(f => !existingTimestamps.has(Math.round(f.timestamp * 100) / 100));
+    const extraSampled = allSampledFrames.filter(
+      f => !f.isDiscardedOutlier && !existingTimestamps.has(Math.round(f.timestamp * 100) / 100)
+    );
 
     if (extraSampled.length > 0) {
       const needed = minCount - result.length;

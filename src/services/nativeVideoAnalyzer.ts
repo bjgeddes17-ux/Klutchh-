@@ -15,6 +15,7 @@ import {
 import { calculateAngle, calculateSymmetry } from '../utils/geometry';
 import { generateSyntheticSportsPose } from '../utils/mediapipePose.native';
 import { detectPoseFromUri, isNativePoseDetectorAvailable } from '../../modules/pose-detector';
+import { validateBiomechanicalFrame } from '../utils/biomechanicalValidation';
 
 interface AnalysisOptions {
   videoUri: string;
@@ -240,6 +241,16 @@ export async function analyzeNativeVideoBiometrics({
     const phaseIdx = Math.min(sportPhases.length - 1, Math.floor(phaseRatio * sportPhases.length));
     const detectedPhase = sportPhases[phaseIdx];
 
+    // Cross-reference extracted skeletal Y-coordinates against movement phase constraints in SPORTS_RULES
+    const validation = validateBiomechanicalFrame(
+      landmarks,
+      detectedPhase,
+      phaseIdx,
+      sportPhases.length,
+      sportRule,
+      timestampSec
+    );
+
     frames.push({
       frameNumber: i,
       timestamp: Math.round(timestampSec * 100) / 100,
@@ -254,6 +265,11 @@ export async function analyzeNativeVideoBiometrics({
       isRealDetection: isReal,
       isSynthetic: !isReal,
       isFallback: !isReal,
+      validationStatus: validation.status,
+      validationIssues: validation.issues,
+      isFlaggedForManualReview: validation.isFlaggedForReview,
+      isDiscardedOutlier: validation.isDiscarded,
+      phaseConstraintScore: validation.score,
     });
 
     updateProgress(15 + Math.round((i / totalFrames) * 75));
@@ -261,8 +277,11 @@ export async function analyzeNativeVideoBiometrics({
 
   updateProgress(90);
 
-  // Determine overall confidence (High confidence on native app)
-  const isHighConfidence = true;
+  // Determine overall confidence & validation tally
+  const flaggedFramesCount = frames.filter(f => f.validationStatus === 'flagged_review').length;
+  const discardedOutliersCount = frames.filter(f => f.validationStatus === 'discarded_outlier').length;
+  const validFramesCount = frames.filter(f => f.validationStatus === 'valid').length;
+
   const avgSymmetry = Math.round(
     frames.reduce((acc, f) => acc + (f.symmetryScore || 90), 0) / frames.length
   );
@@ -270,11 +289,56 @@ export async function analyzeNativeVideoBiometrics({
     frames.reduce((acc, f) => acc + (f.kneeSafetyScore || 90), 0) / frames.length
   );
 
-  // 3. Dynamically Detect Meaningful Biomechanical Keyframes based on Peak Kinematics
+  // 3. Dynamically Detect Meaningful Biomechanical Keyframes based on Peak Kinematics with Outlier Filtering
   // Setup (earliest stable stance), Peak Kinetic Acceleration (max angular/segmental velocity), Release / Follow-Through
+
+  // Helper to pick the best valid candidate within an index range, rejecting discarded outliers
+  const selectBestCandidateFrame = (
+    startIdx: number,
+    endIdx: number,
+    preferHighVelocity: boolean = false
+  ): FrameAnalysis => {
+    const rangeFrames = frames.slice(Math.max(0, startIdx), Math.min(frames.length, endIdx + 1));
+    if (rangeFrames.length === 0) return frames[0];
+
+    // Priority 1: Valid frames (no discarded outliers)
+    const validCandidates = rangeFrames.filter(f => !f.isDiscardedOutlier && f.validationStatus !== 'discarded_outlier');
+
+    if (validCandidates.length > 0) {
+      if (preferHighVelocity) {
+        return validCandidates.reduce((best, curr) => {
+          const vCurr = curr.velocity?.wrist || curr.velocity?.shoulder || 0;
+          const vBest = best.velocity?.wrist || best.velocity?.shoulder || 0;
+          return vCurr > vBest ? curr : best;
+        }, validCandidates[0]);
+      } else {
+        // Prefer highest validation score / balance
+        return validCandidates.reduce((best, curr) => {
+          return (curr.phaseConstraintScore || 100) > (best.phaseConstraintScore || 100) ? curr : best;
+        }, validCandidates[Math.floor(validCandidates.length / 2)]);
+      }
+    }
+
+    // Priority 2: Flagged for review (if no perfectly valid frame in window, flag candidate for coach review)
+    const reviewCandidates = rangeFrames.filter(f => f.validationStatus === 'flagged_review');
+    if (reviewCandidates.length > 0) {
+      return reviewCandidates[0];
+    }
+
+    // Fallback: Default middle frame of window with manual review flag enforced
+    const fallbackFrame = rangeFrames[Math.floor(rangeFrames.length / 2)] || frames[0];
+    return {
+      ...fallbackFrame,
+      isFlaggedForManualReview: true,
+      validationIssues: [...(fallbackFrame.validationIssues || []), 'Selected as keyframe under suboptimal biometric window'],
+    };
+  };
+
+  // Find peak velocity index among non-outlier frames
   let peakVelIdx = Math.floor(frames.length * 0.5);
   let maxVelFound = -1;
   frames.forEach((f, idx) => {
+    if (f.isDiscardedOutlier) return; // Skip outliers
     const v = f.velocity?.wrist || f.velocity?.shoulder || 0;
     if (v > maxVelFound) {
       maxVelFound = v;
@@ -282,15 +346,19 @@ export async function analyzeNativeVideoBiometrics({
     }
   });
 
-  const setupIdx = Math.max(0, Math.min(Math.floor(frames.length * 0.15), peakVelIdx - 1));
-  const apexIdx = peakVelIdx;
-  const finishIdx = Math.min(frames.length - 1, Math.max(Math.floor(frames.length * 0.85), peakVelIdx + 1));
+  const setupCandidate = selectBestCandidateFrame(0, Math.max(0, peakVelIdx - 1), false);
+  const apexCandidate = selectBestCandidateFrame(
+    Math.max(0, peakVelIdx - 2),
+    Math.min(frames.length - 1, peakVelIdx + 2),
+    true
+  );
+  const finishCandidate = selectBestCandidateFrame(
+    Math.min(frames.length - 1, peakVelIdx + 1),
+    frames.length - 1,
+    false
+  );
 
-  const keyframes = [
-    frames[setupIdx] || frames[0],
-    frames[apexIdx] || frames[Math.floor(frames.length / 2)],
-    frames[finishIdx] || frames[frames.length - 1],
-  ];
+  const keyframes = [setupCandidate, apexCandidate, finishCandidate];
 
   // Coaching & Biomechanical Report
   const coachingReport: AICoachingReport = {
@@ -345,8 +413,8 @@ export async function analyzeNativeVideoBiometrics({
     overallSymmetry: avgSymmetry,
     overallKneeSafety: avgKneeSafety,
     measuredAngles: {
-      kneeAngle: frames[apexIdx]?.angles.knee || 120,
-      hipAngle: frames[apexIdx]?.angles.hip || 135,
+      kneeAngle: apexCandidate?.angles?.knee || 120,
+      hipAngle: apexCandidate?.angles?.hip || 135,
       torsoLean: 32,
     },
     ruleResultsSummary: {
@@ -396,6 +464,15 @@ export async function analyzeNativeVideoBiometrics({
         : 'mlkit_no_person_detected'
       : 'synthetic_fallback',
     sourceDimensions: detectedDimensions,
+    flaggedFramesCount,
+    discardedOutliersCount,
+    validationReport: {
+      totalFrames,
+      validFrames: validFramesCount,
+      flaggedFrames: flaggedFramesCount,
+      discardedFrames: discardedOutliersCount,
+      summary: `${validFramesCount}/${totalFrames} frames verified within physiological bounds (${discardedOutliersCount} outliers rejected, ${flaggedFramesCount} flagged for coach review).`,
+    },
   };
 
   updateProgress(100);

@@ -80,10 +80,31 @@ export const KeyframeTimeline: React.FC<KeyframeTimelineProps> = ({
               </span>
             </div>
 
-            {/* Phase Name */}
-            <div className="text-xs font-extrabold text-yellow-400 uppercase tracking-wide">
-              Phase: {frame.detectedPhase}
+            {/* Phase Name & Validation Badge */}
+            <div className="flex items-center justify-between gap-1">
+              <div className="text-xs font-extrabold text-yellow-400 uppercase tracking-wide truncate">
+                Phase: {frame.detectedPhase}
+              </div>
+              {frame.isFlaggedForManualReview || frame.validationStatus === 'flagged_review' ? (
+                <span
+                  className="bg-amber-500/20 text-amber-300 border border-amber-500/40 text-[9px] font-bold px-1.5 py-0.5 rounded flex items-center gap-0.5"
+                  title={frame.validationIssues?.join('; ') || 'Flagged for coach review'}
+                >
+                  ⚠️ Review
+                </span>
+              ) : (
+                <span className="bg-emerald-500/10 text-emerald-400 border border-emerald-500/30 text-[9px] font-bold px-1.5 py-0.5 rounded">
+                  ✓ Verified
+                </span>
+              )}
             </div>
+
+            {/* Validation Issues if flagged */}
+            {frame.validationIssues && frame.validationIssues.length > 0 && (
+              <div className="text-[10px] text-amber-300/90 bg-amber-950/40 border border-amber-900/50 rounded px-2 py-1 leading-tight">
+                {frame.validationIssues[0]}
+              </div>
+            )}
 
             {/* Key Measured Angles */}
             <div className="flex flex-col gap-1.5 text-xs text-zinc-300 bg-zinc-950 p-2.5 rounded-lg border border-zinc-800/80">

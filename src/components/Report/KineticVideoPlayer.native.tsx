@@ -1,4 +1,4 @@
-import React, { useRef, useState, useMemo, useEffect } from 'react';
+import React, { useRef, useState, useMemo, useEffect, useCallback } from 'react';
 import {
   View,
   Text,
@@ -73,10 +73,21 @@ export const KineticVideoPlayer: React.FC<KineticVideoPlayerProps> = ({
   const [showSkeleton, setShowSkeleton] = useState<boolean>(!hideSkeleton);
 
   // Smart Biomechanical Alignment: 1:1 natural scale and 0 offsets for frame-perfect tracking
-  const [skeletonScale, setSkeletonScale] = useState<number>(1.0);
+  const [skeletonScale, setSkeletonScale] = useState<number>(initialSkeletonScale || 1.0);
   const [skeletonOffsetX, setSkeletonOffsetX] = useState<number>(0);
   const [skeletonOffsetY, setSkeletonOffsetY] = useState<number>(0);
   const [showSyncControls, setShowSyncControls] = useState<boolean>(false);
+
+  const [trackWidth, setTrackWidth] = useState<number>(0);
+  const [fsTrackWidth, setFsTrackWidth] = useState<number>(0);
+
+  const fallbackDuration = useMemo(() => {
+    if (sortedFrames && sortedFrames.length > 0) {
+      const last = sortedFrames[sortedFrames.length - 1].timestamp;
+      if (last > 0.5) return last;
+    }
+    return 3.5;
+  }, [sortedFrames]);
 
   const {
     videoRef,
@@ -86,6 +97,7 @@ export const KineticVideoPlayer: React.FC<KineticVideoPlayerProps> = ({
     isScrubbing,
     handlePlaybackStatusUpdate,
     handleSeek,
+    handleSeekToTime,
     handleStep,
     handleChangeSpeed,
   } = useVideoPlayback({
@@ -93,9 +105,26 @@ export const KineticVideoPlayer: React.FC<KineticVideoPlayerProps> = ({
     onTimeUpdate,
     onDurationChange,
     onPause,
+    onTogglePlay,
     isFullscreenModal,
     initialPlaybackRate: playbackRate,
+    initialDuration: fallbackDuration,
   });
+
+  const handleTogglePlay = useCallback(async () => {
+    const targetRef = isFullscreenModal ? fullscreenVideoRef.current : videoRef.current;
+    if (isPlaying) {
+      if (onPause) onPause();
+      if (targetRef) {
+        await targetRef.pauseAsync().catch(() => {});
+      }
+    } else {
+      if (onTogglePlay) onTogglePlay();
+      if (targetRef) {
+        await targetRef.playAsync().catch(() => {});
+      }
+    }
+  }, [isPlaying, isFullscreenModal, onPause, onTogglePlay]);
 
   const [isMirrored, setIsMirrored] = useState(false);
   const [layout, setLayout] = useState({ width: 360, height: 480 });
@@ -560,7 +589,7 @@ export const KineticVideoPlayer: React.FC<KineticVideoPlayerProps> = ({
                 `}
                 fill="rgba(56, 189, 248, 0.08)"
                 stroke="rgba(56, 189, 248, 0.25)"
-                strokeWidth={1.5}
+                strokeWidth={1.2}
               />
             );
           })()}
@@ -573,10 +602,10 @@ export const KineticVideoPlayer: React.FC<KineticVideoPlayerProps> = ({
               <Circle
                 cx={p.x}
                 cy={p.y - 4}
-                r={10}
+                r={8}
                 fill="rgba(56, 189, 248, 0.12)"
                 stroke="rgba(56, 189, 248, 0.4)"
-                strokeWidth={1.5}
+                strokeWidth={1.2}
               />
             );
           })()}
@@ -605,7 +634,7 @@ export const KineticVideoPlayer: React.FC<KineticVideoPlayerProps> = ({
                 x2={p2.x}
                 y2={p2.y}
                 stroke={color}
-                strokeWidth={5}
+                strokeWidth={2.5}
                 strokeLinecap="round"
               />
             );
@@ -635,7 +664,7 @@ export const KineticVideoPlayer: React.FC<KineticVideoPlayerProps> = ({
                 x2={p2.x}
                 y2={p2.y}
                 stroke={color}
-                strokeWidth={5}
+                strokeWidth={2.5}
                 strokeLinecap="round"
               />
             );
@@ -653,7 +682,7 @@ export const KineticVideoPlayer: React.FC<KineticVideoPlayerProps> = ({
                 x2={p2.x}
                 y2={p2.y}
                 stroke="#38bdf8"
-                strokeWidth={2}
+                strokeWidth={1.6}
               />
             );
           })()}
@@ -668,7 +697,7 @@ export const KineticVideoPlayer: React.FC<KineticVideoPlayerProps> = ({
                 x2={p2.x}
                 y2={p2.y}
                 stroke="#38bdf8"
-                strokeWidth={2}
+                strokeWidth={1.6}
               />
             );
           })()}
@@ -697,15 +726,15 @@ export const KineticVideoPlayer: React.FC<KineticVideoPlayerProps> = ({
                 <Circle
                   cx={p.x}
                   cy={p.y}
-                  r={8}
-                  fill="rgba(0,0,0,0.8)"
+                  r={4.5}
+                  fill="rgba(0,0,0,0.85)"
                   stroke={ringColor}
-                  strokeWidth={2}
+                  strokeWidth={1.5}
                 />
                 <Circle
                   cx={p.x}
                   cy={p.y}
-                  r={3}
+                  r={1.8}
                   fill="#ffffff"
                 />
               </G>
@@ -801,36 +830,40 @@ export const KineticVideoPlayer: React.FC<KineticVideoPlayerProps> = ({
         {/* Scrubber Bar */}
         <View
           style={styles.scrubberTrack}
+          onLayout={(e) => {
+            const w = e.nativeEvent.layout.width;
+            if (w > 0) setTrackWidth(w);
+          }}
           onStartShouldSetResponder={() => true}
+          onMoveShouldSetResponder={() => true}
           onResponderGrant={(e) => {
-            const touchX = e.nativeEvent.locationX;
-            const trackW = Math.max(1, curW - 32);
-            const ratio = Math.max(0, Math.min(1, (touchX - 16) / (trackW - 32)));
+            const tw = trackWidth > 0 ? trackWidth : Math.max(1, curW - 32);
+            const ratio = Math.max(0, Math.min(1, e.nativeEvent.locationX / tw));
             handleSeek(ratio, false, currentTime);
           }}
           onResponderMove={(e) => {
-            const touchX = e.nativeEvent.locationX;
-            const trackW = Math.max(1, curW - 32);
-            const ratio = Math.max(0, Math.min(1, (touchX - 16) / (trackW - 32)));
+            const tw = trackWidth > 0 ? trackWidth : Math.max(1, curW - 32);
+            const ratio = Math.max(0, Math.min(1, e.nativeEvent.locationX / tw));
             handleSeek(ratio, false, currentTime);
           }}
           onResponderRelease={(e) => {
-            const touchX = e.nativeEvent.locationX;
-            const trackW = Math.max(1, curW - 32);
-            const ratio = Math.max(0, Math.min(1, (touchX - 16) / (trackW - 32)));
+            const tw = trackWidth > 0 ? trackWidth : Math.max(1, curW - 32);
+            const ratio = Math.max(0, Math.min(1, e.nativeEvent.locationX / tw));
             handleSeek(ratio, true, currentTime);
           }}
         >
           <View
+            pointerEvents="none"
             style={[
               styles.scrubberProgress,
-              { width: `${Math.min(100, (currentTime / (duration || 1)) * 100)}%` },
+              { width: `${Math.min(100, Math.max(0, (currentTime / (duration || 1)) * 100))}%` },
             ]}
           />
           <View
+            pointerEvents="none"
             style={[
               styles.scrubberThumb,
-              { left: `${Math.min(97, (currentTime / (duration || 1)) * 100)}%` },
+              { left: `${Math.min(97, Math.max(0, (currentTime / (duration || 1)) * 100))}%` },
             ]}
           />
         </View>
@@ -842,7 +875,7 @@ export const KineticVideoPlayer: React.FC<KineticVideoPlayerProps> = ({
               <SkipBack color="#fff" size={18} />
             </TouchableOpacity>
 
-            <TouchableOpacity onPress={onTogglePlay} style={styles.playButtonBig}>
+            <TouchableOpacity onPress={handleTogglePlay} style={styles.playButtonBig}>
               {isPlaying ? <Pause color="#000" fill="#000" size={24} /> : <Play color="#000" fill="#000" size={24} />}
             </TouchableOpacity>
 
@@ -1067,7 +1100,7 @@ export const KineticVideoPlayer: React.FC<KineticVideoPlayerProps> = ({
                     `}
                     fill="rgba(56, 189, 248, 0.08)"
                     stroke="rgba(56, 189, 248, 0.25)"
-                    strokeWidth={1.5}
+                    strokeWidth={1.2}
                   />
                 );
               })()}
@@ -1096,7 +1129,7 @@ export const KineticVideoPlayer: React.FC<KineticVideoPlayerProps> = ({
                     x2={p2.x}
                     y2={p2.y}
                     stroke={color}
-                    strokeWidth={4}
+                    strokeWidth={2.8}
                     strokeLinecap="round"
                   />
                 );
@@ -1126,7 +1159,7 @@ export const KineticVideoPlayer: React.FC<KineticVideoPlayerProps> = ({
                     x2={p2.x}
                     y2={p2.y}
                     stroke={color}
-                    strokeWidth={4}
+                    strokeWidth={2.8}
                     strokeLinecap="round"
                   />
                 );
@@ -1144,7 +1177,7 @@ export const KineticVideoPlayer: React.FC<KineticVideoPlayerProps> = ({
                     x2={p2.x}
                     y2={p2.y}
                     stroke="#38bdf8"
-                    strokeWidth={2.5}
+                    strokeWidth={1.8}
                   />
                 );
               })()}
@@ -1159,7 +1192,7 @@ export const KineticVideoPlayer: React.FC<KineticVideoPlayerProps> = ({
                     x2={p2.x}
                     y2={p2.y}
                     stroke="#38bdf8"
-                    strokeWidth={2.5}
+                    strokeWidth={1.8}
                   />
                 );
               })()}
@@ -1175,15 +1208,15 @@ export const KineticVideoPlayer: React.FC<KineticVideoPlayerProps> = ({
                     <Circle
                       cx={p.x}
                       cy={p.y}
-                      r={5}
-                      fill="rgba(0,0,0,0.7)"
+                      r={4.5}
+                      fill="rgba(0,0,0,0.85)"
                       stroke={isLeft ? '#c084fc' : '#22c55e'}
-                      strokeWidth={2}
+                      strokeWidth={1.5}
                     />
                     <Circle
                       cx={p.x}
                       cy={p.y}
-                      r={2}
+                      r={1.8}
                       fill="#ffffff"
                     />
                   </G>
@@ -1286,36 +1319,40 @@ export const KineticVideoPlayer: React.FC<KineticVideoPlayerProps> = ({
           <View style={styles.fullscreenBottomBar}>
             <View
               style={styles.scrubberTrack}
+              onLayout={(e) => {
+                const w = e.nativeEvent.layout.width;
+                if (w > 0) setFsTrackWidth(w);
+              }}
               onStartShouldSetResponder={() => true}
+              onMoveShouldSetResponder={() => true}
               onResponderGrant={(e) => {
-                const touchX = e.nativeEvent.locationX;
-                const trackW = Math.max(1, fullscreenLayout.width - 64);
-                const ratio = Math.max(0, Math.min(1, (touchX - 32) / (trackW - 64)));
+                const tw = fsTrackWidth > 0 ? fsTrackWidth : Math.max(1, fullscreenLayout.width - 64);
+                const ratio = Math.max(0, Math.min(1, e.nativeEvent.locationX / tw));
                 handleSeek(ratio, false, currentTime);
               }}
               onResponderMove={(e) => {
-                const touchX = e.nativeEvent.locationX;
-                const trackW = Math.max(1, fullscreenLayout.width - 64);
-                const ratio = Math.max(0, Math.min(1, (touchX - 32) / (trackW - 64)));
+                const tw = fsTrackWidth > 0 ? fsTrackWidth : Math.max(1, fullscreenLayout.width - 64);
+                const ratio = Math.max(0, Math.min(1, e.nativeEvent.locationX / tw));
                 handleSeek(ratio, false, currentTime);
               }}
               onResponderRelease={(e) => {
-                const touchX = e.nativeEvent.locationX;
-                const trackW = Math.max(1, fullscreenLayout.width - 64);
-                const ratio = Math.max(0, Math.min(1, (touchX - 32) / (trackW - 64)));
+                const tw = fsTrackWidth > 0 ? fsTrackWidth : Math.max(1, fullscreenLayout.width - 64);
+                const ratio = Math.max(0, Math.min(1, e.nativeEvent.locationX / tw));
                 handleSeek(ratio, true, currentTime);
               }}
             >
               <View
+                pointerEvents="none"
                 style={[
                   styles.scrubberProgress,
-                  { width: `${Math.min(100, (currentTime / (duration || 1)) * 100)}%` },
+                  { width: `${Math.min(100, Math.max(0, (currentTime / (duration || 1)) * 100))}%` },
                 ]}
               />
               <View
+                pointerEvents="none"
                 style={[
                   styles.scrubberThumb,
-                  { left: `${Math.min(97, (currentTime / (duration || 1)) * 100)}%` },
+                  { left: `${Math.min(97, Math.max(0, (currentTime / (duration || 1)) * 100))}%` },
                 ]}
               />
             </View>
@@ -1336,7 +1373,7 @@ export const KineticVideoPlayer: React.FC<KineticVideoPlayerProps> = ({
                   <SkipBack color="#fff" size={18} />
                 </TouchableOpacity>
 
-                <TouchableOpacity onPress={onTogglePlay} style={styles.playButtonBig}>
+                <TouchableOpacity onPress={handleTogglePlay} style={styles.playButtonBig}>
                   {isPlaying ? <Pause color="#000" fill="#000" size={24} /> : <Play color="#000" fill="#000" size={24} />}
                 </TouchableOpacity>
 

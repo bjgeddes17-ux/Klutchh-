@@ -75,6 +75,11 @@ export interface FrameAnalysis {
   jointVelocities?: Record<string, number>; // Linear velocity for heatmap
   torque?: Record<string, number>; // Estimated relative torque
   matchScore?: number; // 0-100% archetype match
+  validationStatus?: 'valid' | 'flagged_review' | 'discarded_outlier';
+  validationIssues?: string[];
+  isFlaggedForManualReview?: boolean;
+  isDiscardedOutlier?: boolean;
+  phaseConstraintScore?: number;
 }
 
 export interface PhaseTrigger {
@@ -280,6 +285,15 @@ export interface SavedReport {
   cloudVideoUrl?: string;
   processingMode?: 'pro_30fps_cloud' | 'standard_client';
   preRenderedFrames?: { timestamp: number; dataUrl: string }[];
+  flaggedFramesCount?: number;
+  discardedOutliersCount?: number;
+  validationReport?: {
+    totalFrames: number;
+    validFrames: number;
+    flaggedFrames: number;
+    discardedFrames: number;
+    summary: string;
+  };
 }
 
 export interface AnalysisResult {
@@ -343,6 +357,15 @@ export interface AnalysisResult {
   totalFramesAnalyzed?: number;
   detectorEngine?: string;
   sourceDimensions?: { width: number; height: number };
+  flaggedFramesCount?: number;
+  discardedOutliersCount?: number;
+  validationReport?: {
+    totalFrames: number;
+    validFrames: number;
+    flaggedFrames: number;
+    discardedFrames: number;
+    summary: string;
+  };
 }
 
 export interface TrophyCard {
