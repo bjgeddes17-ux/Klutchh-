@@ -5,7 +5,21 @@ export interface NativePoseLandmark {
   x: number;
   y: number;
   z: number;
-  visibility: number;
+  visibility?: number;
+  score?: number;
+  name?: string;
+  type?: number;
+  normX?: number;
+  normY?: number;
+}
+
+export interface NativePoseResult {
+  detected: boolean;
+  confidence?: number;
+  landmarks: NativePoseLandmark[];
+  width?: number;
+  height?: number;
+  error?: string;
 }
 
 // Check for Expo Module or standard NativeModules bridge
@@ -36,10 +50,46 @@ export const detectPoseFromUri = async (imageUri: string): Promise<NativePoseLan
   const detector = getNativePoseDetector();
   if (!detector) return null;
   try {
-    const results = await detector.detectPoseFromUri(imageUri);
-    if (Array.isArray(results) && results.length > 0) {
-      return results as NativePoseLandmark[];
+    let result: any = null;
+    if (typeof detector.detectPose === 'function') {
+      result = await detector.detectPose(imageUri);
+    } else if (typeof detector.detectPoseFromUri === 'function') {
+      result = await detector.detectPoseFromUri(imageUri);
     }
+
+    if (!result) return null;
+
+    // Case 1: Result is wrapped in { detected: boolean, landmarks: [...] }
+    if (result && typeof result === 'object' && Array.isArray(result.landmarks)) {
+      if (result.landmarks.length === 0) return null;
+      const w = result.width || 1;
+      const h = result.height || 1;
+      return result.landmarks.map((lm: any) => {
+        const rawX = typeof lm.normX === 'number' ? lm.normX : lm.x;
+        const rawY = typeof lm.normY === 'number' ? lm.normY : lm.y;
+        return {
+          x: rawX > 1.5 ? Math.min(1, Math.max(0, rawX / w)) : rawX,
+          y: rawY > 1.5 ? Math.min(1, Math.max(0, rawY / h)) : rawY,
+          z: lm.z ?? 0,
+          visibility: lm.visibility ?? lm.score ?? 1.0,
+        };
+      });
+    }
+
+    // Case 2: Result is direct array of landmarks
+    if (Array.isArray(result) && result.length > 0) {
+      return result.map((lm: any) => {
+        const rawX = typeof lm.normX === 'number' ? lm.normX : lm.x;
+        const rawY = typeof lm.normY === 'number' ? lm.normY : lm.y;
+        return {
+          x: rawX > 1.5 ? Math.min(1, Math.max(0, rawX / 1000)) : rawX,
+          y: rawY > 1.5 ? Math.min(1, Math.max(0, rawY / 1000)) : rawY,
+          z: lm.z ?? 0,
+          visibility: lm.visibility ?? lm.score ?? 1.0,
+        };
+      });
+    }
+
     return null;
   } catch (err) {
     console.warn('Native ML Kit pose detection error:', err);

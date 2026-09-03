@@ -77,7 +77,23 @@ class PoseDetectorModule : Module() {
     AsyncFunction("detectPose") { imageUriString: String ->
       try {
         val bitmap = loadBitmapFromUri(imageUriString)
-          ?: return@AsyncFunction mapOf("detected" to false, "error" to "Failed to load bitmap")
+          ?: return@AsyncFunction mapOf("detected" to false, "error" to "Failed to load bitmap from: $imageUriString")
+        
+        val width = bitmap.width.toFloat()
+        val height = bitmap.height.toFloat()
+        val inputImage = InputImage.fromBitmap(bitmap, 0)
+        val pose = Tasks.await(detector.process(inputImage))
+
+        return@AsyncFunction formatPoseResult(pose, width, height)
+      } catch (e: Exception) {
+        return@AsyncFunction mapOf("detected" to false, "error" to (e.message ?: "Pose detection failed"))
+      }
+    }
+
+    AsyncFunction("detectPoseFromUri") { imageUriString: String ->
+      try {
+        val bitmap = loadBitmapFromUri(imageUriString)
+          ?: return@AsyncFunction mapOf("detected" to false, "error" to "Failed to load bitmap from: $imageUriString")
         
         val width = bitmap.width.toFloat()
         val height = bitmap.height.toFloat()
@@ -115,25 +131,29 @@ class PoseDetectorModule : Module() {
 
   private fun loadBitmapFromUri(uriString: String): Bitmap? {
     return try {
-      val context = appContext.reactContext ?: return null
+      val context = appContext.reactContext
       val uri = Uri.parse(uriString)
 
-      if (uri.scheme == "file" || uri.scheme == null) {
-        val path = uri.path ?: uriString
-        val file = File(path)
-        if (file.exists()) {
-          BitmapFactory.decodeFile(file.absolutePath)
-        } else {
-          BitmapFactory.decodeFile(path)
-        }
-      } else if (uri.scheme == "content") {
-        val inputStream: InputStream? = context.contentResolver.openInputStream(uri)
-        val bitmap = BitmapFactory.decodeStream(inputStream)
-        inputStream?.close()
-        bitmap
-      } else {
-        BitmapFactory.decodeFile(uriString)
+      // 1. Try opening via ContentResolver first (handles file://, content://, cache URIs)
+      if (context != null) {
+        try {
+          context.contentResolver.openInputStream(uri)?.use { stream ->
+            val bmp = BitmapFactory.decodeStream(stream)
+            if (bmp != null) return bmp
+          }
+        } catch (_: Exception) {}
       }
+
+      // 2. Try direct File path
+      val path = if (uri.scheme == "file") uri.path ?: uriString else uriString
+      val file = File(path)
+      if (file.exists()) {
+        val bmp = BitmapFactory.decodeFile(file.absolutePath)
+        if (bmp != null) return bmp
+      }
+
+      // 3. Fallback to direct decode
+      BitmapFactory.decodeFile(uriString)
     } catch (e: Exception) {
       null
     }
@@ -165,18 +185,21 @@ class PoseDetectorModule : Module() {
       landmarkCount++
 
       // Normalized coordinates [0..1]
-      val normX = if (width > 0) pos.x / width else 0.0f
-      val normY = if (height > 0) pos.y / height else 0.0f
+      val normX = if (width > 0) (pos.x / width).coerceIn(0.0f, 1.0f) else 0.0f
+      val normY = if (height > 0) (pos.y / height).coerceIn(0.0f, 1.0f) else 0.0f
 
       landmarkList.add(
         mapOf(
           "type" to type,
           "name" to name,
-          "x" to pos.x,
-          "y" to pos.y,
-          "normX" to normX.coerceIn(0.0f, 1.0f),
-          "normY" to normY.coerceIn(0.0f, 1.0f),
+          "x" to normX,
+          "y" to normY,
+          "normX" to normX,
+          "normY" to normY,
+          "pixelX" to pos.x,
+          "pixelY" to pos.y,
           "z" to pos3D.z,
+          "visibility" to inFrameLikelihood,
           "score" to inFrameLikelihood
         )
       )
