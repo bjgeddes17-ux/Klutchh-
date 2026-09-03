@@ -10,8 +10,10 @@ coverage/
 # Expo & Native build directories
 .expo/
 .expo-shared/
-android/
-ios/
+/android/
+/ios/
+!modules/**/android/
+!modules/**/ios/
 
 # Lock files to prevent multiple lockfile conflict in CI
 bun.lock
