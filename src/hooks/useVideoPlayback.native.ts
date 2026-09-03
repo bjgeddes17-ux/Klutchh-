@@ -41,9 +41,13 @@ export const useVideoPlayback = ({
 
   const handlePlaybackStatusUpdate = useCallback((status: AVPlaybackStatus, fromFullscreen: boolean) => {
     // Only accept updates from the active player to prevent fighting between instances
-    if (status.isLoaded && !isScrubbing.current && (fromFullscreen === isFullscreenModal)) {
+    if (status.isLoaded && (fromFullscreen === isFullscreenModal)) {
       const posSec = status.positionMillis / 1000;
-      onTimeUpdate(posSec);
+      
+      // If we are scrubbing, we already updated onTimeUpdate in handleSeek
+      if (!isScrubbing.current) {
+        onTimeUpdate(posSec);
+      }
       
       if (status.durationMillis && status.durationMillis > 500) {
         const durSec = status.durationMillis / 1000;
@@ -55,6 +59,7 @@ export const useVideoPlayback = ({
 
   const handleSeek = useCallback((ratio: number, finished: boolean = false, currentTime: number) => {
     isScrubbing.current = !finished;
+    if (onPause) onPause();
     
     // Clear any previous debounce
     if (seekLockoutTimer.current) {
@@ -70,9 +75,10 @@ export const useVideoPlayback = ({
     const targetRef = isFullscreenModal ? fullscreenVideoRef.current : videoRef.current;
 
     if (targetRef) {
+      targetRef.pauseAsync().catch(() => {});
       targetRef.setPositionAsync(seekTime, {
-        toleranceMillisBefore: 10,
-        toleranceMillisAfter: 10,
+        toleranceMillisBefore: 5,
+        toleranceMillisAfter: 5,
       }).catch(() => {});
     }
 
@@ -82,7 +88,7 @@ export const useVideoPlayback = ({
         isScrubbing.current = false;
       }, 150);
     }
-  }, [duration, isFullscreenModal, onTimeUpdate]);
+  }, [duration, isFullscreenModal, onTimeUpdate, onPause]);
 
   const handleSeekToTime = useCallback((targetSec: number, resumePlay: boolean = false) => {
     isScrubbing.current = true;

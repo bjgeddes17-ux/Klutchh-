@@ -126,6 +126,7 @@ export const KineticVideoPlayer: React.FC<KineticVideoPlayerProps> = ({
   const [isMirrored, setIsMirrored] = useState(false);
   const [layout, setLayout] = useState({ width: 360, height: 480 });
   const [videoDimensions, setVideoDimensions] = useState({ width: 9, height: 16 });
+  const [containerAspectRatio, setContainerAspectRatio] = useState<number | null>(null);
   const [renderedRect, setRenderedRect] = useState<{ x: number; y: number; width: number; height: number } | null>(null);
   const [fullscreenLayout, setFullscreenLayout] = useState({
     width: Dimensions.get('window').width,
@@ -208,6 +209,11 @@ export const KineticVideoPlayer: React.FC<KineticVideoPlayerProps> = ({
     if (event.naturalSize) {
       const { width, height } = event.naturalSize;
       setVideoDimensions({ width, height });
+      
+      // ASPECT RATIO LOCK: Set container aspect ratio to match video exactly
+      if (width > 0 && height > 0) {
+        setContainerAspectRatio(width / height);
+      }
       
       // Calculate initial rendered rect
       const rect = getVideoRenderRect(
@@ -340,17 +346,23 @@ export const KineticVideoPlayer: React.FC<KineticVideoPlayerProps> = ({
   }, [landmarks, currentFrame, sportRule, curW, curH, renderedRect]);
 
   return (
-    <View style={styles.container} onLayout={handleLayout}>
+    <View 
+      style={[
+        styles.container, 
+        containerAspectRatio ? { aspectRatio: containerAspectRatio, height: undefined } : {}
+      ]} 
+      onLayout={handleLayout}
+    >
       {/* Video Surface */}
       <Video
         ref={videoRef}
         source={{ uri: videoUrl }}
         rate={selectedSpeed}
         isMuted={true}
-        resizeMode={ResizeMode.CONTAIN}
+        resizeMode={ResizeMode.STRETCH} // Use STRETCH because we locked container AR
         shouldPlay={isPlaying && !isFullscreenModal}
         isLooping={true}
-        progressUpdateIntervalMillis={40}
+        progressUpdateIntervalMillis={16} // 60fps update interval for frame-perfect sync
         onPlaybackStatusUpdate={isFullscreenModal ? undefined : (s) => handlePlaybackStatusUpdate(s, false)}
         onReadyForDisplay={handleReadyForDisplay}
         style={styles.video}
@@ -617,6 +629,7 @@ export const KineticVideoPlayer: React.FC<KineticVideoPlayerProps> = ({
           onStartShouldSetResponder={() => true}
           onMoveShouldSetResponder={() => true}
           onResponderGrant={(e) => {
+            if (onPause) onPause();
             const tw = trackWidth > 0 ? trackWidth : Math.max(1, curW - 32);
             const ratio = Math.max(0, Math.min(1, e.nativeEvent.locationX / tw));
             handleSeek(ratio, false, currentTime);
@@ -785,7 +798,7 @@ export const KineticVideoPlayer: React.FC<KineticVideoPlayerProps> = ({
             resizeMode={ResizeMode.CONTAIN}
             shouldPlay={isPlaying && isFullscreenModal}
             isLooping={true}
-            progressUpdateIntervalMillis={40}
+            progressUpdateIntervalMillis={16} // 60fps update interval
             onPlaybackStatusUpdate={isFullscreenModal ? (s) => handlePlaybackStatusUpdate(s, true) : undefined}
             onReadyForDisplay={handleReadyForDisplay}
             style={StyleSheet.absoluteFillObject}
