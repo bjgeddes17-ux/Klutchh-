@@ -1,7 +1,7 @@
 name: Build Android APK (GitHub Cloud Runner)
 
 on:
-  workflow_dispatch: # Allows manual trigger from GitHub Actions tab
+  workflow_dispatch:
   push:
     branches:
       - main
@@ -26,16 +26,13 @@ jobs:
         with:
           node-version: 18
           cache: 'npm'
+          cache-dependency-path: package.json
 
-      - name: 📱 Setup Android SDK Tools & CMake
+      - name: 📱 Setup Android SDK, NDK & CMake
         uses: android-actions/setup-android@v3
         with:
-          packages: 'tools platform-tools platforms;android-34 build-tools;34.0.0 cmake;3.22.1'
-
-      - name: 🧩 Setup Android NDK (r26b / 26.1.10909125)
-        uses: nopenopenope/setup-android-ndk@v1.1
-        with:
-          ndk-version: r26b
+          packages: 'platform-tools platforms;android-34 build-tools;34.0.0 cmake;3.22.1 ndk;26.1.10909125'
+          cmdline-tools-version: 11076708
 
       - name: 📦 Install npm dependencies
         run: npm ci
@@ -43,9 +40,12 @@ jobs:
       - name: 🚀 Expo Prebuild (Generate Native Android Project)
         run: npx expo prebuild --platform android --clean
 
-      - name: 🔨 Compile Android Release APK with Gradle
+      - name: 🔨 Compile Standalone Release APK (Gradle)
         run: |
           cd android
+          echo "ndk.dir=$ANDROID_HOME/ndk/26.1.10909125" >> local.properties
+          echo "sdk.dir=$ANDROID_HOME" >> local.properties
+          echo "org.gradle.jvmargs=-Xmx4096m -XX:MaxMetaspaceSize=1024m" >> gradle.properties
           chmod +x gradlew
           ./gradlew assembleRelease --no-daemon -Dorg.gradle.jvmargs="-Xmx4096m -XX:MaxMetaspaceSize=1024m"
 
