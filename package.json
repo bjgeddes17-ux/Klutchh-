@@ -19,7 +19,7 @@
   "dependencies": {
     "@google/genai": "^2.4.0",
     "@mediapipe/tasks-vision": "^1.0.1",
-    "@react-native-async-storage/async-storage": "^3.1.1",
+    "@react-native-async-storage/async-storage": "1.23.1",
     "@shopify/react-native-skia": "1.5.0",
     "@tailwindcss/vite": "^4.1.14",
     "@types/canvas-confetti": "^1.9.0",
@@ -31,9 +31,9 @@
     "expo": "~52.0.0",
     "expo-av": "~15.0.1",
     "expo-document-picker": "~13.0.3",
-    "expo-file-system": "^57.0.6",
+    "expo-file-system": "~18.0.12",
     "expo-image-picker": "~16.0.6",
-    "expo-sharing": "^57.0.17",
+    "expo-sharing": "~13.0.1",
     "expo-status-bar": "~2.0.1",
     "expo-video-thumbnails": "~9.0.0",
     "express": "^4.21.2",
@@ -66,8 +66,7 @@
     "esbuild": "^0.25.0",
     "tailwindcss": "^4.1.14",
     "tsx": "^4.21.0",
-    "typescript": "~5.8.2",
-    "vite": "^6.2.3"
+    "typescript": "~5.8.2"
   },
   "expo": {
     "install": {
