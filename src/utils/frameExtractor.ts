@@ -107,11 +107,8 @@ export function detectHighFrameRateCapability(): {
   const hasRVFC = isBrowser && 'HTMLVideoElement' in window && 'requestVideoFrameCallback' in HTMLVideoElement.prototype;
   const hasWebCodecs = isWebCodecsSupported();
 
-  // Modern mobile devices and GPU WebCodecs/RVFC pipelines support up to 120 FPS
-  let maxSupportedFps = 60;
-  if (isMobileDevice || hasWebCodecs || hasRVFC) {
-    maxSupportedFps = 120;
-  }
+  // Modern mobile devices and GPU WebCodecs/RVFC pipelines support high frame-rate sampling up to 45 FPS
+  let maxSupportedFps = 45;
 
   return {
     supportsHighFrameRate: hasWebCodecs || hasRVFC || isMobileDevice,
@@ -127,10 +124,10 @@ export function detectHighFrameRateCapability(): {
  */
 export function createBurstWindowsFromPhases(
   phases: Array<{ name: string; startTime: number; endTime: number }>,
-  burstFps: number = 120,
+  burstFps: number = 45,
   sportId?: string
 ): BurstSamplingWindow[] {
-  const targetBurstFps = Math.min(120, Math.max(30, burstFps));
+  const targetBurstFps = Math.min(45, Math.max(15, burstFps));
   const windows: BurstSamplingWindow[] = [];
 
   for (const phase of phases) {
@@ -160,10 +157,10 @@ export function getSamplingIntervalAtTime(
   timeSec: number,
   baseFps: number = 15,
   windows: BurstSamplingWindow[] = [],
-  maxBurstFps: number = 120
+  maxBurstFps: number = 45
 ): { interval: number; currentFps: number; isBurst: boolean; window?: BurstSamplingWindow } {
   const clampedBaseFps = Math.max(1, baseFps);
-  const clampedMaxBurstFps = Math.min(120, Math.max(clampedBaseFps, maxBurstFps));
+  const clampedMaxBurstFps = Math.min(45, Math.max(clampedBaseFps, maxBurstFps));
 
   for (const win of windows) {
     if (timeSec >= win.startTime && timeSec <= win.endTime) {
@@ -185,17 +182,45 @@ export function getSamplingIntervalAtTime(
 }
 
 /**
- * Builds an adaptive non-linear timeline that increases sampling density (up to 120 FPS)
- * during fast-action burst phases while maintaining baseline FPS elsewhere.
+ * Builds an adaptive non-linear timeline that increases sampling density (up to 45 FPS)
+ * during fast-action burst phases while maintaining baseline FPS elsewhere, strictly capped at maxTotalFrames.
  */
 export function generateAdaptiveTimeline(
   startTime: number,
   endTime: number,
   baseFps: number = 15,
   windows: BurstSamplingWindow[] = [],
-  maxBurstFps: number = 120
+  maxBurstFps: number = 45,
+  maxTotalFrames: number = 110
 ): { timestamps: number[]; burstMap: Map<number, { isBurst: boolean; currentFps: number }> } {
-  const timestamps: number[] = [];
+  const duration = Math.max(0.1, endTime - startTime);
+
+  // Calculate burst duration vs base duration
+  let burstDuration = 0;
+  for (const win of windows) {
+    const wStart = Math.max(startTime, win.startTime);
+    const wEnd = Math.min(endTime, win.endTime);
+    if (wEnd > wStart) {
+      burstDuration += (wEnd - wStart);
+    }
+  }
+  const baseDuration = Math.max(0, duration - burstDuration);
+
+  // Target 45 FPS in fast action burst zones, 12-15 FPS in base zones
+  let targetBurstFps = Math.min(45, maxBurstFps);
+  let targetBaseFps = Math.min(baseFps, targetBurstFps);
+
+  // Estimate total frames at initial targets
+  const estimatedFrames = Math.ceil(baseDuration * targetBaseFps + burstDuration * targetBurstFps);
+
+  // If estimated frames exceed maxTotalFrames (110), scale down proportionally
+  if (estimatedFrames > maxTotalFrames) {
+    const scaleFactor = (maxTotalFrames - 2) / estimatedFrames;
+    targetBurstFps = Math.max(15, Math.floor(targetBurstFps * scaleFactor));
+    targetBaseFps = Math.max(4, Math.floor(targetBaseFps * scaleFactor));
+  }
+
+  let timestamps: number[] = [];
   const burstMap = new Map<number, { isBurst: boolean; currentFps: number }>();
 
   let curr = startTime;
@@ -203,11 +228,25 @@ export function generateAdaptiveTimeline(
 
   while (curr <= roundedEnd + 0.0005) {
     const timeKey = Math.round(curr * 1000) / 1000;
-    const sampleInfo = getSamplingIntervalAtTime(timeKey, baseFps, windows, maxBurstFps);
+    const sampleInfo = getSamplingIntervalAtTime(timeKey, targetBaseFps, windows, targetBurstFps);
     timestamps.push(timeKey);
     burstMap.set(timeKey, { isBurst: sampleInfo.isBurst, currentFps: sampleInfo.currentFps });
 
     curr += sampleInfo.interval;
+  }
+
+  // Strict cap safeguard: ensure total kinematics never exceed maxTotalFrames (110)
+  if (timestamps.length > maxTotalFrames) {
+    const decimated: number[] = [];
+    const step = (timestamps.length - 1) / (maxTotalFrames - 1);
+    for (let i = 0; i < maxTotalFrames; i++) {
+      const idx = Math.min(timestamps.length - 1, Math.round(i * step));
+      const t = timestamps[idx];
+      if (decimated.length === 0 || t > decimated[decimated.length - 1]) {
+        decimated.push(t);
+      }
+    }
+    timestamps = decimated;
   }
 
   return { timestamps, burstMap };
@@ -245,8 +284,8 @@ export async function extractFramesPipelined(
 ): Promise<{ frameCount: number; duration: number }> {
   // Resolve burst sampling configuration
   const resolvedBurstConfig: BurstSamplingConfig = Array.isArray(burstConfig)
-    ? { enabled: burstConfig.length > 0, baseFps: targetFps, maxBurstFps: 120, windows: burstConfig }
-    : burstConfig || { enabled: false, baseFps: targetFps, maxBurstFps: 120, windows: [] };
+    ? { enabled: burstConfig.length > 0, baseFps: targetFps, maxBurstFps: 45, windows: burstConfig }
+    : burstConfig || { enabled: false, baseFps: targetFps, maxBurstFps: 45, windows: [] };
 
   // 1. Attempt Native GPU WebCodecs + MP4Box.js Pipeline First (Fastest, zero seeking lag)
   if (isWebCodecsSupported() && videoUrl) {

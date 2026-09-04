@@ -239,6 +239,55 @@ export const KineticVideoPlayer: React.FC<KineticVideoPlayerProps> = ({
     }
   };
 
+  // Determine effective visual aspect ratio of the video content
+  const effectiveAspect = useMemo(() => {
+    const isPortraitView = (isFullscreenModal ? fullscreenLayout.height : layout.height) > 
+                           (isFullscreenModal ? fullscreenLayout.width : layout.width);
+    if (videoDimensions.width > 0 && videoDimensions.height > 0) {
+      if (isPortraitView) {
+        return videoDimensions.width > videoDimensions.height
+          ? videoDimensions.height / videoDimensions.width
+          : videoDimensions.width / videoDimensions.height;
+      } else {
+        return videoDimensions.width > videoDimensions.height
+          ? videoDimensions.width / videoDimensions.height
+          : videoDimensions.height / videoDimensions.width;
+      }
+    }
+    if (containerAspectRatio && containerAspectRatio > 0) {
+      return containerAspectRatio;
+    }
+    return isPortraitView ? 9 / 16 : 16 / 9;
+  }, [containerAspectRatio, videoDimensions, isFullscreenModal, fullscreenLayout, layout]);
+
+  // Viewport for fullscreen mode: centered letterboxed/pillarboxed video surface
+  const fullscreenViewport = useMemo(() => {
+    const screenW = fullscreenLayout.width > 0 ? fullscreenLayout.width : Dimensions.get('window').width;
+    const screenH = fullscreenLayout.height > 0 ? fullscreenLayout.height : Dimensions.get('window').height;
+
+    const screenAspect = screenW / (screenH || 1);
+    let width = screenW;
+    let height = screenH;
+    let x = 0;
+    let y = 0;
+
+    if (screenAspect > effectiveAspect) {
+      // Screen is wider than video: black bars on left and right (pillarbox)
+      height = screenH;
+      width = Math.round(screenH * effectiveAspect);
+      x = Math.round((screenW - width) / 2);
+      y = 0;
+    } else {
+      // Screen is taller than video: black bars on top and bottom (letterbox)
+      width = screenW;
+      height = Math.round(screenW / effectiveAspect);
+      x = 0;
+      y = Math.round((screenH - height) / 2);
+    }
+
+    return { x, y, width, height };
+  }, [fullscreenLayout, effectiveAspect]);
+
   // Recalculate rendered rect when layout or dimensions change
   useEffect(() => {
     const curW = isFullscreenModal ? fullscreenLayout.width : layout.width;
@@ -250,10 +299,10 @@ export const KineticVideoPlayer: React.FC<KineticVideoPlayerProps> = ({
   }, [layout, fullscreenLayout, videoDimensions, isFullscreenModal]);
 
   const landmarks = interpolatedLandmarks || currentFrame?.landmarks;
-  const curW = isFullscreenModal ? fullscreenLayout.width : layout.width;
-  const curH = isFullscreenModal ? fullscreenLayout.height : layout.height;
+  const curW = isFullscreenModal ? fullscreenViewport.width : layout.width;
+  const curH = isFullscreenModal ? fullscreenViewport.height : layout.height;
 
-  const getScreenCoords = (lm?: MediaPipeLandmark) => {
+  const getScreenCoords = (lm?: MediaPipeLandmark, isFs?: boolean) => {
     if (!lm) return { x: 0, y: 0, visible: false };
     if ((lm.visibility ?? 1) < 0.35) return { x: 0, y: 0, visible: false };
 
@@ -276,10 +325,15 @@ export const KineticVideoPlayer: React.FC<KineticVideoPlayerProps> = ({
       };
     }
 
+    const isFsMode = isFs !== undefined ? isFs : isFullscreenModal;
+    const stageW = isFsMode ? fullscreenViewport.width : layout.width;
+    const stageH = isFsMode ? fullscreenViewport.height : layout.height;
+    const stageRect = { x: 0, y: 0, width: stageW, height: stageH };
+
     return mapLandmarkToScreen(
       targetLm,
-      isFullscreenModal ? fullscreenLayout.width : layout.width,
-      isFullscreenModal ? fullscreenLayout.height : layout.height,
+      stageW,
+      stageH,
       videoDimensions.width,
       videoDimensions.height,
       undefined,
@@ -288,16 +342,24 @@ export const KineticVideoPlayer: React.FC<KineticVideoPlayerProps> = ({
       false, // debugForceNativeRotation
       true,  // isNative: TRUE
       landmarks,
-      renderedRect || undefined
+      stageRect
     );
   };
 
-  // Sync Video CurrentTime to Parent State
+  // Sync Video CurrentTime on Fullscreen Toggle
   useEffect(() => {
-    if (isFullscreenModal && fullscreenVideoRef.current && !isPlaying) {
-      fullscreenVideoRef.current.setPositionAsync(currentTime * 1000);
+    if (isFullscreenModal && fullscreenVideoRef.current) {
+      fullscreenVideoRef.current.setPositionAsync(Math.round(currentTime * 1000), {
+        toleranceMillisBefore: 0,
+        toleranceMillisAfter: 0,
+      }).catch(() => {});
+    } else if (!isFullscreenModal && videoRef.current) {
+      videoRef.current.setPositionAsync(Math.round(currentTime * 1000), {
+        toleranceMillisBefore: 0,
+        toleranceMillisAfter: 0,
+      }).catch(() => {});
     }
-  }, [currentTime, isFullscreenModal]);
+  }, [isFullscreenModal]);
 
   // Render Real Biometric Rules Callouts (Computing real angles from landmarks)
   const visibleRuleCallouts = useMemo(() => {
@@ -367,7 +429,7 @@ export const KineticVideoPlayer: React.FC<KineticVideoPlayerProps> = ({
       const labelText = `${cleanName}: ${displayAngle}${rule.unit || '°'}`;
 
       // Staggered Y positioning so callouts never collide
-      const targetY = Math.max(60, Math.min(curH - 120, vy - 10 + (index % 2 === 0 ? -16 : 16)));
+      const targetY = Math.max(30, Math.min(curH - 60, vy - 10 + (index % 2 === 0 ? -16 : 16)));
       const isRightSide = vx < curW * 0.5;
       const pillX = isRightSide ? Math.min(curW - 190, vx + 24) : Math.max(16, vx - 180);
 
@@ -384,7 +446,7 @@ export const KineticVideoPlayer: React.FC<KineticVideoPlayerProps> = ({
     });
 
     return selected;
-  }, [landmarks, currentFrame, sportRule, curW, curH, renderedRect]);
+  }, [landmarks, currentFrame, sportRule, curW, curH, isFullscreenModal, fullscreenViewport, skeletonScale, skeletonOffsetY, skeletonOffsetX, isMirrored]);
 
   // Filmstrip Playback Logic: 15 FPS timer-based playback when in Filmstrip mode
   const currentFilmstripFrame = useMemo(() => {
@@ -434,8 +496,8 @@ export const KineticVideoPlayer: React.FC<KineticVideoPlayerProps> = ({
             source={{ uri: videoUrl }}
             rate={selectedSpeed}
             isMuted={true}
-            shouldPlay={isPlaying && !isFullscreenModal} // Play in background to drive the clock
-            onPlaybackStatusUpdate={isFullscreenModal ? undefined : (s) => handlePlaybackStatusUpdate(s, false)}
+            shouldPlay={isPlaying} // Play continuously in background to drive clock seamlessly
+            onPlaybackStatusUpdate={(s) => handlePlaybackStatusUpdate(s, isFullscreenModal)}
             onReadyForDisplay={handleReadyForDisplay}
             style={{ width: 1, height: 1, opacity: 0, position: 'absolute', left: -100 }}
           />
@@ -906,54 +968,54 @@ export const KineticVideoPlayer: React.FC<KineticVideoPlayerProps> = ({
         <View style={styles.fullscreenContainer} onLayout={handleFullscreenLayout}>
           <StatusBar hidden />
 
-          {/* Fullscreen Video */}
-          <Video
-            ref={fullscreenVideoRef}
-            source={{ uri: videoUrl }}
-            rate={selectedSpeed}
-            isMuted={true}
-            resizeMode={ResizeMode.CONTAIN}
-            shouldPlay={isPlaying && isFullscreenModal}
-            isLooping={true}
-            progressUpdateIntervalMillis={16} // 60fps update interval
-            onPlaybackStatusUpdate={isFullscreenModal ? (s) => handlePlaybackStatusUpdate(s, true) : undefined}
-            onReadyForDisplay={handleReadyForDisplay}
-            style={StyleSheet.absoluteFillObject}
-          />
-
-          {/* Fullscreen Diagnostic Overlay */}
-          <View 
-            pointerEvents="none"
+          {/* Centered Fullscreen Content Viewport (Exact Letterboxed/Pillarboxed Area) */}
+          <View
             style={{
               position: 'absolute',
-              top: 60,
-              left: 16,
-              zIndex: 99,
-              backgroundColor: 'rgba(9, 9, 11, 0.85)',
-              padding: 8,
-              borderRadius: 10,
-              borderWidth: 1,
-              borderColor: 'rgba(255, 255, 255, 0.1)',
-              minWidth: 120,
+              left: fullscreenViewport.x,
+              top: fullscreenViewport.y,
+              width: fullscreenViewport.width,
+              height: fullscreenViewport.height,
+              overflow: 'hidden',
+              backgroundColor: '#000000',
             }}
           >
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 4 }}>
-              <View style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: '#10b981' }} />
-              <Text style={{ color: '#10b981', fontSize: 8, fontWeight: '900' }}>FS SYNC</Text>
-            </View>
-            <Text style={{ color: '#a1a1aa', fontSize: 8 }}>TIME: <Text style={{ color: '#fff', fontWeight: 'bold' }}>{currentTime.toFixed(4)}s</Text></Text>
-            <Text style={{ color: '#a1a1aa', fontSize: 8 }}>DRIFT: <Text style={{ color: Math.abs(currentTime - (currentFrame?.timestamp || 0)) > 0.05 ? '#ef4444' : '#10b981', fontWeight: 'bold' }}>
-              {((currentTime - (currentFrame?.timestamp || 0)) * 1000).toFixed(2)}ms
-            </Text></Text>
-          </View>
+            {/* Fullscreen Video / Filmstrip Display */}
+            {filmstripFrames && filmstripFrames.length > 0 ? (
+              currentFilmstripFrame ? (
+                <Image
+                  source={{ uri: currentFilmstripFrame.dataUrl }}
+                  style={{ width: '100%', height: '100%' }}
+                  resizeMode="contain"
+                />
+              ) : (
+                <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
+                  <ActivityIndicator color="#eab308" />
+                </View>
+              )
+            ) : (
+              <Video
+                ref={fullscreenVideoRef}
+                source={{ uri: videoUrl }}
+                rate={selectedSpeed}
+                isMuted={true}
+                resizeMode={ResizeMode.CONTAIN}
+                shouldPlay={isPlaying && isFullscreenModal}
+                isLooping={true}
+                progressUpdateIntervalMillis={16} // 60fps update interval
+                onPlaybackStatusUpdate={isFullscreenModal ? (s) => handlePlaybackStatusUpdate(s, true) : undefined}
+                onReadyForDisplay={handleReadyForDisplay}
+                style={{ width: '100%', height: '100%' }}
+              />
+            )}
 
-          {/* Fullscreen SVG Overlay */}
-          {showSkeleton && landmarks && landmarks.length >= 29 && renderedRect && (
-            <Svg
-              style={StyleSheet.absoluteFillObject}
-              width={fullscreenLayout.width}
-              height={fullscreenLayout.height}
-            >
+            {/* Fullscreen SVG Overlay */}
+            {showSkeleton && landmarks && landmarks.length >= 29 && (
+              <Svg
+                style={[StyleSheet.absoluteFillObject, { opacity: isPastData ? 0.35 : 1 }]}
+                width={fullscreenViewport.width}
+                height={fullscreenViewport.height}
+              >
               {/* Torso */}
               {landmarks[11] && landmarks[12] && landmarks[24] && landmarks[23] && (() => {
                 const p1 = getScreenCoords(landmarks[11]);
@@ -1134,6 +1196,33 @@ export const KineticVideoPlayer: React.FC<KineticVideoPlayerProps> = ({
               })}
             </Svg>
           )}
+          </View>
+
+          {/* Fullscreen Diagnostic Overlay */}
+          <View 
+            pointerEvents="none"
+            style={{
+              position: 'absolute',
+              top: 60,
+              left: 16,
+              zIndex: 99,
+              backgroundColor: 'rgba(9, 9, 11, 0.85)',
+              padding: 8,
+              borderRadius: 10,
+              borderWidth: 1,
+              borderColor: 'rgba(255, 255, 255, 0.1)',
+              minWidth: 120,
+            }}
+          >
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 4 }}>
+              <View style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: '#10b981' }} />
+              <Text style={{ color: '#10b981', fontSize: 8, fontWeight: '900' }}>FS SYNC</Text>
+            </View>
+            <Text style={{ color: '#a1a1aa', fontSize: 8 }}>TIME: <Text style={{ color: '#fff', fontWeight: 'bold' }}>{currentTime.toFixed(4)}s</Text></Text>
+            <Text style={{ color: '#a1a1aa', fontSize: 8 }}>DRIFT: <Text style={{ color: Math.abs(currentTime - (currentFrame?.timestamp || 0)) > 0.05 ? '#ef4444' : '#10b981', fontWeight: 'bold' }}>
+              {((currentTime - (currentFrame?.timestamp || 0)) * 1000).toFixed(2)}ms
+            </Text></Text>
+          </View>
 
           {/* Top Fullscreen Header with Exit Button */}
           <View style={styles.fullscreenTopBar}>

@@ -81,14 +81,17 @@ export const useVideoPlayback = ({
     // UI update is INSTANT
     onTimeUpdate(targetSec);
     
-    const targetRef = isFullscreenModal ? fullscreenVideoRef.current : videoRef.current;
-
-    if (targetRef) {
-      // High tolerance during scrub for speed, zero tolerance on finish for accuracy
-      const tolerance = finished ? 0 : 100; 
-      targetRef.setPositionAsync(seekTime, {
-        toleranceMillisBefore: tolerance,
-        toleranceMillisAfter: tolerance,
+    // Seek both refs if available so normal and fullscreen states never desync
+    if (videoRef.current) {
+      videoRef.current.setPositionAsync(seekTime, {
+        toleranceMillisBefore: finished ? 0 : 100,
+        toleranceMillisAfter: finished ? 0 : 100,
+      }).catch(() => {});
+    }
+    if (fullscreenVideoRef.current) {
+      fullscreenVideoRef.current.setPositionAsync(seekTime, {
+        toleranceMillisBefore: finished ? 0 : 100,
+        toleranceMillisAfter: finished ? 0 : 100,
       }).catch(() => {});
     }
 
@@ -108,23 +111,37 @@ export const useVideoPlayback = ({
     onTimeUpdate(clamped);
 
     const seekTime = Math.round(clamped * 1000);
-    const targetRef = isFullscreenModal ? fullscreenVideoRef.current : videoRef.current;
-
-    if (targetRef) {
-      targetRef.setPositionAsync(seekTime, {
-        toleranceMillisBefore: 10,
-        toleranceMillisAfter: 10,
-      }).then(() => {
-        if (resumePlay) {
-          targetRef.playAsync().catch(() => {});
-        }
-      }).catch(() => {})
-      .finally(() => {
-        setTimeout(() => {
-          isScrubbing.current = false;
-        }, 100);
-      });
+    const promises: Promise<any>[] = [];
+    if (videoRef.current) {
+      promises.push(
+        videoRef.current.setPositionAsync(seekTime, {
+          toleranceMillisBefore: 10,
+          toleranceMillisAfter: 10,
+        }).then(() => {
+          if (resumePlay && !isFullscreenModal) {
+            return videoRef.current?.playAsync();
+          }
+        }).catch(() => {})
+      );
     }
+    if (fullscreenVideoRef.current) {
+      promises.push(
+        fullscreenVideoRef.current.setPositionAsync(seekTime, {
+          toleranceMillisBefore: 10,
+          toleranceMillisAfter: 10,
+        }).then(() => {
+          if (resumePlay && isFullscreenModal) {
+            return fullscreenVideoRef.current?.playAsync();
+          }
+        }).catch(() => {})
+      );
+    }
+
+    Promise.all(promises).finally(() => {
+      setTimeout(() => {
+        isScrubbing.current = false;
+      }, 100);
+    });
   }, [duration, isFullscreenModal, onTimeUpdate]);
 
   const handleStep = useCallback((direction: 'back' | 'forward', currentTime: number) => {
@@ -138,19 +155,29 @@ export const useVideoPlayback = ({
     
     onTimeUpdate(target);
     const seekTime = Math.round(target * 1000);
-    const targetRef = isFullscreenModal ? fullscreenVideoRef.current : videoRef.current;
-
-    if (targetRef) {
-      targetRef.setPositionAsync(seekTime, {
-        toleranceMillisBefore: 0,
-        toleranceMillisAfter: 0,
-      }).catch(() => {})
-      .finally(() => {
-        setTimeout(() => {
-          isScrubbing.current = false;
-        }, 120);
-      });
+    const promises: Promise<any>[] = [];
+    if (videoRef.current) {
+      promises.push(
+        videoRef.current.setPositionAsync(seekTime, {
+          toleranceMillisBefore: 0,
+          toleranceMillisAfter: 0,
+        }).catch(() => {})
+      );
     }
+    if (fullscreenVideoRef.current) {
+      promises.push(
+        fullscreenVideoRef.current.setPositionAsync(seekTime, {
+          toleranceMillisBefore: 0,
+          toleranceMillisAfter: 0,
+        }).catch(() => {})
+      );
+    }
+
+    Promise.all(promises).finally(() => {
+      setTimeout(() => {
+        isScrubbing.current = false;
+      }, 120);
+    });
   }, [duration, isFullscreenModal, onPause, onTimeUpdate]);
 
   const handleChangeSpeed = useCallback((speed: number) => {

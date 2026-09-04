@@ -79,7 +79,7 @@ export async function analyzeNativeVideoBiometrics({
     : ['Base Setup & Stance', 'Kinetic Drive', 'Force Impact / Release', 'Follow-Through'];
 
   // Native High-Performance Burst Sampling Configuration
-  // Fast action phases (Impact, Strike, Release, Downswing) capture at up to 120 FPS on supported native devices
+  // Fast action phases (Impact, Strike, Release, Downswing) capture at up to 45 FPS with a strict max of 110 total frames
   const burstWindows: BurstSamplingWindow[] = [];
   const numPhases = sportPhases.length;
   sportPhases.forEach((phaseName, pIdx) => {
@@ -89,27 +89,29 @@ export async function analyzeNativeVideoBiometrics({
       burstWindows.push({
         startTime: Math.max(0, pStart - 0.05),
         endTime: Math.min(validDuration, pEnd + 0.05),
-        burstFps: 120,
+        burstFps: 45,
         phaseName,
-        description: `High-velocity transition burst (${phaseName}) at up to 120 FPS`
+        description: `High-velocity transition burst (${phaseName}) at up to 45 FPS`
       });
     }
   });
 
   const hw = detectHighFrameRateCapability();
-  const baseFps = 15;
-  const maxBurstFps = hw.maxSupportedFps || 120;
+  const baseFps = 12;
+  const maxBurstFps = Math.min(45, hw.maxSupportedFps || 45);
+  const MAX_FRAMES_BUDGET = 110;
 
   const { timestamps, burstMap } = generateAdaptiveTimeline(
     0,
     validDuration,
     baseFps,
     burstWindows,
-    maxBurstFps
+    maxBurstFps,
+    MAX_FRAMES_BUDGET
   );
 
   const totalFrames = timestamps.length;
-  console.log(`[NativeBiometrics] Adaptive Burst Sampling: ${totalFrames} frames across ${validDuration.toFixed(2)}s (Base: ${baseFps} FPS, Burst: up to ${maxBurstFps} FPS for [${burstWindows.map(w => w.phaseName).join(', ')}])`);
+  console.log(`[NativeBiometrics] Adaptive Burst Sampling: ${totalFrames} frames across ${validDuration.toFixed(2)}s (Base: ${baseFps} FPS, Burst: up to ${maxBurstFps} FPS, Max: ${MAX_FRAMES_BUDGET} frames)`);
 
   updateProgress(15);
 
