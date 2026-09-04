@@ -55,6 +55,11 @@ export const useVideoPlayback = ({
         setDuration(durSec);
         onDurationChange?.(durSec);
       }
+
+      // Fix: Stop playback at end of video to prevent "infinite play" bug
+      if (status.didJustFinish && !status.isLooping) {
+        if (onTogglePlay) onTogglePlay();
+      }
     }
   }, [isFullscreenModal, onTimeUpdate, onDurationChange]);
 

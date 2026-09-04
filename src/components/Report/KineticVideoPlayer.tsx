@@ -43,12 +43,28 @@ export const KineticVideoPlayer: React.FC<KineticVideoPlayerProps> = ({
 }) => {
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
   const [videoError, setVideoError] = useState(false);
-  const [videoDimensions, setVideoDimensions] = useState({ width: 640, height: 360 });
+  const [containerDimensions, setContainerDimensions] = useState({ width: 0, height: 0 });
+
+  // Monitor container size for perfect layout sync (Fixes fullscreen jump)
+  useEffect(() => {
+    if (!containerRef.current) return;
+    
+    const observer = new ResizeObserver((entries) => {
+      for (const entry of entries) {
+        const { width, height } = entry.contentRect;
+        setContainerDimensions({ width, height });
+      }
+    });
+
+    observer.observe(containerRef.current);
+    return () => observer.disconnect();
+  }, []);
 
   // Get current frame data for overlays
-  const currentFrameData = useMemo(() => {
-    if (!sortedFrames.length) return null;
+  const currentFrameInfo = useMemo(() => {
+    if (!sortedFrames.length) return { frame: null, index: -1 };
     let low = 0;
     let high = sortedFrames.length - 1;
     let idx = 0;
@@ -61,8 +77,10 @@ export const KineticVideoPlayer: React.FC<KineticVideoPlayerProps> = ({
         high = mid - 1;
       }
     }
-    return sortedFrames[idx];
+    return { frame: sortedFrames[idx], index: idx };
   }, [sortedFrames, currentTime]);
+
+  const currentFrameData = currentFrameInfo.frame;
 
   // Sync external currentTime to video element when not playing or when scrubbed
   useEffect(() => {
@@ -95,97 +113,95 @@ export const KineticVideoPlayer: React.FC<KineticVideoPlayerProps> = ({
   useEffect(() => {
     const video = videoRef.current;
     const canvas = canvasRef.current;
-    if (!video || !canvas || !isDataReady) return;
+    if (!video || !canvas || !isDataReady || containerDimensions.width === 0) return;
 
     let animationFrameId: number;
 
     const renderOverlay = () => {
       if (!canvas || !video) return;
 
-      const width = video.videoWidth || 640;
-      const height = video.videoHeight || 360;
+      const vWidth = video.videoWidth || 640;
+      const vHeight = video.videoHeight || 360;
 
-      if (width > 0 && height > 0) {
-        if (canvas.width !== width || canvas.height !== height) {
-          canvas.width = width;
-          canvas.height = height;
-          setVideoDimensions({ width, height });
+      // Match canvas to container dimensions (Fixes scaling drift)
+      if (canvas.width !== containerDimensions.width || canvas.height !== containerDimensions.height) {
+        canvas.width = containerDimensions.width;
+        canvas.height = containerDimensions.height;
+      }
+
+      const ctx = canvas.getContext('2d');
+      if (ctx) {
+        const vTime = video.currentTime;
+        
+        if (isPlaying) {
+          onTimeUpdate(vTime);
         }
 
-        const ctx = canvas.getContext('2d');
-        if (ctx) {
-          const vTime = video.currentTime;
-          
-          if (isPlaying) {
-            onTimeUpdate(vTime);
-          }
+        let landmarksToDraw: MediaPipeLandmark[] | null = null;
+        let ruleResultsToDraw: any = {};
+        let anglesToDraw: any = {};
+        let activeFramePhase = sportRule.phases[0];
 
-          let landmarksToDraw: MediaPipeLandmark[] | null = null;
-          let ruleResultsToDraw: any = {};
-          let anglesToDraw: any = {};
-          let activeFramePhase = sportRule.phases[0];
+        if (sortedFrames.length > 0) {
+          let low = 0;
+          let high = sortedFrames.length - 1;
+          let idx = 0;
 
-          if (sortedFrames.length > 0) {
-            let low = 0;
-            let high = sortedFrames.length - 1;
-            let idx = 0;
-
-            while (low <= high) {
-              const mid = (low + high) >> 1;
-              if (sortedFrames[mid].timestamp <= vTime) {
-                idx = mid;
-                low = mid + 1;
-              } else {
-                high = mid - 1;
-              }
-            }
-
-            const prevFrame = sortedFrames[idx];
-            const nextFrame = sortedFrames[Math.min(sortedFrames.length - 1, idx + 1)];
-
-            const timeSpan = nextFrame.timestamp - prevFrame.timestamp;
-            const alpha = timeSpan > 0.0001 
-              ? Math.max(0, Math.min(1, (vTime - prevFrame.timestamp) / timeSpan)) 
-              : 0;
-
-            const closestFrame = alpha < 0.5 ? prevFrame : nextFrame;
-            ruleResultsToDraw = closestFrame.ruleResults || {};
-            anglesToDraw = closestFrame.angles || {};
-            activeFramePhase = closestFrame.detectedPhase || sportRule.phases[0];
-
-            if (prevFrame.landmarks && nextFrame.landmarks && prevFrame.landmarks.length === nextFrame.landmarks.length) {
-              landmarksToDraw = prevFrame.landmarks.map((pt1, i) => {
-                const pt2 = nextFrame.landmarks[i] || pt1;
-                return {
-                  x: pt1.x + (pt2.x - pt1.x) * alpha,
-                  y: pt1.y + (pt2.y - pt1.y) * alpha,
-                  z: (pt1.z || 0) + ((pt2.z || 0) - (pt1.z || 0)) * alpha,
-                  visibility: (pt1.visibility ?? 1) + ((pt2.visibility ?? 1) - (pt1.visibility ?? 1)) * alpha
-                };
-              });
-            } else if (closestFrame.landmarks) {
-              landmarksToDraw = closestFrame.landmarks;
+          while (low <= high) {
+            const mid = (low + high) >> 1;
+            if (sortedFrames[mid].timestamp <= vTime) {
+              idx = mid;
+              low = mid + 1;
+            } else {
+              high = mid - 1;
             }
           }
 
-          ctx.clearRect(0, 0, width, height);
+          const prevFrame = sortedFrames[idx];
+          const nextFrame = sortedFrames[Math.min(sortedFrames.length - 1, idx + 1)];
 
-          if (landmarksToDraw) {
-            drawPoseSkeleton(
-              ctx,
-              width,
-              height,
-              landmarksToDraw,
-              ruleResultsToDraw,
-              anglesToDraw,
-              sportRule,
-              activeFramePhase,
-              false,
-              width,
-              height,
-              debugForceNativeRotation
-            );
+          const timeSpan = nextFrame.timestamp - prevFrame.timestamp;
+          const alpha = timeSpan > 0.0001 
+            ? Math.max(0, Math.min(1, (vTime - prevFrame.timestamp) / timeSpan)) 
+            : 0;
+
+          const closestFrame = alpha < 0.5 ? prevFrame : nextFrame;
+          ruleResultsToDraw = closestFrame.ruleResults || {};
+          anglesToDraw = closestFrame.angles || {};
+          activeFramePhase = closestFrame.detectedPhase || sportRule.phases[0];
+
+          if (prevFrame.landmarks && nextFrame.landmarks && prevFrame.landmarks.length === nextFrame.landmarks.length) {
+            landmarksToDraw = prevFrame.landmarks.map((pt1, i) => {
+              const pt2 = nextFrame.landmarks[i] || pt1;
+              return {
+                x: pt1.x + (pt2.x - pt1.x) * alpha,
+                y: pt1.y + (pt2.y - pt1.y) * alpha,
+                z: (pt1.z || 0) + ((pt2.z || 0) - (pt1.z || 0)) * alpha,
+                visibility: (pt1.visibility ?? 1) + ((pt2.visibility ?? 1) - (pt1.visibility ?? 1)) * alpha
+              };
+            });
+          } else if (closestFrame.landmarks) {
+            landmarksToDraw = closestFrame.landmarks;
           }
+        }
+
+        ctx.clearRect(0, 0, containerDimensions.width, containerDimensions.height);
+
+        if (landmarksToDraw) {
+          drawPoseSkeleton(
+            ctx,
+            containerDimensions.width,
+            containerDimensions.height,
+            landmarksToDraw,
+            ruleResultsToDraw,
+            anglesToDraw,
+            sportRule,
+            activeFramePhase,
+            false,
+            vWidth,
+            vHeight,
+            debugForceNativeRotation
+          );
         }
       }
 
@@ -197,10 +213,10 @@ export const KineticVideoPlayer: React.FC<KineticVideoPlayerProps> = ({
     return () => {
       if (animationFrameId) cancelAnimationFrame(animationFrameId);
     };
-  }, [isDataReady, isPlaying, sortedFrames, sportRule, videoUrl]);
+  }, [isDataReady, isPlaying, sortedFrames, sportRule, videoUrl, containerDimensions]);
 
   return (
-    <div className="relative w-full h-full bg-black rounded-xl overflow-hidden shadow-2xl border border-white/10 group">
+    <div ref={containerRef} className="relative w-full h-full bg-black rounded-xl overflow-hidden shadow-2xl border border-white/10 group">
       <video
         ref={videoRef}
         src={videoUrl}
@@ -215,6 +231,9 @@ export const KineticVideoPlayer: React.FC<KineticVideoPlayerProps> = ({
           }
         }}
         onDurationChange={(e) => onDurationChange?.(e.currentTarget.duration)}
+        onEnded={() => {
+          if (isPlaying) onTogglePlay?.();
+        }}
         onError={() => {
           setVideoError(true);
           onError?.(true);
@@ -223,12 +242,38 @@ export const KineticVideoPlayer: React.FC<KineticVideoPlayerProps> = ({
       <canvas
         ref={canvasRef}
         onClick={onTogglePlay}
-        className="absolute inset-0 w-full h-full object-contain pointer-events-none z-10"
+        className="absolute inset-0 w-full h-full z-10"
       />
+
+      {/* Diagnostic Synchronization Overlay */}
+      <div className="absolute top-3 left-3 z-40 bg-zinc-950/85 backdrop-blur-md border border-white/10 p-3 rounded-xl font-mono text-[10px] text-zinc-300 pointer-events-none space-y-1.5 shadow-2xl">
+        <div className="flex items-center gap-2 pb-1 border-b border-white/5">
+          <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+          <span className="text-[9px] font-black uppercase tracking-widest text-emerald-400">Sync Active</span>
+        </div>
+        <div className="flex justify-between gap-6">
+          <span className="text-zinc-500 uppercase font-black tracking-tighter">Video Time</span>
+          <span className="text-white font-bold">{currentTime.toFixed(4)}s</span>
+        </div>
+        <div className="flex justify-between gap-6">
+          <span className="text-zinc-500 uppercase font-black tracking-tighter">Frame Index</span>
+          <span className="text-white font-bold">#{currentFrameInfo.index}</span>
+        </div>
+        <div className="flex justify-between gap-6">
+          <span className="text-zinc-500 uppercase font-black tracking-tighter">Meta TS</span>
+          <span className="text-amber-400 font-bold">{(currentFrameData?.timestamp || 0).toFixed(4)}s</span>
+        </div>
+        <div className="flex justify-between gap-6 pt-1 border-t border-white/5">
+          <span className="text-zinc-500 uppercase font-black tracking-tighter">Drift</span>
+          <span className={`font-bold ${Math.abs(currentTime - (currentFrameData?.timestamp || 0)) > 0.05 ? 'text-red-500' : 'text-emerald-400'}`}>
+            {((currentTime - (currentFrameData?.timestamp || 0)) * 1000).toFixed(2)}ms
+          </span>
+        </div>
+      </div>
 
       <KineticHeatmapOverlay 
         currentFrame={currentFrameData} 
-        videoDimensions={videoDimensions} 
+        videoDimensions={{ width: videoRef.current?.videoWidth || 640, height: videoRef.current?.videoHeight || 360 }} 
       />
 
       {viewMode === 'student' && (

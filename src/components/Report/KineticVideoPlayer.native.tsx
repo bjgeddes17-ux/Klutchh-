@@ -418,6 +418,33 @@ export const KineticVideoPlayer: React.FC<KineticVideoPlayerProps> = ({
         />
       )}
 
+      {/* Diagnostic Synchronization Overlay (Native) */}
+      <View 
+        pointerEvents="none"
+        style={{
+          position: 'absolute',
+          top: 12,
+          left: 12,
+          zIndex: 99,
+          backgroundColor: 'rgba(9, 9, 11, 0.85)',
+          padding: 8,
+          borderRadius: 10,
+          borderWidth: 1,
+          borderColor: 'rgba(255, 255, 255, 0.1)',
+          minWidth: 120,
+        }}
+      >
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 4 }}>
+          <View style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: '#10b981' }} />
+          <Text style={{ color: '#10b981', fontSize: 8, fontWeight: '900' }}>SYNC: ACTIVE</Text>
+        </View>
+        <Text style={{ color: '#a1a1aa', fontSize: 8 }}>TIME: <Text style={{ color: '#fff', fontWeight: 'bold' }}>{currentTime.toFixed(4)}s</Text></Text>
+        <Text style={{ color: '#a1a1aa', fontSize: 8 }}>META: <Text style={{ color: '#fbbf24', fontWeight: 'bold' }}>{(currentFrame?.timestamp || 0).toFixed(4)}s</Text></Text>
+        <Text style={{ color: '#a1a1aa', fontSize: 8 }}>DRIFT: <Text style={{ color: Math.abs(currentTime - (currentFrame?.timestamp || 0)) > 0.05 ? '#ef4444' : '#10b981', fontWeight: 'bold' }}>
+          {((currentTime - (currentFrame?.timestamp || 0)) * 1000).toFixed(2)}ms
+        </Text></Text>
+      </View>
+
       {/* Svg Biomechanical Overlay */}
       {showSkeleton && landmarks && landmarks.length >= 29 && (
         <Svg style={styles.svgOverlay} width={curW} height={curH}>
@@ -853,6 +880,32 @@ export const KineticVideoPlayer: React.FC<KineticVideoPlayerProps> = ({
             onReadyForDisplay={handleReadyForDisplay}
             style={StyleSheet.absoluteFillObject}
           />
+
+          {/* Fullscreen Diagnostic Overlay */}
+          <View 
+            pointerEvents="none"
+            style={{
+              position: 'absolute',
+              top: 60,
+              left: 16,
+              zIndex: 99,
+              backgroundColor: 'rgba(9, 9, 11, 0.85)',
+              padding: 8,
+              borderRadius: 10,
+              borderWidth: 1,
+              borderColor: 'rgba(255, 255, 255, 0.1)',
+              minWidth: 120,
+            }}
+          >
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 4 }}>
+              <View style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: '#10b981' }} />
+              <Text style={{ color: '#10b981', fontSize: 8, fontWeight: '900' }}>FS SYNC</Text>
+            </View>
+            <Text style={{ color: '#a1a1aa', fontSize: 8 }}>TIME: <Text style={{ color: '#fff', fontWeight: 'bold' }}>{currentTime.toFixed(4)}s</Text></Text>
+            <Text style={{ color: '#a1a1aa', fontSize: 8 }}>DRIFT: <Text style={{ color: Math.abs(currentTime - (currentFrame?.timestamp || 0)) > 0.05 ? '#ef4444' : '#10b981', fontWeight: 'bold' }}>
+              {((currentTime - (currentFrame?.timestamp || 0)) * 1000).toFixed(2)}ms
+            </Text></Text>
+          </View>
 
           {/* Fullscreen SVG Overlay */}
           {showSkeleton && landmarks && landmarks.length >= 29 && renderedRect && (

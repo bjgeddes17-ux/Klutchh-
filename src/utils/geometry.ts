@@ -776,21 +776,8 @@ export function mapLandmarkToScreen(
   const confidenceValid = landmark.visibility === undefined || landmark.visibility >= 0.15;
   const visible = lx >= -0.3 && lx <= 1.3 && ly >= -0.3 && ly <= 1.3 && confidenceValid;
 
-  const screenX = videoRect.x + (lx * videoRect.width);
-  const screenY = videoRect.y + (ly * videoRect.height);
-
-  // User report: "skeletons size must be abot smaller" and "misalignment"
-  // When using native detection, we often need a slight correction for the buffer mapping.
-  // We apply a 0.94x scaling to ensure the skeleton sits inside the athlete's frame.
-  let finalX = screenX;
-  let finalY = screenY;
-  
-  if (isNative) {
-    const centerX = videoRect.x + videoRect.width / 2;
-    const centerY = videoRect.y + videoRect.height / 2;
-    finalX = centerX + (screenX - centerX) * 0.94;
-    finalY = centerY + (screenY - centerY) * 0.94;
-  }
+  const finalX = videoRect.x + (lx * videoRect.width);
+  const finalY = videoRect.y + (ly * videoRect.height);
 
   return { x: finalX, y: finalY, visible };
 }
