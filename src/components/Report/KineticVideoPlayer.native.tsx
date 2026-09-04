@@ -986,7 +986,7 @@ export const KineticVideoPlayer: React.FC<KineticVideoPlayerProps> = ({
                 <Image
                   source={{ uri: currentFilmstripFrame.dataUrl }}
                   style={{ width: '100%', height: '100%' }}
-                  resizeMode="contain"
+                  resizeMode="stretch"
                 />
               ) : (
                 <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
@@ -999,7 +999,7 @@ export const KineticVideoPlayer: React.FC<KineticVideoPlayerProps> = ({
                 source={{ uri: videoUrl }}
                 rate={selectedSpeed}
                 isMuted={true}
-                resizeMode={ResizeMode.CONTAIN}
+                resizeMode={ResizeMode.STRETCH}
                 shouldPlay={isPlaying && isFullscreenModal}
                 isLooping={true}
                 progressUpdateIntervalMillis={16} // 60fps update interval

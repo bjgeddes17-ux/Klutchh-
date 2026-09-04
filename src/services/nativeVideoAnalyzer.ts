@@ -121,22 +121,37 @@ export async function analyzeNativeVideoBiometrics({
   let detectedDimensions: { width: number; height: number } | undefined = undefined;
   const boneStabilizer = new KinematicBoneStabilizer();
 
-  // Step through entire video timeline using adaptive burst sampling timestamps
+  // Phase 1: Extract thumbnails and run native pose detection across adaptive timeline
+  interface RawFrameSample {
+    index: number;
+    timestampSec: number;
+    timestampMs: number;
+    burstInfo: { isBurst: boolean; currentFps: number };
+    frameImageUri: string | null;
+    rawLandmarks: MediaPipeLandmark[] | null;
+    spanY: number;
+    area: number;
+    root: { x: number; y: number } | null;
+  }
+
+  const rawSamples: RawFrameSample[] = [];
+
   for (let i = 0; i < totalFrames; i++) {
     const timestampSec = timestamps[i];
     const timestampMs = Math.round(timestampSec * 1000);
     const burstInfo = burstMap.get(timestampSec) || { isBurst: false, currentFps: baseFps };
 
-    let landmarks: MediaPipeLandmark[] | null = null;
-    let isReal = false;
     let frameImageUri: string | null = null;
+    let rawLandmarks: MediaPipeLandmark[] | null = null;
+    let spanY = 0;
+    let area = 0;
+    let root: { x: number; y: number } | null = null;
 
-    // 1. Attempt on-device Native ML Kit detection via video thumbnail at timestamp
     if (nativeDetectorActive && Platform.OS !== 'web' && videoUri) {
       try {
         const thumbnail = await VideoThumbnails.getThumbnailAsync(videoUri, {
           time: timestampMs,
-          quality: 0.5, // 540p equivalent quality
+          quality: 0.5,
         });
 
         if (thumbnail?.uri) {
@@ -145,11 +160,28 @@ export async function analyzeNativeVideoBiometrics({
             detectedDimensions = { width: thumbnail.width, height: thumbnail.height };
           }
 
-          const detectedLandmarks = await detectPoseFromUri(thumbnail.uri);
-          if (detectedLandmarks && detectedLandmarks.length >= 29) {
-            landmarks = detectedLandmarks;
-            isReal = true;
-            realDetectionCount++;
+          const detected = await detectPoseFromUri(thumbnail.uri);
+          if (detected && detected.length >= 29) {
+            rawLandmarks = detected;
+            
+            // Calculate spatial dimensions to distinguish foreground athlete from background bystanders
+            const allY = detected.filter(lm => (lm.visibility ?? 1) >= 0.25).map(lm => lm.y);
+            const allX = detected.filter(lm => (lm.visibility ?? 1) >= 0.25).map(lm => lm.x);
+            if (allY.length >= 10 && allX.length >= 10) {
+              const minY = Math.min(...allY);
+              const maxY = Math.max(...allY);
+              const minX = Math.min(...allX);
+              const maxX = Math.max(...allX);
+              spanY = maxY - minY;
+              area = (maxX - minX) * (maxY - minY);
+            }
+
+            if (detected[23] && detected[24]) {
+              root = {
+                x: (detected[23].x + detected[24].x) / 2,
+                y: (detected[23].y + detected[24].y) / 2,
+              };
+            }
           }
         }
       } catch (err) {
@@ -161,12 +193,99 @@ export async function analyzeNativeVideoBiometrics({
       preRenderedFrames.push({ timestamp: timestampSec, dataUrl: frameImageUri });
     }
 
-    // 2. Fallback if ML Kit didn't capture or in simulator
+    rawSamples.push({
+      index: i,
+      timestampSec,
+      timestampMs,
+      burstInfo,
+      frameImageUri,
+      rawLandmarks,
+      spanY,
+      area,
+      root,
+    });
+
+    updateProgress(15 + Math.round((i / totalFrames) * 45));
+  }
+
+  // Phase 2: Identify Foreground Athlete & Reject Background Bystanders (e.g. person on couch)
+  const validDetections = rawSamples.filter(s => s.rawLandmarks && s.spanY > 0);
+  const maxSpanY = validDetections.length > 0 ? Math.max(...validDetections.map(s => s.spanY)) : 0;
+  
+  // Athlete threshold: foreground athlete will have span >= 55% of maximum observed span
+  const athleteSpanThreshold = Math.max(0.28, maxSpanY * 0.55);
+
+  // Filter valid athlete detections
+  const athleteKeyframes: { index: number; timestampSec: number; landmarks: MediaPipeLandmark[]; root: { x: number; y: number } }[] = [];
+
+  for (const sample of rawSamples) {
+    if (sample.rawLandmarks && sample.root) {
+      // Reject if detection is a background bystander with small span when a large athlete is present
+      const isForeground = maxSpanY < 0.30 || sample.spanY >= athleteSpanThreshold;
+      if (isForeground) {
+        athleteKeyframes.push({
+          index: sample.index,
+          timestampSec: sample.timestampSec,
+          landmarks: sample.rawLandmarks,
+          root: sample.root,
+        });
+      }
+    }
+  }
+
+  console.log(`[NativeBiometrics] Athlete Trajectory Solver: ${athleteKeyframes.length} / ${rawSamples.length} frames matched foreground athlete (Max Span: ${(maxSpanY * 100).toFixed(0)}%)`);
+
+  // Phase 3: Construct resolved frames with trajectory interpolation and biomechanical auditing
+  for (let i = 0; i < totalFrames; i++) {
+    const sample = rawSamples[i];
+    const timestampSec = sample.timestampSec;
+    const timestampMs = sample.timestampMs;
+    const burstInfo = sample.burstInfo;
+
+    let landmarks: MediaPipeLandmark[] | null = null;
+    let isReal = false;
+
+    if (athleteKeyframes.length > 0) {
+      // Check if this exact frame is an athlete keyframe
+      const exactMatch = athleteKeyframes.find(k => k.index === i);
+      if (exactMatch) {
+        landmarks = exactMatch.landmarks.map(lm => ({ ...lm }));
+        isReal = true;
+        realDetectionCount++;
+      } else {
+        // Interpolate between surrounding athlete keyframes
+        const prevKey = [...athleteKeyframes].reverse().find(k => k.index < i);
+        const nextKey = athleteKeyframes.find(k => k.index > i);
+
+        if (prevKey && nextKey) {
+          const tAlpha = (timestampSec - prevKey.timestampSec) / Math.max(0.001, nextKey.timestampSec - prevKey.timestampSec);
+          const alpha = Math.max(0, Math.min(1, tAlpha));
+          landmarks = prevKey.landmarks.map((lm1, lmIdx) => {
+            const lm2 = nextKey.landmarks[lmIdx] || lm1;
+            return {
+              x: lm1.x + (lm2.x - lm1.x) * alpha,
+              y: lm1.y + (lm2.y - lm1.y) * alpha,
+              z: (lm1.z || 0) + ((lm2.z || 0) - (lm1.z || 0)) * alpha,
+              visibility: Math.min(lm1.visibility || 1, lm2.visibility || 1),
+            };
+          });
+          isReal = false;
+        } else if (prevKey) {
+          landmarks = prevKey.landmarks.map(lm => ({ ...lm }));
+          isReal = false;
+        } else if (nextKey) {
+          landmarks = nextKey.landmarks.map(lm => ({ ...lm }));
+          isReal = false;
+        }
+      }
+    }
+
+    // Ultimate fallback if no native athlete detected in video
     if (!landmarks) {
       landmarks = generateSyntheticSportsPose(timestampMs, timestampSec);
       isReal = false;
     } else {
-      // Stabilize real landmarks to prevent anatomical limbs stretching or detaching
+      // Stabilize real / interpolated landmarks to prevent anatomical limbs stretching or detaching
       landmarks = boneStabilizer.stabilize(landmarks);
     }
 
@@ -334,7 +453,7 @@ export async function analyzeNativeVideoBiometrics({
       effectiveFps: burstInfo.currentFps,
     });
 
-    updateProgress(15 + Math.round((i / totalFrames) * 75));
+    updateProgress(60 + Math.round((i / totalFrames) * 30));
   }
 
   updateProgress(90);

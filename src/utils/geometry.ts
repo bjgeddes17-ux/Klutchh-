@@ -724,34 +724,18 @@ export function mapLandmarkToScreen(
   let lx = landmark.x;
   let ly = landmark.y;
 
-  // 1. Determine Effective Rotation and Source Dimensions
-  const isSourceLandscape = videoWidth > videoHeight;
-  const isTargetPortrait = containerHeight > containerWidth;
-  
   let finalRotation = rotation;
 
-  // UNIVERSAL NATIVE FIX: 
-  // If the metadata is missing (0) but we are in a portrait view, check if we need a 90-degree Stand-Up.
-  if (finalRotation === 0 && (isNative || debugForceNativeRotation)) {
-    // A: Try the smart skeletal heuristic first (most accurate for mismatched buffers)
-    const autoRot = allLandmarks ? detectAutoRotation(allLandmarks, isTargetPortrait) : 0;
-    
-    if (autoRot !== 0) {
-      finalRotation = autoRot;
-    } 
-    // B: Fallback to dimension-based fix if no skeletal data but clear mismatch
-    else if (isSourceLandscape && isTargetPortrait) {
-      finalRotation = 90;
-    }
+  // Only apply debug rotation if explicitly forced
+  if (debugForceNativeRotation && finalRotation === 0) {
+    finalRotation = 90;
   }
 
   // 2. Determine Effective Source Dimensions for letterboxing
-  // If we are rotating 90 or 270, the "Effective" video source dimensions are swapped.
   let finalVW = videoWidth;
   let finalVH = videoHeight;
 
   if (finalRotation === 90 || finalRotation === 270) {
-    // Force swap dimensions to ensure aspect ratio scaling is correct
     finalVW = videoHeight;
     finalVH = videoWidth;
   }
@@ -761,7 +745,7 @@ export function mapLandmarkToScreen(
     lx = 1.0 - lx;
   }
 
-  // 4. Apply coordinate rotation to the normalized landmarks [0..1]
+  // 4. Apply coordinate rotation to the normalized landmarks [0..1] if explicitly required
   if (finalRotation === 90) {
     const temp = lx;
     lx = ly;

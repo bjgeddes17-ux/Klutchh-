@@ -2,6 +2,8 @@ package com.klutchh.posedetector
 
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
+import android.graphics.Matrix
+import android.media.ExifInterface
 import android.net.Uri
 import android.util.Base64
 import com.google.android.gms.tasks.Tasks
@@ -21,7 +23,7 @@ class PoseDetectorModule : Module() {
 
   private val detector by lazy {
     val options = AccuratePoseDetectorOptions.Builder()
-      .setDetectorMode(AccuratePoseDetectorOptions.STREAM_MODE)
+      .setDetectorMode(AccuratePoseDetectorOptions.SINGLE_IMAGE_MODE)
       .setPreferredHardwareConfigs(AccuratePoseDetectorOptions.CPU_GPU)
       .build()
     PoseDetection.getClient(options)
@@ -133,27 +135,56 @@ class PoseDetectorModule : Module() {
     return try {
       val context = appContext.reactContext
       val uri = Uri.parse(uriString)
+      var bitmap: Bitmap? = null
+      var orientation = ExifInterface.ORIENTATION_NORMAL
 
       // 1. Try opening via ContentResolver first (handles file://, content://, cache URIs)
       if (context != null) {
         try {
           context.contentResolver.openInputStream(uri)?.use { stream ->
-            val bmp = BitmapFactory.decodeStream(stream)
-            if (bmp != null) return bmp
+            bitmap = BitmapFactory.decodeStream(stream)
+          }
+          context.contentResolver.openInputStream(uri)?.use { stream ->
+            val exif = ExifInterface(stream)
+            orientation = exif.getAttributeInt(ExifInterface.TAG_ORIENTATION, ExifInterface.ORIENTATION_NORMAL)
           }
         } catch (_: Exception) {}
       }
 
       // 2. Try direct File path
-      val path = if (uri.scheme == "file") uri.path ?: uriString else uriString
-      val file = File(path)
-      if (file.exists()) {
-        val bmp = BitmapFactory.decodeFile(file.absolutePath)
-        if (bmp != null) return bmp
+      if (bitmap == null) {
+        val path = if (uri.scheme == "file") uri.path ?: uriString else uriString
+        val file = File(path)
+        if (file.exists()) {
+          bitmap = BitmapFactory.decodeFile(file.absolutePath)
+          try {
+            val exif = ExifInterface(file.absolutePath)
+            orientation = exif.getAttributeInt(ExifInterface.TAG_ORIENTATION, ExifInterface.ORIENTATION_NORMAL)
+          } catch (_: Exception) {}
+        }
       }
 
       // 3. Fallback to direct decode
-      BitmapFactory.decodeFile(uriString)
+      if (bitmap == null) {
+        bitmap = BitmapFactory.decodeFile(uriString)
+      }
+
+      if (bitmap != null) {
+        val rotationDegrees = when (orientation) {
+          ExifInterface.ORIENTATION_ROTATE_90 -> 90
+          ExifInterface.ORIENTATION_ROTATE_180 -> 180
+          ExifInterface.ORIENTATION_ROTATE_270 -> 270
+          else -> 0
+        }
+        if (rotationDegrees != 0) {
+          val matrix = Matrix()
+          matrix.postRotate(rotationDegrees.toFloat())
+          val rotated = Bitmap.createBitmap(bitmap!!, 0, 0, bitmap!!.width, bitmap!!.height, matrix, true)
+          return rotated
+        }
+      }
+
+      bitmap
     } catch (e: Exception) {
       null
     }
