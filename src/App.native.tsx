@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   StyleSheet,
   Text,
@@ -12,6 +12,7 @@ import {
   Dimensions,
   Alert,
 } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import {
   Activity,
   Play,
@@ -82,6 +83,33 @@ export default function App() {
 
   const [isSecurityOpen, setIsSecurityOpen] = useState(false);
   const [blockedCount, setBlockedCount] = useState(0);
+
+  // Persistence Logic: Load on mount
+  useEffect(() => {
+    const loadSavedReports = async () => {
+      try {
+        const stored = await AsyncStorage.getItem('KLUTCHH_SAVED_REPORTS');
+        if (stored) {
+          setSavedReports(JSON.parse(stored));
+        }
+      } catch (e) {
+        console.error('Failed to load reports:', e);
+      }
+    };
+    loadSavedReports();
+  }, []);
+
+  // Persistence Logic: Save on change
+  useEffect(() => {
+    const saveReports = async () => {
+      try {
+        await AsyncStorage.setItem('KLUTCHH_SAVED_REPORTS', JSON.stringify(savedReports));
+      } catch (e) {
+        console.error('Failed to save reports:', e);
+      }
+    };
+    saveReports();
+  }, [savedReports]);
 
   const currentSportRule: SportRule = SPORTS_RULES.find((s) => s.id === selectedSportId) || SPORTS_RULES[0];
 
@@ -265,6 +293,7 @@ export default function App() {
         overallKneeSafety={analysisResult.overallKneeSafety}
         isLowConfidence={analysisResult.isLowConfidence}
         isFallback={analysisResult.isFallback}
+        preRenderedFrames={analysisResult.preRenderedFrames}
         onBack={() => {
           setAnalysisResult(null);
           handleClearSelectedVideo();
@@ -579,7 +608,25 @@ export default function App() {
                     <View style={styles.savedSportPill}>
                       <Text style={styles.savedSportText}>{item.sportName.toUpperCase()}</Text>
                     </View>
-                    <Text style={styles.savedDate}>{item.date}</Text>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+                      <Text style={styles.savedDate}>{item.date}</Text>
+                      <TouchableOpacity 
+                        onPress={() => {
+                          Alert.alert(
+                            "Delete Session",
+                            "Are you sure you want to remove this biomechanical audit?",
+                            [
+                              { text: "Cancel", style: "cancel" },
+                              { text: "Delete", style: "destructive", onPress: () => {
+                                setSavedReports(prev => prev.filter(r => r.id !== item.id));
+                              }}
+                            ]
+                          );
+                        }}
+                      >
+                        <Trash2 color="#71717a" size={14} />
+                      </TouchableOpacity>
+                    </View>
                   </View>
                   <Text style={styles.savedAthleteName}>{item.athleteName || 'Athlete Session'}</Text>
                   <View style={styles.savedMetaRow}>

@@ -8,6 +8,8 @@ import {
   Modal,
   StatusBar,
   Dimensions,
+  Image,
+  ActivityIndicator,
 } from 'react-native';
 import { Video, ResizeMode, AVPlaybackStatus } from 'expo-av';
 import Svg, {
@@ -47,6 +49,7 @@ interface KineticVideoPlayerProps {
   onPause?: () => void;
   hideSkeleton?: boolean;
   initialSkeletonScale?: number;
+  filmstripFrames?: { timestamp: number; dataUrl: string }[];
 }
 
 import { useVideoPlayback } from '../../hooks/useVideoPlayback.native';
@@ -66,6 +69,7 @@ export const KineticVideoPlayer: React.FC<KineticVideoPlayerProps> = ({
   onPause,
   hideSkeleton = false,
   initialSkeletonScale = 1.0,
+  filmstripFrames = [],
 }) => {
   const [isFullscreenModal, setIsFullscreenModal] = useState<boolean>(false);
   const [showSkeleton, setShowSkeleton] = useState<boolean>(!hideSkeleton);
@@ -344,6 +348,22 @@ export const KineticVideoPlayer: React.FC<KineticVideoPlayerProps> = ({
     return selected;
   }, [landmarks, currentFrame, sportRule, curW, curH, renderedRect]);
 
+  // Filmstrip Playback Logic: 15 FPS timer-based playback when in Filmstrip mode
+  const currentFilmstripFrame = useMemo(() => {
+    if (!filmstripFrames || filmstripFrames.length === 0) return null;
+    // Find the closest image frame for the current timestamp
+    let closestIdx = 0;
+    let minDiff = Infinity;
+    for (let i = 0; i < filmstripFrames.length; i++) {
+      const diff = Math.abs(filmstripFrames[i].timestamp - currentTime);
+      if (diff < minDiff) {
+        minDiff = diff;
+        closestIdx = i;
+      }
+    }
+    return filmstripFrames[closestIdx];
+  }, [filmstripFrames, currentTime]);
+
   return (
     <View 
       style={[
@@ -352,20 +372,51 @@ export const KineticVideoPlayer: React.FC<KineticVideoPlayerProps> = ({
       ]} 
       onLayout={handleLayout}
     >
-      {/* Video Surface */}
-      <Video
-        ref={videoRef}
-        source={{ uri: videoUrl }}
-        rate={selectedSpeed}
-        isMuted={true}
-        resizeMode={ResizeMode.STRETCH} // Use STRETCH because we locked container AR
-        shouldPlay={isPlaying && !isFullscreenModal}
-        isLooping={true}
-        progressUpdateIntervalMillis={16} // 60fps update interval for frame-perfect sync
-        onPlaybackStatusUpdate={isFullscreenModal ? undefined : (s) => handlePlaybackStatusUpdate(s, false)}
-        onReadyForDisplay={handleReadyForDisplay}
-        style={styles.video}
-      />
+      {/* 
+          FILMSTRIP HYBRID PLAYER 
+          When we have pre-rendered frames (15fps 540p), we use the Image Sequence
+          for perfect sync. We still keep the Video hidden for duration management.
+      */}
+      {filmstripFrames && filmstripFrames.length > 0 ? (
+        <View style={styles.video}>
+          {currentFilmstripFrame ? (
+            <Image
+              source={{ uri: currentFilmstripFrame.dataUrl }}
+              style={styles.video}
+              resizeMode="stretch"
+            />
+          ) : (
+            <View style={[styles.video, { justifyContent: 'center', alignItems: 'center' }]}>
+              <ActivityIndicator color="#eab308" />
+            </View>
+          )}
+          {/* Keep hidden video for metadata if needed, but primary display is the Image Sequence */}
+          <Video
+            ref={videoRef}
+            source={{ uri: videoUrl }}
+            rate={selectedSpeed}
+            isMuted={true}
+            shouldPlay={isPlaying && !isFullscreenModal} // Play in background to drive the clock
+            onPlaybackStatusUpdate={isFullscreenModal ? undefined : (s) => handlePlaybackStatusUpdate(s, false)}
+            onReadyForDisplay={handleReadyForDisplay}
+            style={{ width: 1, height: 1, opacity: 0, position: 'absolute', left: -100 }}
+          />
+        </View>
+      ) : (
+        <Video
+          ref={videoRef}
+          source={{ uri: videoUrl }}
+          rate={selectedSpeed}
+          isMuted={true}
+          resizeMode={ResizeMode.STRETCH}
+          shouldPlay={isPlaying && !isFullscreenModal}
+          isLooping={true}
+          progressUpdateIntervalMillis={16}
+          onPlaybackStatusUpdate={isFullscreenModal ? undefined : (s) => handlePlaybackStatusUpdate(s, false)}
+          onReadyForDisplay={handleReadyForDisplay}
+          style={styles.video}
+        />
+      )}
 
       {/* Svg Biomechanical Overlay */}
       {showSkeleton && landmarks && landmarks.length >= 29 && (

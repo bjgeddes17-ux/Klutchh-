@@ -12,35 +12,38 @@ import {
   StatusBar,
   SafeAreaView,
 } from 'react-native';
-import {
-  ArrowLeft,
-  Share2,
-  Sparkles,
-  Flame,
-  Dumbbell,
-  FileText,
-  CheckCircle2,
-  Trophy,
-  ShieldCheck,
-  Zap,
-  Activity,
-  Layers,
-  Bookmark,
-  Target,
-  Play,
-  RotateCcw,
-  X,
-  Plus,
-  Info,
-  Sliders,
-  ChevronDown,
-  ChevronUp,
+import { 
+  ArrowLeft, 
+  Share2, 
+  Sparkles, 
+  Flame, 
+  Dumbbell, 
+  FileText, 
+  CheckCircle2, 
+  Trophy, 
+  ShieldCheck, 
+  Zap, 
+  Activity, 
+  Layers, 
+  Bookmark, 
+  Target, 
+  Play, 
+  RotateCcw, 
+  X, 
+  Plus, 
+  Info, 
+  Sliders, 
+  ChevronDown, 
+  ChevronUp, 
   BookOpen,
+  HardDrive,
+  Cloud,
 } from 'lucide-react-native';
-import {
-  SportRule,
-  FrameAnalysis,
+import { 
+  SportRule, 
+  FrameAnalysis, 
   AICoachingReport,
+  SavedReport,
 } from '../types';
 import { COMPREHENSIVE_DRILL_LIBRARY, DrillItem } from '../data/drillLibrary';
 import { KineticVideoPlayer } from './Report/KineticVideoPlayer.native';
@@ -48,6 +51,8 @@ import { GhostCorrectionVisualizer } from './Report/GhostCorrectionVisualizer.na
 import { KineticEnergyTransfer } from './Report/KineticEnergyTransfer.native';
 import { AnimatedDrillVisualizer } from './Report/AnimatedDrillVisualizer.native';
 import { calculateAngle } from '../utils/geometry';
+import { exportToKlutchhLocal, exportToGoogleDrive } from '../utils/klutchhStorage';
+import { getAccessToken, googleSignIn } from '../services/auth';
 
 interface AnalysisReportPageProps {
   sportRule: SportRule;
@@ -62,6 +67,7 @@ interface AnalysisReportPageProps {
   dynamicMetrics?: any;
   isLowConfidence?: boolean;
   isFallback?: boolean;
+  preRenderedFrames?: { timestamp: number; dataUrl: string }[];
   onBack: () => void;
   onSaveReport?: (reportData: any) => void;
 }
@@ -79,6 +85,7 @@ export const AnalysisReportPage: React.FC<AnalysisReportPageProps> = ({
   dynamicMetrics,
   isLowConfidence: propIsLowConfidence,
   isFallback: propIsFallback,
+  preRenderedFrames = [],
   onBack,
   onSaveReport,
 }) => {
@@ -111,6 +118,7 @@ export const AnalysisReportPage: React.FC<AnalysisReportPageProps> = ({
     'Maintain low hip hinge during transition phase. Explosive hip-shoulder separation looks solid.'
   );
   const [saveModalOpen, setSaveModalOpen] = useState<boolean>(false);
+  const [isExporting, setIsExporting] = useState<boolean>(false);
   const [activeExplainer, setActiveExplainer] = useState<any | null>(null);
   const [inspectorFilter, setInspectorFilter] = useState<'all' | 'faults'>('all');
 
@@ -335,10 +343,97 @@ export const AnalysisReportPage: React.FC<AnalysisReportPageProps> = ({
         score: titanRating,
         notes: coachNotes,
         date: new Date().toLocaleDateString(),
+        preRenderedFrames,
+        keyframeList,
+        report: aiReport,
+        kineticSequence,
+        sequenceComparison,
+        dynamicMetrics,
       });
     }
     setSaveModalOpen(false);
     Alert.alert('Session Saved', `Biomechanical Audit for ${athleteName} saved to athlete profile.`);
+  };
+
+  const handleExportLocal = async () => {
+    setIsExporting(true);
+    try {
+      const report: SavedReport = {
+        id: `local_${Date.now()}`,
+        title: `${sportRule.name} Audit`,
+        createdAt: new Date().toISOString(),
+        sportId: sportRule.id,
+        sportName: sportRule.name,
+        athleteName,
+        overallGrade: aiReport?.overallGrade || 'A',
+        overallScore: titanRating,
+        symmetryScore: overallSymmetry,
+        kneeSafetyScore: overallKneeSafety,
+        keyframeList,
+        allFrames,
+        report: aiReport!,
+        sequenceComparison,
+        kineticSequence,
+        dynamicMetrics,
+        preRenderedFrames,
+        duration: 0, 
+        authorName: 'Coach',
+        movementPhase: 'Dynamic',
+      };
+      await exportToKlutchhLocal(report, videoUrl);
+      Alert.alert('Export Success', '.klutchh file created and ready to save.');
+    } catch (err) {
+      Alert.alert('Export Failed', 'Could not generate .klutchh bundle.');
+    } finally {
+      setIsExporting(false);
+    }
+  };
+
+  const handleExportDrive = async () => {
+    let token = await getAccessToken();
+    if (!token) {
+      try {
+        const result = await googleSignIn();
+        token = result?.accessToken || null;
+      } catch (err) {
+        Alert.alert('Sign In Failed', 'Could not authenticate with Google.');
+        return;
+      }
+    }
+
+    if (!token) return;
+
+    setIsExporting(true);
+    try {
+      const report: SavedReport = {
+        id: `drive_${Date.now()}`,
+        title: `${sportRule.name} Audit`,
+        createdAt: new Date().toISOString(),
+        sportId: sportRule.id,
+        sportName: sportRule.name,
+        athleteName,
+        overallGrade: aiReport?.overallGrade || 'A',
+        overallScore: titanRating,
+        symmetryScore: overallSymmetry,
+        kneeSafetyScore: overallKneeSafety,
+        keyframeList,
+        allFrames,
+        report: aiReport!,
+        sequenceComparison,
+        kineticSequence,
+        dynamicMetrics,
+        preRenderedFrames,
+        duration: 0, 
+        authorName: 'Coach',
+        movementPhase: 'Dynamic',
+      };
+      await exportToGoogleDrive(report, videoUrl, token);
+      Alert.alert('Cloud Sync Success', 'Audit saved to your Google Drive in .klutchh format.');
+    } catch (err) {
+      Alert.alert('Cloud Sync Failed', 'Could not upload to Google Drive.');
+    } finally {
+      setIsExporting(false);
+    }
   };
 
   // Phase options for Corridors filter
@@ -528,6 +623,7 @@ export const AnalysisReportPage: React.FC<AnalysisReportPageProps> = ({
             onTogglePlay={() => setIsPlaying(!isPlaying)}
             onPause={() => setIsPlaying(false)}
             initialSkeletonScale={1.0}
+            filmstripFrames={preRenderedFrames}
           />
         </View>
 
@@ -1235,9 +1331,35 @@ export const AnalysisReportPage: React.FC<AnalysisReportPageProps> = ({
               placeholder="Athlete Name"
               placeholderTextColor="#71717a"
             />
-            <TouchableOpacity onPress={handleSaveToRoster} style={styles.modalSaveBtn}>
-              <Text style={styles.modalSaveBtnText}>CONFIRM & SAVE REPORT</Text>
-            </TouchableOpacity>
+            
+            <View style={{ gap: 10, marginTop: 10 }}>
+              <TouchableOpacity onPress={handleSaveToRoster} style={styles.modalSaveBtn}>
+                <Bookmark color="#000" size={16} />
+                <Text style={styles.modalSaveBtnText}>SAVE TO ROSTER</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity 
+                onPress={handleExportLocal} 
+                style={[styles.modalSaveBtn, { backgroundColor: '#27272a' }]}
+                disabled={isExporting}
+              >
+                <HardDrive color="#eab308" size={16} />
+                <Text style={[styles.modalSaveBtnText, { color: '#ffffff' }]}>
+                  {isExporting ? 'PACKING .KLUTCHH...' : 'EXPORT .KLUTCHH LOCAL'}
+                </Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity 
+                onPress={handleExportDrive} 
+                style={[styles.modalSaveBtn, { backgroundColor: '#059669' }]}
+                disabled={isExporting}
+              >
+                <Cloud color="#ffffff" size={16} />
+                <Text style={[styles.modalSaveBtnText, { color: '#ffffff' }]}>
+                  {isExporting ? 'UPLOADING...' : 'SAVE TO GOOGLE DRIVE'}
+                </Text>
+              </TouchableOpacity>
+            </View>
           </View>
         </View>
       </Modal>

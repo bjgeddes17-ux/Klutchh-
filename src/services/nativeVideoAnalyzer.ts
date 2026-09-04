@@ -79,6 +79,7 @@ export async function analyzeNativeVideoBiometrics({
   updateProgress(15);
 
   const frames: FrameAnalysis[] = [];
+  const preRenderedFrames: { timestamp: number; dataUrl: string }[] = [];
   let realDetectionCount = 0;
   let detectedDimensions: { width: number; height: number } | undefined = undefined;
 
@@ -89,19 +90,20 @@ export async function analyzeNativeVideoBiometrics({
 
     let landmarks: MediaPipeLandmark[] | null = null;
     let isReal = false;
+    let frameImageUri: string | null = null;
 
     // 1. Attempt on-device Native ML Kit detection via video thumbnail at timestamp
     if (nativeDetectorActive && Platform.OS !== 'web' && videoUri) {
       try {
         const thumbnail = await VideoThumbnails.getThumbnailAsync(videoUri, {
           time: timestampMs,
-          quality: 0.8,
+          quality: 0.5, // 540p equivalent quality
         });
 
         if (thumbnail?.uri) {
+          frameImageUri = thumbnail.uri;
           if (thumbnail.width && thumbnail.height && !detectedDimensions) {
             detectedDimensions = { width: thumbnail.width, height: thumbnail.height };
-            console.log(`[NativeBiometrics] Video dimensions: ${thumbnail.width}x${thumbnail.height}`);
           }
 
           const detectedLandmarks = await detectPoseFromUri(thumbnail.uri);
@@ -109,16 +111,15 @@ export async function analyzeNativeVideoBiometrics({
             landmarks = detectedLandmarks;
             isReal = true;
             realDetectionCount++;
-            if (i === 0 || i === Math.floor(totalFrames / 2) || i === totalFrames - 1) {
-              console.log(
-                `[NativeBiometrics] Frame ${i} (${timestampSec.toFixed(2)}s) ML Kit LOCKED on body: Hip at (${detectedLandmarks[23]?.x.toFixed(3)}, ${detectedLandmarks[23]?.y.toFixed(3)})`
-              );
-            }
           }
         }
       } catch (err) {
-        console.warn(`[NativeBiometrics] Frame ${i} (${timestampSec.toFixed(2)}s) extraction warning:`, err);
+        console.warn(`[NativeBiometrics] Frame ${i} extraction warning:`, err);
       }
+    }
+
+    if (frameImageUri) {
+      preRenderedFrames.push({ timestamp: timestampSec, dataUrl: frameImageUri });
     }
 
     // 2. Fallback if ML Kit didn't capture or in simulator
@@ -421,6 +422,7 @@ export async function analyzeNativeVideoBiometrics({
   const result: AnalysisResult = {
     keyframes,
     allFrames: frames,
+    preRenderedFrames,
     aiReport: coachingReport,
     overallSymmetry: avgSymmetry,
     overallKneeSafety: avgKneeSafety,
