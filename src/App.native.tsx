@@ -111,6 +111,37 @@ export default function App() {
     saveReports();
   }, [savedReports]);
 
+  const handleOpenSavedReport = (item: any) => {
+    if (item.sportId) {
+      setSelectedSportId(item.sportId);
+    }
+    if (item.videoUrl) {
+      setCustomVideoUri(item.videoUrl);
+    }
+    setAnalysisResult({
+      keyframes: item.keyframeList || [],
+      allFrames: item.allFrames || [],
+      aiReport: item.report || null,
+      overallSymmetry: item.overallSymmetry ?? 88,
+      overallKneeSafety: item.overallKneeSafety ?? 92,
+      measuredAngles: {},
+      ruleResultsSummary: {},
+      sequenceComparison: item.sequenceComparison || {
+        ideal: [],
+        actual: [],
+        isCorrect: true,
+        feedback: 'Standard kinetic sequencing'
+      },
+      kineticSequence: item.kineticSequence || {
+        steps: [],
+        firingOrder: [],
+        isCorrectOrder: true,
+        sequenceEfficiency: 90
+      },
+      dynamicMetrics: item.dynamicMetrics,
+    });
+  };
+
   const currentSportRule: SportRule = SPORTS_RULES.find((s) => s.id === selectedSportId) || SPORTS_RULES[0];
 
   // Video Pickers (Limited to Upload and 30s Live Camera Record)
@@ -127,14 +158,14 @@ export default function App() {
       const result = await ImagePicker.launchImageLibraryAsync({
         mediaTypes: ImagePicker.MediaTypeOptions.Videos,
         allowsEditing: false,
-        videoMaxDuration: 30,
+        videoMaxDuration: 20,
         quality: 1,
       });
 
       if (!result.canceled && result.assets && result.assets.length > 0) {
         const asset = result.assets[0];
-        if (asset.duration && asset.duration > 30500) {
-          Alert.alert('Video Too Long', 'Please select a video clip that is 30 seconds or shorter.');
+        if (asset.duration && asset.duration > 20500) {
+          Alert.alert('Video Too Long', 'Please select a video clip that is 20 seconds or shorter.');
           setIsPickingVideo(false);
           return;
         }
@@ -170,19 +201,19 @@ export default function App() {
       const result = await ImagePicker.launchCameraAsync({
         mediaTypes: ImagePicker.MediaTypeOptions.Videos,
         allowsEditing: false,
-        videoMaxDuration: 30,
+        videoMaxDuration: 20,
         quality: 1,
       });
 
       if (!result.canceled && result.assets && result.assets.length > 0) {
         const asset = result.assets[0];
-        if (asset.duration && asset.duration > 30500) {
-          Alert.alert('Recording Too Long', 'Video recording must be 30 seconds or less.');
+        if (asset.duration && asset.duration > 20500) {
+          Alert.alert('Recording Too Long', 'Video recording must be 20 seconds or less.');
           setIsPickingVideo(false);
           return;
         }
         setCustomVideoUri(asset.uri);
-        setCustomVideoName(asset.fileName || `Live_${currentSportRule.name}_30s_Capture.mp4`);
+        setCustomVideoName(asset.fileName || `Live_${currentSportRule.name}_20s_Capture.mp4`);
         if (asset.fileSize) {
           setCustomVideoSize(`${(asset.fileSize / (1024 * 1024)).toFixed(1)} MB`);
         }
@@ -603,7 +634,12 @@ export default function App() {
               </View>
             ) : (
               savedReports.map((item) => (
-                <View key={item.id} style={styles.savedCard}>
+                <TouchableOpacity 
+                  key={item.id} 
+                  style={styles.savedCard}
+                  activeOpacity={0.7}
+                  onPress={() => handleOpenSavedReport(item)}
+                >
                   <View style={styles.savedTopRow}>
                     <View style={styles.savedSportPill}>
                       <Text style={styles.savedSportText}>{item.sportName.toUpperCase()}</Text>
@@ -611,7 +647,9 @@ export default function App() {
                     <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
                       <Text style={styles.savedDate}>{item.date}</Text>
                       <TouchableOpacity 
-                        onPress={() => {
+                        hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                        onPress={(e) => {
+                          e.stopPropagation?.();
                           Alert.alert(
                             "Delete Session",
                             "Are you sure you want to remove this biomechanical audit?",
@@ -634,7 +672,11 @@ export default function App() {
                     <Text style={styles.savedScoreText}>Titan: {item.score.toFixed(1)} / 10</Text>
                   </View>
                   {item.notes ? <Text style={styles.savedNotesText}>"{item.notes}"</Text> : null}
-                </View>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'flex-end', marginTop: 6, gap: 4 }}>
+                    <Text style={{ color: '#eab308', fontSize: 10, fontWeight: '900' }}>OPEN FULL REPORT</Text>
+                    <ChevronRight color="#eab308" size={14} />
+                  </View>
+                </TouchableOpacity>
               ))
             )}
           </View>

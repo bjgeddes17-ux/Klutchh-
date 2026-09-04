@@ -468,55 +468,27 @@ export const KineticVideoPlayer: React.FC<KineticVideoPlayerProps> = ({
     <View 
       style={[
         styles.container, 
-        containerAspectRatio ? { aspectRatio: containerAspectRatio, height: undefined } : {}
+        containerAspectRatio ? { aspectRatio: containerAspectRatio, maxHeight: 560 } : {}
       ]} 
       onLayout={handleLayout}
     >
       {/* 
-          FILMSTRIP HYBRID PLAYER 
-          When we have pre-rendered frames (15fps 540p), we use the Image Sequence
-          for perfect sync. We still keep the Video hidden for duration management.
+          HARDWARE VIDEO PLAYER
+          Direct native ExoPlayer decoding for continuous 60 FPS playback and scrub without image jumps.
       */}
-      {filmstripFrames && filmstripFrames.length > 0 ? (
-        <View style={styles.video}>
-          {currentFilmstripFrame ? (
-            <Image
-              source={{ uri: currentFilmstripFrame.dataUrl }}
-              style={styles.video}
-              resizeMode="stretch"
-            />
-          ) : (
-            <View style={[styles.video, { justifyContent: 'center', alignItems: 'center' }]}>
-              <ActivityIndicator color="#eab308" />
-            </View>
-          )}
-          {/* Keep hidden video for metadata if needed, but primary display is the Image Sequence */}
-          <Video
-            ref={videoRef}
-            source={{ uri: videoUrl }}
-            rate={selectedSpeed}
-            isMuted={true}
-            shouldPlay={isPlaying} // Play continuously in background to drive clock seamlessly
-            onPlaybackStatusUpdate={(s) => handlePlaybackStatusUpdate(s, isFullscreenModal)}
-            onReadyForDisplay={handleReadyForDisplay}
-            style={{ width: 1, height: 1, opacity: 0, position: 'absolute', left: -100 }}
-          />
-        </View>
-      ) : (
-        <Video
-          ref={videoRef}
-          source={{ uri: videoUrl }}
-          rate={selectedSpeed}
-          isMuted={true}
-          resizeMode={ResizeMode.STRETCH}
-          shouldPlay={isPlaying && !isFullscreenModal}
-          isLooping={true}
-          progressUpdateIntervalMillis={16}
-          onPlaybackStatusUpdate={isFullscreenModal ? undefined : (s) => handlePlaybackStatusUpdate(s, false)}
-          onReadyForDisplay={handleReadyForDisplay}
-          style={styles.video}
-        />
-      )}
+      <Video
+        ref={videoRef}
+        source={{ uri: videoUrl }}
+        rate={selectedSpeed}
+        isMuted={true}
+        resizeMode={ResizeMode.STRETCH}
+        shouldPlay={isPlaying && !isFullscreenModal}
+        isLooping={true}
+        progressUpdateIntervalMillis={16}
+        onPlaybackStatusUpdate={isFullscreenModal ? undefined : (s) => handlePlaybackStatusUpdate(s, false)}
+        onReadyForDisplay={handleReadyForDisplay}
+        style={styles.video}
+      />
 
       <View 
         pointerEvents="none"
@@ -926,12 +898,12 @@ export const KineticVideoPlayer: React.FC<KineticVideoPlayerProps> = ({
                     flexDirection: 'row',
                     alignItems: 'center',
                     gap: 4,
-                    backgroundColor: currentFrame?.isRealDetection ? 'rgba(34, 197, 94, 0.18)' : 'rgba(234, 179, 8, 0.15)',
+                    backgroundColor: currentFrame?.isRealDetection ? 'rgba(34, 197, 94, 0.18)' : 'rgba(56, 189, 248, 0.18)',
                     paddingHorizontal: 7,
                     paddingVertical: 4,
                     borderRadius: 6,
                     borderWidth: 1,
-                    borderColor: currentFrame?.isRealDetection ? 'rgba(34, 197, 94, 0.45)' : 'rgba(234, 179, 8, 0.4)',
+                    borderColor: currentFrame?.isRealDetection ? 'rgba(34, 197, 94, 0.45)' : 'rgba(56, 189, 248, 0.45)',
                   }}
                 >
                   <View
@@ -939,17 +911,17 @@ export const KineticVideoPlayer: React.FC<KineticVideoPlayerProps> = ({
                       width: 5,
                       height: 5,
                       borderRadius: 2.5,
-                      backgroundColor: currentFrame?.isRealDetection ? '#22c55e' : '#eab308',
+                      backgroundColor: currentFrame?.isRealDetection ? '#22c55e' : '#38bdf8',
                     }}
                   />
                   <Text
                     style={{
-                      color: currentFrame?.isRealDetection ? '#22c55e' : '#eab308',
+                      color: currentFrame?.isRealDetection ? '#22c55e' : '#38bdf8',
                       fontSize: 9.5,
                       fontWeight: '900',
                     }}
                   >
-                    {currentFrame?.isRealDetection ? 'AI LOCKED' : 'STANDBY'}
+                    {currentFrame?.isRealDetection ? 'AI TRACKED' : 'KINEMATIC LOCK'}
                   </Text>
                 </View>
               )}
@@ -980,34 +952,20 @@ export const KineticVideoPlayer: React.FC<KineticVideoPlayerProps> = ({
               backgroundColor: '#000000',
             }}
           >
-            {/* Fullscreen Video / Filmstrip Display */}
-            {filmstripFrames && filmstripFrames.length > 0 ? (
-              currentFilmstripFrame ? (
-                <Image
-                  source={{ uri: currentFilmstripFrame.dataUrl }}
-                  style={{ width: '100%', height: '100%' }}
-                  resizeMode="stretch"
-                />
-              ) : (
-                <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
-                  <ActivityIndicator color="#eab308" />
-                </View>
-              )
-            ) : (
-              <Video
-                ref={fullscreenVideoRef}
-                source={{ uri: videoUrl }}
-                rate={selectedSpeed}
-                isMuted={true}
-                resizeMode={ResizeMode.STRETCH}
-                shouldPlay={isPlaying && isFullscreenModal}
-                isLooping={true}
-                progressUpdateIntervalMillis={16} // 60fps update interval
-                onPlaybackStatusUpdate={isFullscreenModal ? (s) => handlePlaybackStatusUpdate(s, true) : undefined}
-                onReadyForDisplay={handleReadyForDisplay}
-                style={{ width: '100%', height: '100%' }}
-              />
-            )}
+            {/* Fullscreen Video Display */}
+            <Video
+              ref={fullscreenVideoRef}
+              source={{ uri: videoUrl }}
+              rate={selectedSpeed}
+              isMuted={true}
+              resizeMode={ResizeMode.STRETCH}
+              shouldPlay={isPlaying && isFullscreenModal}
+              isLooping={true}
+              progressUpdateIntervalMillis={16} // 60fps update interval
+              onPlaybackStatusUpdate={isFullscreenModal ? (s) => handlePlaybackStatusUpdate(s, true) : undefined}
+              onReadyForDisplay={handleReadyForDisplay}
+              style={{ width: '100%', height: '100%' }}
+            />
 
             {/* Fullscreen SVG Overlay */}
             {showSkeleton && landmarks && landmarks.length >= 29 && (
@@ -1355,6 +1313,7 @@ export const KineticVideoPlayer: React.FC<KineticVideoPlayerProps> = ({
 const styles = StyleSheet.create({
   container: {
     width: '100%',
+    alignSelf: 'stretch',
     height: 480, // High-impact centerpiece height
     backgroundColor: '#000000',
     borderRadius: 24,

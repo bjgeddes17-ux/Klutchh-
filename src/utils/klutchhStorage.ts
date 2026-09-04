@@ -21,6 +21,43 @@ export interface KlutchhBundle {
 }
 
 /**
+ * Ensures a dedicated permanent directory for saved offline video assets
+ */
+export async function getPersistentVideoDirectory(): Promise<string> {
+  const dir = `${FileSystem.documentDirectory}klutchh_sessions/`;
+  const info = await FileSystem.getInfoAsync(dir);
+  if (!info.exists) {
+    await FileSystem.makeDirectoryAsync(dir, { intermediates: true });
+  }
+  return dir;
+}
+
+/**
+ * Copies a temporary captured/picked video to the app's permanent document directory
+ * so it remains accessible offline indefinitely even if temp cache is purged.
+ */
+export async function persistSessionVideo(sourceUri: string, sessionId: string): Promise<string> {
+  try {
+    if (!sourceUri || sourceUri.startsWith('http')) {
+      return sourceUri;
+    }
+    const targetDir = await getPersistentVideoDirectory();
+    const targetUri = `${targetDir}session_${sessionId}.mp4`;
+    
+    // Copy to persistent document storage
+    await FileSystem.copyAsync({
+      from: sourceUri,
+      to: targetUri,
+    });
+    console.log('[KlutchhStorage] Video persisted successfully to:', targetUri);
+    return targetUri;
+  } catch (err) {
+    console.warn('[KlutchhStorage] Video copy failed, falling back to original uri:', err);
+    return sourceUri;
+  }
+}
+
+/**
  * Packs analysis and video into a .klutchh bundle and offers to save/share locally.
  */
 export async function exportToKlutchhLocal(report: SavedReport, videoUri: string) {
@@ -77,75 +114,6 @@ export async function exportToKlutchhLocal(report: SavedReport, videoUri: string
     return fileUri;
   } catch (err) {
     console.error('[KlutchhStorage] Export failed:', err);
-    throw err;
-  }
-}
-
-/**
- * Uploads a Klutchh bundle directly to the user's Google Drive.
- */
-export async function exportToGoogleDrive(report: SavedReport, videoUri: string, accessToken: string) {
-  try {
-    const videoBase64 = await FileSystem.readAsStringAsync(videoUri, {
-      encoding: FileSystem.EncodingType.Base64,
-    });
-
-    const bundle: KlutchhBundle = {
-      version: '1.0.0',
-      metadata: {
-        athleteName: report.athleteName || 'Athlete',
-        sportName: report.sportName,
-        date: report.createdAt,
-        grade: report.overallGrade,
-        score: report.overallScore,
-      },
-      analysis: {
-        keyframes: report.keyframeList,
-        allFrames: report.allFrames,
-        aiReport: report.report,
-        overallSymmetry: report.symmetryScore,
-        overallKneeSafety: report.kneeSafetyScore,
-        measuredAngles: {},
-        ruleResultsSummary: {},
-        sequenceComparison: report.sequenceComparison!,
-        kineticSequence: report.kineticSequence!,
-        dynamicMetrics: report.dynamicMetrics as any,
-        preRenderedFrames: report.preRenderedFrames,
-      },
-      videoBase64,
-    };
-
-    const fileName = `Klutchh_${report.athleteName?.replace(/\s+/g, '_')}_${Date.now()}.klutchh`;
-    const metadata = {
-      name: fileName,
-      mimeType: 'application/json',
-    };
-
-    const form = new FormData();
-    form.append('metadata', new Blob([JSON.stringify(metadata)], { type: 'application/json' }));
-    form.append('file', new Blob([JSON.stringify(bundle)], { type: 'application/json' }));
-
-    const response = await fetch(
-      'https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart',
-      {
-        method: 'POST',
-        headers: {
-          Authorization: `Bearer ${accessToken}`,
-        },
-        body: form,
-      }
-    );
-
-    if (!response.ok) {
-      const errorText = await response.text();
-      throw new Error(`Drive upload failed: ${errorText}`);
-    }
-
-    const data = await response.json();
-    console.log('[KlutchhStorage] Saved to Drive:', data.id);
-    return data;
-  } catch (err) {
-    console.error('[KlutchhStorage] Google Drive export failed:', err);
     throw err;
   }
 }

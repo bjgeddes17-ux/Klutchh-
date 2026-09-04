@@ -81,27 +81,26 @@ export const useVideoPlayback = ({
     // UI update is INSTANT
     onTimeUpdate(targetSec);
     
-    // Seek both refs if available so normal and fullscreen states never desync
+    // Seek both refs: fast tolerance during drag for 60fps responsive scrubbing, exact zero tolerance on release
+    const tolerance = finished ? 0 : 40;
     if (videoRef.current) {
       videoRef.current.setPositionAsync(seekTime, {
-        toleranceMillisBefore: finished ? 0 : 100,
-        toleranceMillisAfter: finished ? 0 : 100,
+        toleranceMillisBefore: tolerance,
+        toleranceMillisAfter: tolerance,
       }).catch(() => {});
     }
     if (fullscreenVideoRef.current) {
       fullscreenVideoRef.current.setPositionAsync(seekTime, {
-        toleranceMillisBefore: finished ? 0 : 100,
-        toleranceMillisAfter: finished ? 0 : 100,
+        toleranceMillisBefore: tolerance,
+        toleranceMillisAfter: tolerance,
       }).catch(() => {});
     }
 
     if (finished) {
-      // 120ms lockout ensures the native player has time to settle at the new position
-      // but is fast enough to feel responsive for rapid scrubbing.
       seekLockoutTimer.current = setTimeout(() => {
         isScrubbing.current = false;
         lastSeekTime.current = -1;
-      }, 120);
+      }, 80);
     }
   }, [duration, isFullscreenModal, onTimeUpdate, onPause]);
 
@@ -188,6 +187,17 @@ export const useVideoPlayback = ({
       videoRef.current?.setRateAsync(speed, true).catch(() => {});
     }
   }, [isFullscreenModal]);
+
+  // Clean unmount to release hardware decoders and video memory
+  useEffect(() => {
+    return () => {
+      if (seekLockoutTimer.current) {
+        clearTimeout(seekLockoutTimer.current);
+      }
+      videoRef.current?.unloadAsync().catch(() => {});
+      fullscreenVideoRef.current?.unloadAsync().catch(() => {});
+    };
+  }, []);
 
   return {
     videoRef,

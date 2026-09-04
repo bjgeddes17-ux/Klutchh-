@@ -84,6 +84,8 @@ export interface FrameAnalysis {
   effectiveFps?: number;
 }
 
+export type BiomechanicalFrame = FrameAnalysis;
+
 export interface PhaseTrigger {
   phase: string;
   condition: 'angle_gt' | 'angle_lt' | 'velocity_gt' | 'velocity_lt' | 'relative_y_lt' | 'relative_y_gt';

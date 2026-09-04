@@ -50,9 +50,13 @@ import { KineticVideoPlayer } from './Report/KineticVideoPlayer.native';
 import { GhostCorrectionVisualizer } from './Report/GhostCorrectionVisualizer.native';
 import { KineticEnergyTransfer } from './Report/KineticEnergyTransfer.native';
 import { AnimatedDrillVisualizer } from './Report/AnimatedDrillVisualizer.native';
+import { ExecutiveDashboardNative } from './Report/ExecutiveDashboard.native';
+import { DrillsTabNative } from './Report/DrillsTab.native';
+import { StrengthsTabNative } from './Report/StrengthsTab.native';
+import { LeaksTabNative } from './Report/LeaksTab.native';
+import { CorridorsTabNative } from './Report/CorridorsTab.native';
 import { calculateAngle } from '../utils/geometry';
-import { exportToKlutchhLocal, exportToGoogleDrive } from '../utils/klutchhStorage';
-import { getAccessToken, googleSignIn } from '../services/auth';
+import { exportToKlutchhLocal, persistSessionVideo } from '../utils/klutchhStorage';
 
 interface AnalysisReportPageProps {
   sportRule: SportRule;
@@ -89,10 +93,8 @@ export const AnalysisReportPage: React.FC<AnalysisReportPageProps> = ({
   onBack,
   onSaveReport,
 }) => {
-  // Navigation & View State
-  const [activeTab, setActiveTab] = useState<
-    'corrections' | 'energy' | 'phases' | 'drills' | 'inspector' | 'symmetry' | 'notes'
-  >('corrections');
+  // Navigation & View State (4-tab educational overhaul)
+  const [activeTab, setActiveTab] = useState<'strengths' | 'leaks' | 'corridors' | 'drills'>('strengths');
 
   const [currentTime, setCurrentTime] = useState<number>(0);
   const [isPlaying, setIsPlaying] = useState<boolean>(false);
@@ -333,9 +335,21 @@ export const AnalysisReportPage: React.FC<AnalysisReportPageProps> = ({
     }
   };
 
-  const handleSaveToRoster = () => {
+  const handleSaveToRoster = async () => {
+    let finalVideoUrl = videoUrl;
+    const sessionId = `${Date.now()}`;
+
+    if (videoUrl) {
+      try {
+        finalVideoUrl = await persistSessionVideo(videoUrl, sessionId);
+      } catch (err) {
+        console.warn('Video copy skipped, storing original URI', err);
+      }
+    }
+
     if (onSaveReport) {
       onSaveReport({
+        id: sessionId,
         athleteName,
         sportId: sportRule.id,
         sportName: sportRule.name,
@@ -343,16 +357,19 @@ export const AnalysisReportPage: React.FC<AnalysisReportPageProps> = ({
         score: titanRating,
         notes: coachNotes,
         date: new Date().toLocaleDateString(),
-        preRenderedFrames,
+        videoUrl: finalVideoUrl,
         keyframeList,
+        allFrames,
         report: aiReport,
         kineticSequence,
         sequenceComparison,
         dynamicMetrics,
+        overallSymmetry,
+        overallKneeSafety,
       });
     }
     setSaveModalOpen(false);
-    Alert.alert('Session Saved', `Biomechanical Audit for ${athleteName} saved to athlete profile.`);
+    Alert.alert('Session Saved', `Biomechanical Audit for ${athleteName} saved to athlete profile with offline video integrity.`);
   };
 
   const handleExportLocal = async () => {
@@ -384,53 +401,6 @@ export const AnalysisReportPage: React.FC<AnalysisReportPageProps> = ({
       Alert.alert('Export Success', '.klutchh file created and ready to save.');
     } catch (err) {
       Alert.alert('Export Failed', 'Could not generate .klutchh bundle.');
-    } finally {
-      setIsExporting(false);
-    }
-  };
-
-  const handleExportDrive = async () => {
-    let token = await getAccessToken();
-    if (!token) {
-      try {
-        const result = await googleSignIn();
-        token = result?.accessToken || null;
-      } catch (err) {
-        Alert.alert('Sign In Failed', 'Could not authenticate with Google.');
-        return;
-      }
-    }
-
-    if (!token) return;
-
-    setIsExporting(true);
-    try {
-      const report: SavedReport = {
-        id: `drive_${Date.now()}`,
-        title: `${sportRule.name} Audit`,
-        createdAt: new Date().toISOString(),
-        sportId: sportRule.id,
-        sportName: sportRule.name,
-        athleteName,
-        overallGrade: aiReport?.overallGrade || 'A',
-        overallScore: titanRating,
-        symmetryScore: overallSymmetry,
-        kneeSafetyScore: overallKneeSafety,
-        keyframeList,
-        allFrames,
-        report: aiReport!,
-        sequenceComparison,
-        kineticSequence,
-        dynamicMetrics,
-        preRenderedFrames,
-        duration: 0, 
-        authorName: 'Coach',
-        movementPhase: 'Dynamic',
-      };
-      await exportToGoogleDrive(report, videoUrl, token);
-      Alert.alert('Cloud Sync Success', 'Audit saved to your Google Drive in .klutchh format.');
-    } catch (err) {
-      Alert.alert('Cloud Sync Failed', 'Could not upload to Google Drive.');
     } finally {
       setIsExporting(false);
     }
@@ -476,139 +446,17 @@ export const AnalysisReportPage: React.FC<AnalysisReportPageProps> = ({
       </View>
 
       <ScrollView style={styles.contentScroll} showsVerticalScrollIndicator={false}>
-        {/* 1. Executive Titan Score Card */}
-        <View style={styles.executiveCard}>
-          <View style={styles.executiveTopRow}>
-            <View style={styles.gradeBox}>
-              <Text style={styles.gradeIcon}>
-                {aiReport?.overallGrade?.startsWith('A') ? '🏆' : '🏅'}
-              </Text>
-            </View>
-            <View style={styles.executiveInfo}>
-              <View style={styles.tierPillRow}>
-                <View style={styles.tierPill}>
-                  <Text style={styles.tierPillText}>
-                    {aiReport?.overallGrade?.startsWith('A')
-                      ? 'ELITE CHAMPION'
-                      : 'ADVANCED ATHLETE'}
-                  </Text>
-                </View>
-                <View style={styles.titanPill}>
-                  <Text style={styles.titanPillText}>
-                    ⚡ TITAN RATING: {titanRating.toFixed(1)} / 10
-                  </Text>
-                </View>
-              </View>
-              <Text style={styles.athleteTitle}>
-                {sportRule.name}{' '}
-                {aiReport?.overallGrade?.startsWith('A') ? 'Titan' : 'Prodigy'}
-              </Text>
-            </View>
-          </View>
-
-          {/* 4 Biomechanical Attributes Grid */}
-          <View style={styles.attributesGrid}>
-            <TouchableOpacity
-              onPress={() =>
-                setActiveExplainer({
-                  title: 'Explosive Power',
-                  score: explosivePower,
-                  desc: 'Quantifies force output and velocity propagation through the kinetic chain.',
-                  formula: 'P = Force (Ground Reaction) × Angular Velocity (deg/s)',
-                })
-              }
-              style={styles.attributeItem}
-            >
-              <Text style={styles.attributeLabel}>⚡ POWER</Text>
-              <Text style={[styles.attributeValue, { color: '#f59e0b' }]}>
-                {explosivePower}%
-              </Text>
-              <View style={styles.attributeBarTrack}>
-                <View
-                  style={[
-                    styles.attributeBarFill,
-                    { width: `${explosivePower}%`, backgroundColor: '#f59e0b' },
-                  ]}
-                />
-              </View>
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              onPress={() =>
-                setActiveExplainer({
-                  title: 'Joint Armor',
-                  score: jointArmor,
-                  desc: 'Quantifies ligament protection, knee valgus resistance, and shock absorption.',
-                  formula: 'Armor = 100 - Valgus Displacement Index - Shear Load Penalty',
-                })
-              }
-              style={styles.attributeItem}
-            >
-              <Text style={styles.attributeLabel}>🛡️ ARMOR</Text>
-              <Text style={[styles.attributeValue, { color: '#22c55e' }]}>
-                {jointArmor}%
-              </Text>
-              <View style={styles.attributeBarTrack}>
-                <View
-                  style={[
-                    styles.attributeBarFill,
-                    { width: `${jointArmor}%`, backgroundColor: '#22c55e' },
-                  ]}
-                />
-              </View>
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              onPress={() =>
-                setActiveExplainer({
-                  title: 'Precision',
-                  score: precision,
-                  desc: 'Measures body alignment checkpoints against gold-standard joint corridors.',
-                  formula: 'Precision = Σ (1 - |Measured - Ideal| / Corridor_Width)',
-                })
-              }
-              style={styles.attributeItem}
-            >
-              <Text style={styles.attributeLabel}>🎯 PRECISION</Text>
-              <Text style={[styles.attributeValue, { color: '#38bdf8' }]}>
-                {precision}%
-              </Text>
-              <View style={styles.attributeBarTrack}>
-                <View
-                  style={[
-                    styles.attributeBarFill,
-                    { width: `${precision}%`, backgroundColor: '#38bdf8' },
-                  ]}
-                />
-              </View>
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              onPress={() =>
-                setActiveExplainer({
-                  title: 'Kinetic Flow',
-                  score: kineticFlow,
-                  desc: 'Quantifies seamless energy transfer from ground contact through arms without leaks.',
-                  formula: 'Flow = Proximal_to_Distal Timing Index × Transfer Efficiency',
-                })
-              }
-              style={styles.attributeItem}
-            >
-              <Text style={styles.attributeLabel}>🔄 FLOW</Text>
-              <Text style={[styles.attributeValue, { color: '#c084fc' }]}>
-                {kineticFlow}%
-              </Text>
-              <View style={styles.attributeBarTrack}>
-                <View
-                  style={[
-                    styles.attributeBarFill,
-                    { width: `${kineticFlow}%`, backgroundColor: '#c084fc' },
-                  ]}
-                />
-              </View>
-            </TouchableOpacity>
-          </View>
-        </View>
+        {/* 1. Executive Titan Score Card (Modular) */}
+        <ExecutiveDashboardNative
+          aiReport={aiReport}
+          sportRule={sportRule}
+          titanRating={titanRating}
+          explosivePower={explosivePower}
+          jointArmor={jointArmor}
+          precision={precision}
+          kineticFlow={kineticFlow}
+          onSelectExplainer={setActiveExplainer}
+        />
 
         {/* 2. Kinetic Video Player with Dynamic Biomechanical Skeleton */}
         <View>
@@ -627,7 +475,7 @@ export const AnalysisReportPage: React.FC<AnalysisReportPageProps> = ({
           />
         </View>
 
-        {/* 3. Navigation Tab Bar */}
+        {/* 3. Overhauled 4-Tab Educational Navigation Bar */}
         <ScrollView
           horizontal
           showsHorizontalScrollIndicator={false}
@@ -635,32 +483,32 @@ export const AnalysisReportPage: React.FC<AnalysisReportPageProps> = ({
           contentContainerStyle={styles.tabBarContent}
         >
           <TouchableOpacity
-            onPress={() => setActiveTab('corrections')}
-            style={[styles.tabButton, activeTab === 'corrections' && styles.tabButtonActive]}
+            onPress={() => setActiveTab('strengths')}
+            style={[styles.tabButton, activeTab === 'strengths' && styles.tabButtonActive]}
           >
-            <Target color={activeTab === 'corrections' ? '#000' : '#a1a1aa'} size={14} />
-            <Text style={[styles.tabText, activeTab === 'corrections' && styles.tabTextActive]}>
-              Top 3 Corrections
+            <ShieldCheck color={activeTab === 'strengths' ? '#000' : '#22c55e'} size={14} />
+            <Text style={[styles.tabText, activeTab === 'strengths' && styles.tabTextActive]}>
+              1. Where You Excel (Strengths)
             </Text>
           </TouchableOpacity>
 
           <TouchableOpacity
-            onPress={() => setActiveTab('energy')}
-            style={[styles.tabButton, activeTab === 'energy' && styles.tabButtonActive]}
+            onPress={() => setActiveTab('leaks')}
+            style={[styles.tabButton, activeTab === 'leaks' && styles.tabButtonActive]}
           >
-            <Zap color={activeTab === 'energy' ? '#000' : '#a1a1aa'} size={14} />
-            <Text style={[styles.tabText, activeTab === 'energy' && styles.tabTextActive]}>
-              Energy Transfer & Leakage
+            <Zap color={activeTab === 'leaks' ? '#000' : '#ef4444'} size={14} />
+            <Text style={[styles.tabText, activeTab === 'leaks' && styles.tabTextActive]}>
+              2. Where You Bleed Power (Leaks)
             </Text>
           </TouchableOpacity>
 
           <TouchableOpacity
-            onPress={() => setActiveTab('phases')}
-            style={[styles.tabButton, activeTab === 'phases' && styles.tabButtonActive]}
+            onPress={() => setActiveTab('corridors')}
+            style={[styles.tabButton, activeTab === 'corridors' && styles.tabButtonActive]}
           >
-            <Sliders color={activeTab === 'phases' ? '#000' : '#a1a1aa'} size={14} />
-            <Text style={[styles.tabText, activeTab === 'phases' && styles.tabTextActive]}>
-              Movement Phases
+            <Sliders color={activeTab === 'corridors' ? '#000' : '#38bdf8'} size={14} />
+            <Text style={[styles.tabText, activeTab === 'corridors' && styles.tabTextActive]}>
+              3. Pro Corridors & Gauges
             </Text>
           </TouchableOpacity>
 
@@ -668,39 +516,9 @@ export const AnalysisReportPage: React.FC<AnalysisReportPageProps> = ({
             onPress={() => setActiveTab('drills')}
             style={[styles.tabButton, activeTab === 'drills' && styles.tabButtonActive]}
           >
-            <Flame color={activeTab === 'drills' ? '#000' : '#a1a1aa'} size={14} />
+            <Flame color={activeTab === 'drills' ? '#000' : '#eab308'} size={14} />
             <Text style={[styles.tabText, activeTab === 'drills' && styles.tabTextActive]}>
-              Drill Plan ({resolvedDrills.length})
-            </Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            onPress={() => setActiveTab('inspector')}
-            style={[styles.tabButton, activeTab === 'inspector' && styles.tabButtonActive]}
-          >
-            <Activity color={activeTab === 'inspector' ? '#000' : '#a1a1aa'} size={14} />
-            <Text style={[styles.tabText, activeTab === 'inspector' && styles.tabTextActive]}>
-              Key Moments
-            </Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            onPress={() => setActiveTab('symmetry')}
-            style={[styles.tabButton, activeTab === 'symmetry' && styles.tabButtonActive]}
-          >
-            <Trophy color={activeTab === 'symmetry' ? '#000' : '#a1a1aa'} size={14} />
-            <Text style={[styles.tabText, activeTab === 'symmetry' && styles.tabTextActive]}>
-              Symmetry & Balance
-            </Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            onPress={() => setActiveTab('notes')}
-            style={[styles.tabButton, activeTab === 'notes' && styles.tabButtonActive]}
-          >
-            <FileText color={activeTab === 'notes' ? '#000' : '#a1a1aa'} size={14} />
-            <Text style={[styles.tabText, activeTab === 'notes' && styles.tabTextActive]}>
-              Coach Notes
+              4. Corrective Action Plan ({resolvedDrills.length})
             </Text>
           </TouchableOpacity>
         </ScrollView>
@@ -733,552 +551,60 @@ export const AnalysisReportPage: React.FC<AnalysisReportPageProps> = ({
           </View>
         )}
 
-        {/* 4. Tab 1: TOP 3 BIOMECHANICAL CORRECTIONS */}
-        {activeTab === 'corrections' && (
+        {/* 4. Tab 1: Where You Excel (Strengths) */}
+        {activeTab === 'strengths' && (
           <View style={styles.tabSection}>
-            <GhostCorrectionVisualizer
-              keyframeList={keyframeList}
-              allFrames={allFrames}
+            <StrengthsTabNative
+              aiReport={aiReport}
               sportRule={sportRule}
-              onSeekTimestamp={handleSeek}
-              onSelectDrill={() => setActiveTab('drills')}
-              videoUrl={videoUrl}
+              titanRating={titanRating}
+              explosivePower={explosivePower}
+              jointArmor={jointArmor}
+              precision={precision}
+              kineticFlow={kineticFlow}
+              overallSymmetry={overallSymmetry}
+              overallKneeSafety={overallKneeSafety}
+              onExploreEnergy={() => setActiveTab('leaks')}
             />
-
-            {/* Key Strengths Banner */}
-            <View style={styles.strengthsCard}>
-              <View style={styles.strengthsHeader}>
-                <ShieldCheck color="#22c55e" size={16} />
-                <Text style={styles.strengthsTitle}>CONFIRMED BIOMECHANICAL STRENGTHS</Text>
-              </View>
-              {(aiReport?.keyStrengths || [
-                'Optimal ground reaction force generation through initial drive phase',
-                'Stable spine posture preserved within safe biomechanical limits',
-                'Clean proximal-to-distal segmental acceleration timing',
-              ]).map((s, idx) => {
-                const text = typeof s === 'string' ? s : `${s.title}: ${s.desc}`;
-                return (
-                  <View key={idx} style={styles.strengthRow}>
-                    <CheckCircle2 color="#22c55e" size={14} style={{ marginTop: 2 }} />
-                    <Text style={styles.strengthText}>{text}</Text>
-                  </View>
-                );
-              })}
-            </View>
           </View>
         )}
 
-        {/* 5. Tab 2: KINETIC ENERGY TRANSFER & LEAKAGE */}
-        {activeTab === 'energy' && (
+        {/* 5. Tab 2: Where You Bleed Power (Leaks) */}
+        {activeTab === 'leaks' && (
           <View style={styles.tabSection}>
-            <KineticEnergyTransfer
+            <LeaksTabNative
+              aiReport={aiReport}
+              sportRule={sportRule}
+              keyframeList={keyframeList}
+              allFrames={allFrames}
+              videoUrl={videoUrl}
+              onSeek={handleSeek}
+              onNavigateToDrillPlan={() => setActiveTab('drills')}
+            />
+          </View>
+        )}
+
+        {/* 6. Tab 3: Pro Corridors & Gauges */}
+        {activeTab === 'corridors' && (
+          <View style={styles.tabSection}>
+            <CorridorsTabNative
+              sportRule={sportRule}
               allFrames={sortedFrames}
-              kineticSequence={kineticSequence}
               currentTime={currentTime}
               onSeek={handleSeek}
             />
           </View>
         )}
 
-        {/* 6. Tab 3: MOVEMENT PHASES BREAKDOWN & TEMPO RATIO */}
-        {activeTab === 'phases' && (
-          <View style={styles.tabSection}>
-            <View style={styles.corridorHeader}>
-              <Text style={styles.sectionTitle}>EXECUTION PHASES & TEMPO RATIO</Text>
-              <Text style={styles.sectionSubtitle}>
-                Key kinematic milestones and tour-standard backswing-to-downswing tempo analysis
-              </Text>
-            </View>
-
-            {/* Tempo Ratio Benchmark Card */}
-            <View style={[styles.corridorCard, { borderColor: '#eab308', borderWidth: 1 }]}>
-              <View style={styles.corridorTopRow}>
-                <View style={styles.corridorTitleBox}>
-                  <View style={[styles.statusDot, { backgroundColor: '#eab308' }]} />
-                  <Text style={styles.corridorName}>Kinematic Tempo Ratio (Backswing : Downswing)</Text>
-                </View>
-                <View style={[styles.targetPill, { backgroundColor: 'rgba(234, 179, 8, 0.15)', borderColor: '#eab308' }]}>
-                  <Text style={[styles.targetPillText, { color: '#eab308' }]}>2.8 : 1 (Elite Pro)</Text>
-                </View>
-              </View>
-              <Text style={styles.corridorDesc}>
-                Tour professionals maintain a strict ~3:1 tempo ratio. A balanced loading phase allows peak elastic energy storage prior to explosive force delivery.
-              </Text>
-            </View>
-
-            {(() => {
-              const activePhases = sportRule.phases || ['Approach', 'Load / Coil', 'Delivery / Strike', 'Follow Through'];
-              const totalDuration = sortedFrames.length > 0
-                ? sortedFrames[sortedFrames.length - 1].timestamp
-                : 3.5;
-              const phaseDuration = totalDuration / Math.max(1, activePhases.length);
-
-              return activePhases.map((phaseName, idx) => {
-                const start = Math.round(idx * phaseDuration * 10) / 10;
-                const end = Math.round(Math.min(totalDuration, (idx + 1) * phaseDuration) * 10) / 10;
-                const isCurrent = currentTime >= start && currentTime <= end;
-
-                // Dynamically find a representative frame in this phase
-                const phaseFrame = sortedFrames.find(
-                  (f) => f.timestamp >= start && f.timestamp <= end
-                );
-
-                return (
-                  <TouchableOpacity
-                    key={phaseName}
-                    onPress={() => handleSeek(start)}
-                    style={[styles.corridorCard, isCurrent && { borderColor: '#38bdf8', borderWidth: 2 }]}
-                  >
-                    <View style={styles.corridorTopRow}>
-                      <View style={styles.corridorTitleBox}>
-                        <View style={[styles.statusDot, { backgroundColor: isCurrent ? '#38bdf8' : '#22c55e' }]} />
-                        <Text style={styles.corridorName}>{phaseName}</Text>
-                      </View>
-                      <View style={[styles.targetPill, { borderColor: '#38bdf8' }]}>
-                        <Text style={[styles.targetPillText, { color: '#38bdf8' }]}>
-                          {start.toFixed(1)}s - {end.toFixed(1)}s
-                        </Text>
-                      </View>
-                    </View>
-
-                    <Text style={styles.corridorDesc}>
-                      {idx === 0
-                        ? 'Initial stance stability, center of gravity setup, and prep alignment.'
-                        : idx === 1
-                        ? 'Kinetic loading, pelvic-thoracic separation, and elastic energy storage.'
-                        : idx === 2
-                        ? 'Explosive force transfer, peak segment acceleration, and contact/release.'
-                        : 'Deceleration corridor and safe dissipation of ground reaction energy.'}
-                    </Text>
-
-                    {phaseFrame?.angles && (
-                      <View style={{ flexDirection: 'row', gap: 12, marginTop: 8, padding: 8, backgroundColor: '#18181b', borderRadius: 8 }}>
-                        <Text style={{ fontSize: 11, color: '#a1a1aa' }}>
-                          Knee: <Text style={{ color: '#38bdf8', fontWeight: 'bold' }}>{phaseFrame.angles.knee ?? '—'}°</Text>
-                        </Text>
-                        <Text style={{ fontSize: 11, color: '#a1a1aa' }}>
-                          Hip: <Text style={{ color: '#22c55e', fontWeight: 'bold' }}>{phaseFrame.angles.hip ?? '—'}°</Text>
-                        </Text>
-                        <Text style={{ fontSize: 11, color: '#a1a1aa' }}>
-                          Torso: <Text style={{ color: '#fbbf24', fontWeight: 'bold' }}>{phaseFrame.angles.shoulder ?? '—'}°</Text>
-                        </Text>
-                      </View>
-                    )}
-
-                    <View style={styles.corridorFooter}>
-                      <View style={styles.footerTag}>
-                        <Text style={styles.footerTagText}>STATUS: {isCurrent ? 'ACTIVE PHASE' : 'RECORDED'}</Text>
-                      </View>
-                      <Text style={styles.impactText}>Tap to Jump to Frame →</Text>
-                    </View>
-                  </TouchableOpacity>
-                );
-              });
-            })()}
-          </View>
-        )}
-
-        {/* 7. Tab 4: DRILL ACTION PLAN WITH STEP-BY-STEP INSTRUCTIONS & ANIMATIONS */}
+        {/* 7. Tab 4: Corrective Action Plan */}
         {activeTab === 'drills' && (
           <View style={styles.tabSection}>
-            <View style={styles.drillsHeader}>
-              <View>
-                <Text style={styles.sectionTitle}>CORRECTIVE DRILL ACTION PLAN</Text>
-                <Text style={styles.sectionSubtitle}>
-                  Step-by-step guidance and animated movement visualizers
-                </Text>
-              </View>
-            </View>
-
-            {resolvedDrills.map((drill, idx) => {
-              const status = drillProgress[idx] || 'pending';
-              const isExpanded = expandedDrillIdx === idx;
-
-              return (
-                <View key={drill.id || idx} style={styles.drillCardBig}>
-                  {/* Drill Header */}
-                  <TouchableOpacity
-                    onPress={() => setExpandedDrillIdx(isExpanded ? null : idx)}
-                    style={styles.drillHeaderRow}
-                  >
-                    <View style={styles.drillIconBox}>
-                      <Flame color="#ef4444" size={18} />
-                    </View>
-                    <View style={styles.drillTitleGroup}>
-                      <Text style={styles.drillTitleBig}>{drill.title}</Text>
-                      <Text style={styles.drillTargetText}>
-                        🎯 Target: {drill.targetJoint} • {drill.category}
-                      </Text>
-                    </View>
-
-                    {/* Status Pill */}
-                    <TouchableOpacity
-                      onPress={() => cycleDrillStatus(idx)}
-                      style={[
-                        styles.statusPill,
-                        status === 'mastered'
-                          ? styles.statusMastered
-                          : status === 'completed'
-                          ? styles.statusCompleted
-                          : styles.statusPending,
-                      ]}
-                    >
-                      <Text
-                        style={[
-                          styles.statusPillText,
-                          status === 'mastered'
-                            ? styles.statusMasteredText
-                            : status === 'completed'
-                            ? styles.statusCompletedText
-                            : styles.statusPendingText,
-                        ]}
-                      >
-                        {status.toUpperCase()}
-                      </Text>
-                    </TouchableOpacity>
-                  </TouchableOpacity>
-
-                  <Text style={styles.drillDescriptionBig}>{drill.description}</Text>
-
-                  {/* Animated Movement Visualizer */}
-                  <AnimatedDrillVisualizer
-                    drillTitle={drill.title}
-                    targetJoint={drill.targetJoint}
-                    category={drill.category}
-                    coachingCue={drill.coachingCue}
-                  />
-
-                  {/* Step-by-Step Instructions (Expandable) */}
-                  {isExpanded && drill.steps && drill.steps.length > 0 && (
-                    <View style={styles.stepsContainer}>
-                      <Text style={styles.stepsHeading}>STEP-BY-STEP INSTRUCTIONS</Text>
-                      {drill.steps.map((step, sIdx) => (
-                        <View key={sIdx} style={styles.stepItem}>
-                          <View style={styles.stepNumberBadge}>
-                            <Text style={styles.stepNumberText}>{sIdx + 1}</Text>
-                          </View>
-                          <Text style={styles.stepDescriptionText}>{step}</Text>
-                        </View>
-                      ))}
-
-                      {drill.biomechanicalBenefit ? (
-                        <View style={styles.benefitBox}>
-                          <Zap color="#eab308" size={14} />
-                          <Text style={styles.benefitText}>{drill.biomechanicalBenefit}</Text>
-                        </View>
-                      ) : null}
-                    </View>
-                  )}
-
-                  {/* Drill Footer Row */}
-                  <View style={styles.drillFooterRow}>
-                    <View style={styles.repBadge}>
-                      <Text style={styles.repText}>{drill.reps || '3 sets x 10 reps'}</Text>
-                    </View>
-
-                    <TouchableOpacity
-                      onPress={() => {
-                        setActiveTab('inspector');
-                      }}
-                      style={styles.startQuestBtn}
-                    >
-                      <Play color="#000000" size={12} />
-                      <Text style={styles.startQuestBtnText}>INSPECT FRAMES</Text>
-                    </TouchableOpacity>
-                  </View>
-                </View>
-              );
-            })}
-          </View>
-        )}
-
-        {/* 8. Tab 5: KEY MOMENTS & MILESTONE TIMELINE */}
-        {activeTab === 'inspector' && (
-          <View style={styles.tabSection}>
-            <View style={styles.corridorHeader}>
-              <Text style={styles.sectionTitle}>KEY MOMENTS & MILESTONE TIMELINE</Text>
-              <Text style={styles.sectionSubtitle}>
-                Critical execution milestones extracted from local biometric tracking. Tap any milestone to instantly jump to exact video frame.
-              </Text>
-            </View>
-
-            {[
-              {
-                title: '1. Initial Address & Posture Setup',
-                time: 0.2,
-                desc: 'Center of mass balanced over mid-foot with neutral spine alignment.',
-                status: 'Optimal',
-                color: '#22c55e',
-                angles: { Spine: 12, Knee: 165, Hip: 170 },
-              },
-              {
-                title: '2. Kinetic Loading & Coil Phase',
-                time: 1.1,
-                desc: 'Pelvic-thoracic separation maximized for optimal elastic energy storage.',
-                status: 'Elite',
-                color: '#38bdf8',
-                angles: { Thoracic: 42, Pelvis: 25, Knee: 142 },
-              },
-              {
-                title: '3. Explosive Delivery & Strike',
-                time: 2.0,
-                desc: 'Ground reaction force propagation peak through lead limb anchor.',
-                status: 'Verified',
-                color: '#f59e0b',
-                angles: { Knee: 155, Hip: 162, Shoulder: 88 },
-              },
-              {
-                title: '4. Deceleration & Follow-Through',
-                time: 3.1,
-                desc: 'Controlled force dissipation protecting lumbar spine and joint capsules.',
-                status: 'Optimal',
-                color: '#22c55e',
-                angles: { Spine: 8, Knee: 172, Hip: 175 },
-              },
-            ].map((milestone, idx) => (
-              <TouchableOpacity
-                key={idx}
-                onPress={() => setCurrentTime(milestone.time)}
-                style={[styles.corridorCard, { borderColor: milestone.color, borderWidth: 1 }]}
-              >
-                <View style={styles.corridorTopRow}>
-                  <View style={styles.corridorTitleBox}>
-                    <View style={[styles.statusDot, { backgroundColor: milestone.color }]} />
-                    <Text style={styles.corridorName}>{milestone.title}</Text>
-                  </View>
-                  <View style={[styles.targetPill, { backgroundColor: `${milestone.color}15`, borderColor: milestone.color }]}>
-                    <Text style={[styles.targetPillText, { color: milestone.color }]}>
-                      {milestone.time.toFixed(1)}s ({milestone.status})
-                    </Text>
-                  </View>
-                </View>
-
-                <Text style={styles.corridorDesc}>{milestone.desc}</Text>
-
-                <View style={{ flexDirection: 'row', gap: 10, marginTop: 10, padding: 8, backgroundColor: '#18181b', borderRadius: 8 }}>
-                  {Object.entries(milestone.angles).map(([joint, angle], aIdx) => (
-                    <Text key={aIdx} style={{ fontSize: 11, color: '#a1a1aa' }}>
-                      {joint}: <Text style={{ color: milestone.color, fontWeight: 'bold' }}>{angle}°</Text>
-                    </Text>
-                  ))}
-                </View>
-
-                <View style={styles.corridorFooter}>
-                  <View style={styles.footerTag}>
-                    <Text style={styles.footerTagText}>BIOMECHANICAL CHECKPOINT</Text>
-                  </View>
-                  <Text style={styles.impactText}>Tap to Jump to Frame →</Text>
-                </View>
-              </TouchableOpacity>
-            ))}
-
-            {/* Worst 5 Faults Section */}
-            <View style={[styles.corridorHeader, { marginTop: 24 }]}>
-              <Text style={styles.sectionTitle}>CRITICAL FAULT AUDIT (WORST 5)</Text>
-              <Text style={styles.sectionSubtitle}>
-                The 5 most severe biomechanical deviations. Tap to inspect or see corrective drills.
-              </Text>
-            </View>
-
-            {worstFrames.length === 0 ? (
-              <View style={styles.corridorCard}>
-                <Text style={styles.corridorDesc}>
-                  🎉 No significant biomechanical faults detected! Optimal performance across the board.
-                </Text>
-              </View>
-            ) : (
-              worstFrames.map((frame, idx) => {
-                const ruleEntries = Object.entries(frame.ruleResults || {});
-                const failedRules = ruleEntries.filter(([k, v]) => v === 'error' || v === 'warning');
-                
-                // Find suggested drill for the first failed rule
-                const topRuleId = failedRules[0]?.[0];
-                const suggestedDrillId = topRuleId ? DRILL_MAPPING[topRuleId] : null;
-                const suggestedDrill = suggestedDrillId ? COMPREHENSIVE_DRILL_LIBRARY.find(d => d.id === suggestedDrillId) : null;
-
-                return (
-                  <View key={`worst-container-${idx}`}>
-                    <TouchableOpacity
-                      onPress={() => {
-                        setCurrentTime(frame.timestamp);
-                        setActiveTab('inspector'); // Switch to video tab to see it
-                      }}
-                      style={[styles.corridorCard, { borderColor: '#ef4444', borderWidth: 1, marginBottom: suggestedDrill ? 0 : 12, borderBottomLeftRadius: suggestedDrill ? 0 : 12, borderBottomRightRadius: suggestedDrill ? 0 : 12 }]}
-                    >
-                      <View style={styles.corridorTopRow}>
-                        <View style={styles.corridorTitleBox}>
-                          <View style={[styles.statusDot, { backgroundColor: '#ef4444' }]} />
-                          <Text style={styles.corridorName}>Critical Deviation @ {frame.timestamp.toFixed(2)}s</Text>
-                        </View>
-                        <View style={[styles.targetPill, { backgroundColor: 'rgba(239, 68, 68, 0.15)', borderColor: '#ef4444' }]}>
-                          <Text style={[styles.targetPillText, { color: '#ef4444' }]}>
-                            {failedRules.length} FAULTS
-                          </Text>
-                        </View>
-                      </View>
-
-                      <Text style={styles.corridorDesc}>
-                        Phase: {frame.detectedPhase || 'Dynamic Execution'} • Match Consistency: {Math.round((frame.matchScore || 0.9) * 100)}%
-                      </Text>
-
-                      <View style={{ marginTop: 4, gap: 4 }}>
-                        {failedRules.slice(0, 5).map(([ruleId, status], rIdx) => (
-                          <View key={rIdx} style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                            <X size={10} color="#fca5a5" />
-                            <Text style={{ color: '#fca5a5', fontSize: 11 }}>
-                              {ruleId.replace('gf_', '').replace(/_/g, ' ')}: <Text style={{ fontWeight: 'bold', color: '#ffffff' }}>{status === 'error' ? 'Critical' : 'Warning'}</Text>
-                            </Text>
-                          </View>
-                        ))}
-                        {failedRules.length > 5 && (
-                          <Text style={{ color: '#71717a', fontSize: 9, marginLeft: 16 }}>
-                            + {failedRules.length - 5} other biomechanical deviations
-                          </Text>
-                        )}
-                      </View>
-
-                      <View style={styles.corridorFooter}>
-                        <Text style={styles.impactText}>Tap to View in Video →</Text>
-                      </View>
-                    </TouchableOpacity>
-
-                    {suggestedDrill && (
-                      <View style={[styles.corridorCard, { 
-                        backgroundColor: '#18181b', 
-                        marginTop: 0, 
-                        borderTopWidth: 0, 
-                        borderTopLeftRadius: 0, 
-                        borderTopRightRadius: 0,
-                        borderLeftWidth: 1,
-                        borderRightWidth: 1,
-                        borderBottomWidth: 1,
-                        borderColor: '#3f3f46',
-                        paddingTop: 8,
-                        marginBottom: 12
-                      }]}>
-                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 4 }}>
-                          <BookOpen size={14} color="#34d399" />
-                          <Text style={{ color: '#34d399', fontSize: 12, fontWeight: 'bold' }}>RECOMMENDED DRILL</Text>
-                        </View>
-                        <Text style={{ color: '#ffffff', fontSize: 13, fontWeight: 'bold', marginBottom: 2 }}>{suggestedDrill.title}</Text>
-                        <Text style={{ color: '#a1a1aa', fontSize: 11, marginBottom: 8 }} numberOfLines={2}>{suggestedDrill.description}</Text>
-                        
-                        <TouchableOpacity 
-                          style={{ 
-                            backgroundColor: 'rgba(52, 211, 153, 0.1)', 
-                            paddingVertical: 6, 
-                            paddingHorizontal: 12, 
-                            borderRadius: 6,
-                            alignSelf: 'flex-start'
-                          }}
-                          onPress={() => {
-                            // Find the drill in the library and open it
-                            setActiveTab('drills');
-                          }}
-                        >
-                          <Text style={{ color: '#34d399', fontSize: 11, fontWeight: 'bold' }}>VIEW FULL DRILL →</Text>
-                        </TouchableOpacity>
-                      </View>
-                    )}
-                  </View>
-                );
-              })
-            )}
-          </View>
-        )}
-
-        {/* 9. Tab 6: SYMMETRY & BALANCE */}
-        {activeTab === 'symmetry' && (
-          <View style={styles.tabSection}>
-            <View style={styles.corridorHeader}>
-              <Text style={styles.sectionTitle}>BIOMECHANICAL SYMMETRY & BALANCE</Text>
-              <Text style={styles.sectionSubtitle}>
-                Left vs Right side kinetic balance and postural stability audit
-              </Text>
-            </View>
-
-            <View style={styles.corridorCard}>
-              <View style={styles.corridorTopRow}>
-                <View style={styles.corridorTitleBox}>
-                  <View style={[styles.statusDot, { backgroundColor: overallSymmetry > 85 ? '#22c55e' : '#f59e0b' }]} />
-                  <Text style={styles.corridorName}>Bilateral Symmetry Score</Text>
-                </View>
-                <Text style={{ color: '#ffffff', fontSize: 18, fontWeight: 'bold' }}>{overallSymmetry}%</Text>
-              </View>
-              <Text style={styles.corridorDesc}>
-                Measures left-to-right kinetic load distribution during dynamic execution. Balanced symmetry reduces injury risk and maximizes force output.
-              </Text>
-            </View>
-
-            {/* Bilateral Left / Right Load Breakdown Heatmap Card */}
-            <View style={[styles.corridorCard, { borderColor: '#38bdf8', borderWidth: 1 }]}>
-              <View style={styles.corridorTopRow}>
-                <View style={styles.corridorTitleBox}>
-                  <View style={[styles.statusDot, { backgroundColor: '#38bdf8' }]} />
-                  <Text style={styles.corridorName}>Left / Right Load Distribution</Text>
-                </View>
-                <View style={[styles.targetPill, { backgroundColor: 'rgba(56, 189, 248, 0.15)', borderColor: '#38bdf8' }]}>
-                  <Text style={[styles.targetPillText, { color: '#38bdf8' }]}>49% L / 51% R</Text>
-                </View>
-              </View>
-              <Text style={styles.corridorDesc}>
-                Lower limb force production shows exceptional balance across both limbs during the terminal drive phase.
-              </Text>
-              <View style={{ marginTop: 12, gap: 8 }}>
-                <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <Text style={{ fontSize: 11, color: '#a1a1aa' }}>Left Knee Flexion Torque</Text>
-                  <Text style={{ fontSize: 11, color: '#38bdf8', fontWeight: 'bold' }}>142 Nm (Optimal)</Text>
-                </View>
-                <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <Text style={{ fontSize: 11, color: '#a1a1aa' }}>Right Knee Flexion Torque</Text>
-                  <Text style={{ fontSize: 11, color: '#22c55e', fontWeight: 'bold' }}>145 Nm (Optimal)</Text>
-                </View>
-                <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <Text style={{ fontSize: 11, color: '#a1a1aa' }}>Pelvic Lateral Shift Bias</Text>
-                  <Text style={{ fontSize: 11, color: '#fbbf24', fontWeight: 'bold' }}>+1.2cm Right Bias</Text>
-                </View>
-              </View>
-            </View>
-
-            <View style={styles.corridorCard}>
-              <View style={styles.corridorTopRow}>
-                <View style={styles.corridorTitleBox}>
-                  <View style={[styles.statusDot, { backgroundColor: '#38bdf8' }]} />
-                  <Text style={styles.corridorName}>Knee Safety & Stability Index</Text>
-                </View>
-                <Text style={{ color: '#ffffff', fontSize: 18, fontWeight: 'bold' }}>{overallKneeSafety}%</Text>
-              </View>
-              <Text style={styles.corridorDesc}>
-                Tracks valgus/varus knee alignment against safe biomechanical thresholds throughout the kinematic chain.
-              </Text>
-            </View>
-          </View>
-        )}
-
-        {/* 10. Tab 7: COACH NOTES */}
-        {activeTab === 'notes' && (
-          <View style={styles.tabSection}>
-            <View style={styles.notesCard}>
-              <View style={styles.notesHeader}>
-                <FileText color="#eab308" size={18} />
-                <Text style={styles.notesTitle}>COACH DIAGNOSTIC NOTES</Text>
-              </View>
-              <TextInput
-                style={styles.notesInput}
-                value={coachNotes}
-                onChangeText={setCoachNotes}
-                multiline
-                placeholder="Enter customized coaching notes..."
-                placeholderTextColor="#71717a"
-              />
-              <TouchableOpacity
-                onPress={() => setSaveModalOpen(true)}
-                style={styles.saveNotesBtn}
-              >
-                <Bookmark color="#000000" size={16} />
-                <Text style={styles.saveNotesBtnText}>SAVE TO ATHLETE PROFILE</Text>
-              </TouchableOpacity>
-            </View>
+            <DrillsTabNative
+              drills={resolvedDrills}
+              drillStatuses={drillProgress}
+              onCycleStatus={cycleDrillStatus}
+              onInspectFrames={() => setActiveTab('corridors')}
+            />
           </View>
         )}
 
@@ -1345,18 +671,7 @@ export const AnalysisReportPage: React.FC<AnalysisReportPageProps> = ({
               >
                 <HardDrive color="#eab308" size={16} />
                 <Text style={[styles.modalSaveBtnText, { color: '#ffffff' }]}>
-                  {isExporting ? 'PACKING .KLUTCHH...' : 'EXPORT .KLUTCHH LOCAL'}
-                </Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity 
-                onPress={handleExportDrive} 
-                style={[styles.modalSaveBtn, { backgroundColor: '#059669' }]}
-                disabled={isExporting}
-              >
-                <Cloud color="#ffffff" size={16} />
-                <Text style={[styles.modalSaveBtnText, { color: '#ffffff' }]}>
-                  {isExporting ? 'UPLOADING...' : 'SAVE TO GOOGLE DRIVE'}
+                  {isExporting ? 'PACKING .KLUTCHH...' : 'EXPORT .KLUTCHH LOCAL BUNDLE'}
                 </Text>
               </TouchableOpacity>
             </View>
