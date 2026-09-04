@@ -170,26 +170,26 @@ class PoseDetectorModule : Module() {
       )
     }
 
-    val landmarkList = mutableListOf<Map<String, Any>>()
+    val landmarkArray = arrayOfNulls<Map<String, Any>>(33)
     var totalConfidence = 0.0f
     var landmarkCount = 0
 
     for (landmark in allLandmarks) {
       val type = landmark.landmarkType
-      val name = landmarkNames[type] ?: "landmark_$type"
-      val pos = landmark.position
-      val pos3D = landmark.position3D
-      val inFrameLikelihood = landmark.inFrameLikelihood
+      if (type in 0..32) {
+        val name = landmarkNames[type] ?: "landmark_$type"
+        val pos = landmark.position
+        val pos3D = landmark.position3D
+        val inFrameLikelihood = landmark.inFrameLikelihood
 
-      totalConfidence += inFrameLikelihood
-      landmarkCount++
+        totalConfidence += inFrameLikelihood
+        landmarkCount++
 
-      // Normalized coordinates [0..1]
-      val normX = if (width > 0) (pos.x / width).coerceIn(0.0f, 1.0f) else 0.0f
-      val normY = if (height > 0) (pos.y / height).coerceIn(0.0f, 1.0f) else 0.0f
+        // Normalized coordinates [0..1]
+        val normX = if (width > 0) (pos.x / width).coerceIn(0.0f, 1.0f) else 0.0f
+        val normY = if (height > 0) (pos.y / height).coerceIn(0.0f, 1.0f) else 0.0f
 
-      landmarkList.add(
-        mapOf(
+        landmarkArray[type] = mapOf(
           "type" to type,
           "name" to name,
           "x" to normX,
@@ -202,7 +202,32 @@ class PoseDetectorModule : Module() {
           "visibility" to inFrameLikelihood,
           "score" to inFrameLikelihood
         )
-      )
+      }
+    }
+
+    val landmarkList = mutableListOf<Map<String, Any>>()
+    for (i in 0..32) {
+      val existing = landmarkArray[i]
+      if (existing != null) {
+        landmarkList.add(existing)
+      } else {
+        val name = landmarkNames[i] ?: "landmark_$i"
+        landmarkList.add(
+          mapOf(
+            "type" to i,
+            "name" to name,
+            "x" to 0.0f,
+            "y" to 0.0f,
+            "normX" to 0.0f,
+            "normY" to 0.0f,
+            "pixelX" to 0.0f,
+            "pixelY" to 0.0f,
+            "z" to 0.0f,
+            "visibility" to 0.0f,
+            "score" to 0.0f
+          )
+        )
+      }
     }
 
     val avgConfidence = if (landmarkCount > 0) totalConfidence / landmarkCount else 0.0f

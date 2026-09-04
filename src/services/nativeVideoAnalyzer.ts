@@ -16,6 +16,13 @@ import { calculateAngle, calculateSymmetry } from '../utils/geometry';
 import { generateSyntheticSportsPose } from '../utils/mediapipePose.native';
 import { detectPoseFromUri, isNativePoseDetectorAvailable } from '../../modules/pose-detector';
 import { validateBiomechanicalFrame } from '../utils/biomechanicalValidation';
+import { KinematicBoneStabilizer } from '../utils/boneStabilizer';
+import {
+  isFastActionPhase,
+  generateAdaptiveTimeline,
+  BurstSamplingWindow,
+  detectHighFrameRateCapability,
+} from '../utils/frameExtractor.native';
 
 interface AnalysisOptions {
   videoUri: string;
@@ -67,14 +74,42 @@ export async function analyzeNativeVideoBiometrics({
   // Ensure reasonable bounds (1.0s to 60.0s)
   const validDuration = Math.max(1.0, Math.min(60, resolvedDuration));
   
-  // 15 FPS sampling density for high-precision kinematic sync (e.g. 30s clip = 450 frames)
-  const targetFps = 15;
-  const totalFrames = Math.min(450, Math.max(30, Math.round(validDuration * targetFps)));
-  console.log(`[NativeBiometrics] Extracting ${totalFrames} frames at ${targetFps} FPS across ${validDuration.toFixed(2)}s timeline`);
-
   const sportPhases = sportRule?.phases && sportRule.phases.length > 0
     ? sportRule.phases
     : ['Base Setup & Stance', 'Kinetic Drive', 'Force Impact / Release', 'Follow-Through'];
+
+  // Native High-Performance Burst Sampling Configuration
+  // Fast action phases (Impact, Strike, Release, Downswing) capture at up to 120 FPS on supported native devices
+  const burstWindows: BurstSamplingWindow[] = [];
+  const numPhases = sportPhases.length;
+  sportPhases.forEach((phaseName, pIdx) => {
+    if (isFastActionPhase(phaseName, sportRule?.id)) {
+      const pStart = (pIdx / numPhases) * validDuration;
+      const pEnd = ((pIdx + 1) / numPhases) * validDuration;
+      burstWindows.push({
+        startTime: Math.max(0, pStart - 0.05),
+        endTime: Math.min(validDuration, pEnd + 0.05),
+        burstFps: 120,
+        phaseName,
+        description: `High-velocity transition burst (${phaseName}) at up to 120 FPS`
+      });
+    }
+  });
+
+  const hw = detectHighFrameRateCapability();
+  const baseFps = 15;
+  const maxBurstFps = hw.maxSupportedFps || 120;
+
+  const { timestamps, burstMap } = generateAdaptiveTimeline(
+    0,
+    validDuration,
+    baseFps,
+    burstWindows,
+    maxBurstFps
+  );
+
+  const totalFrames = timestamps.length;
+  console.log(`[NativeBiometrics] Adaptive Burst Sampling: ${totalFrames} frames across ${validDuration.toFixed(2)}s (Base: ${baseFps} FPS, Burst: up to ${maxBurstFps} FPS for [${burstWindows.map(w => w.phaseName).join(', ')}])`);
 
   updateProgress(15);
 
@@ -82,11 +117,13 @@ export async function analyzeNativeVideoBiometrics({
   const preRenderedFrames: { timestamp: number; dataUrl: string }[] = [];
   let realDetectionCount = 0;
   let detectedDimensions: { width: number; height: number } | undefined = undefined;
+  const boneStabilizer = new KinematicBoneStabilizer();
 
-  // Step through entire video timeline from 0 to validDuration
+  // Step through entire video timeline using adaptive burst sampling timestamps
   for (let i = 0; i < totalFrames; i++) {
-    const timestampSec = (i / (totalFrames - 1)) * validDuration;
+    const timestampSec = timestamps[i];
     const timestampMs = Math.round(timestampSec * 1000);
+    const burstInfo = burstMap.get(timestampSec) || { isBurst: false, currentFps: baseFps };
 
     let landmarks: MediaPipeLandmark[] | null = null;
     let isReal = false;
@@ -126,6 +163,9 @@ export async function analyzeNativeVideoBiometrics({
     if (!landmarks) {
       landmarks = generateSyntheticSportsPose(timestampMs, timestampSec);
       isReal = false;
+    } else {
+      // Stabilize real landmarks to prevent anatomical limbs stretching or detaching
+      landmarks = boneStabilizer.stabilize(landmarks);
     }
 
     // Biomechanical Joint Angle Calculations
@@ -174,7 +214,26 @@ export async function analyzeNativeVideoBiometrics({
           const p2 = landmarks[rule.keypoints[1]];
           const p3 = landmarks[rule.keypoints[2]];
           if (p1 && p2 && p3) {
+            const v1 = p1.visibility ?? 1;
+            const v2 = p2.visibility ?? 1;
+            const v3 = p3.visibility ?? 1;
+            // Reject points occluded or lost in rapid motion blur
+            if (v1 < 0.35 || v2 < 0.35 || v3 < 0.35) {
+              continue;
+            }
+            // Check for collapsed degenerate points
+            const d1 = Math.hypot(p1.x - p2.x, p1.y - p2.y);
+            const d2 = Math.hypot(p3.x - p2.x, p3.y - p2.y);
+            if (d1 < 0.012 || d2 < 0.012) {
+              continue;
+            }
+
             const angleVal = Math.round(calculateAngle(p1, p2, p3));
+            // Physiological boundary filter: reject degenerate 0-8° or 179-180° singularities
+            if (angleVal <= 8 || angleVal >= 179) {
+              continue;
+            }
+
             computedAngles[rule.id] = angleVal;
             if (angleVal >= rule.idealMin && angleVal <= rule.idealMax) {
               computedRuleResults[rule.id] = 'optimal';
@@ -236,7 +295,7 @@ export async function analyzeNativeVideoBiometrics({
       ? sportRule.phases
       : ['Base Setup & Stance', 'Kinetic Drive', 'Force Impact / Release', 'Follow-Through'];
     
-    const phaseRatio = i / (totalFrames - 1);
+    const phaseRatio = validDuration > 0 ? Math.min(0.999, timestampSec / validDuration) : i / Math.max(1, totalFrames - 1);
     const phaseIdx = Math.min(sportPhases.length - 1, Math.floor(phaseRatio * sportPhases.length));
     const detectedPhase = sportPhases[phaseIdx];
 
@@ -252,7 +311,7 @@ export async function analyzeNativeVideoBiometrics({
 
     frames.push({
       frameNumber: i,
-      timestamp: Math.round(timestampSec * 100) / 100,
+      timestamp: Math.round(timestampSec * 1000) / 1000,
       landmarks,
       detectedPhase,
       angles: computedAngles,
@@ -269,6 +328,8 @@ export async function analyzeNativeVideoBiometrics({
       isFlaggedForManualReview: validation.isFlaggedForReview,
       isDiscardedOutlier: validation.isDiscarded,
       phaseConstraintScore: validation.score,
+      isBurst: burstInfo.isBurst,
+      effectiveFps: burstInfo.currentFps,
     });
 
     updateProgress(15 + Math.round((i / totalFrames) * 75));

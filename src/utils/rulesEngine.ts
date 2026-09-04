@@ -62,11 +62,26 @@ export function calculateBiometricScore(
     const p3 = landmarks[p3Idx];
 
     if (!p1 || !p2 || !p3) {
-      results[rule.id] = 'error';
+      return;
+    }
+
+    const v1 = p1.visibility ?? 1;
+    const v2 = p2.visibility ?? 1;
+    const v3 = p3.visibility ?? 1;
+    if (v1 < 0.35 || v2 < 0.35 || v3 < 0.35) {
+      return;
+    }
+
+    const d1 = Math.hypot(p1.x - p2.x, p1.y - p2.y);
+    const d2 = Math.hypot(p3.x - p2.x, p3.y - p2.y);
+    if (d1 < 0.012 || d2 < 0.012) {
       return;
     }
 
     const angle = calculateAngle(p1, p2, p3);
+    if (angle <= 8 || angle >= 179) {
+      return;
+    }
     angles[rule.id] = angle;
 
     const baseTolerance = rule.tolerancesByLevel[skillLevel] || {

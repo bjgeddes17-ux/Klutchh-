@@ -17,6 +17,200 @@ export interface ExtractedFrame {
   index: number;
   hardwareGpuPipeline?: boolean;
   microsecondTimestamp?: number;
+  isBurst?: boolean;
+  effectiveFps?: number;
+}
+
+export interface BurstSamplingWindow {
+  startTime: number; // in seconds
+  endTime: number; // in seconds
+  burstFps?: number; // up to 120 FPS
+  phaseName?: string;
+  description?: string;
+}
+
+export interface BurstSamplingConfig {
+  enabled: boolean;
+  baseFps: number; // Base capture rate (e.g. 15 or 30 FPS)
+  maxBurstFps: number; // Max burst FPS (up to 120 FPS on supported devices)
+  windows?: BurstSamplingWindow[];
+  fastActionPhases?: string[]; // Custom phase names that trigger burst sampling
+  sportId?: string; // Sport context to auto-resolve fast-action phases
+}
+
+export interface BurstSamplingTelemetry {
+  totalFrames: number;
+  normalFrames: number;
+  burstFrames: number;
+  burstWindowsApplied: BurstSamplingWindow[];
+  maxEffectiveFps: number;
+  hardwareCapability: {
+    supportsHighFrameRate: boolean;
+    maxSupportedFps: number;
+    isMobileDevice: boolean;
+    hasRVFC: boolean;
+    hasWebCodecs: boolean;
+  };
+}
+
+/**
+ * Standard registry of rapid kinetic action phases across sports that require high-speed burst frame rates.
+ */
+export const FAST_ACTION_SPORT_PHASES: Record<string, string[]> = {
+  golf: ['Downswing Impact', 'Downswing', 'Impact', 'Impact Moment', 'Ball Strike', 'Top-Swing Transition'],
+  tennis: ['Impact Instant', 'Racquet Drop', 'Wiper Follow-Through', 'Serve Peak Contact Stretch', 'Ball Release'],
+  soccer: ['Impact Moment', 'Plant Phase', 'Ball Strike', 'Strike Moment', 'Dive Takeoff', 'Backswing'],
+  rugby: ['Contact Phase', 'Impact Moment', 'Ball Release', 'Ball Strike', 'Drop Bounce', 'Takeoff', 'Cleanout'],
+  netball: ['Shot Release', 'Release Instant', 'Release Point', 'Ball Reception', 'Interception', 'Sudden Stop'],
+  hockey: ['Impact Moment', 'Ball Contact', 'Shot Release', 'Slapshot Snap', 'Wind-Up'],
+  cricket: ['Bowling Release', 'Batting Drive', 'Ball Strike', 'Front Foot Plant'],
+  general: ['Impact', 'Release', 'Strike', 'Contact', 'Downswing', 'Takeoff', 'Explosion', 'Acceleration', 'Burst', 'Transition']
+};
+
+/**
+ * Checks whether a given movement phase name qualifies as a high-velocity biomechanical transition.
+ */
+export function isFastActionPhase(phaseName: string, sportId?: string): boolean {
+  if (!phaseName) return false;
+  const normalized = phaseName.toLowerCase().trim();
+
+  if (sportId && FAST_ACTION_SPORT_PHASES[sportId.toLowerCase()]) {
+    const list = FAST_ACTION_SPORT_PHASES[sportId.toLowerCase()];
+    if (list.some((p) => normalized.includes(p.toLowerCase()) || p.toLowerCase().includes(normalized))) {
+      return true;
+    }
+  }
+
+  for (const list of Object.values(FAST_ACTION_SPORT_PHASES)) {
+    if (list.some((p) => normalized.includes(p.toLowerCase()) || p.toLowerCase().includes(normalized))) {
+      return true;
+    }
+  }
+
+  const fastKeywords = ['impact', 'strike', 'release', 'contact', 'snap', 'cut', 'whip', 'drive', 'kick', 'downswing'];
+  return fastKeywords.some((kw) => normalized.includes(kw));
+}
+
+/**
+ * Detects device hardware high-frame-rate decoding capabilities (up to 120 FPS).
+ */
+export function detectHighFrameRateCapability(): {
+  supportsHighFrameRate: boolean;
+  maxSupportedFps: number;
+  isMobileDevice: boolean;
+  hasRVFC: boolean;
+  hasWebCodecs: boolean;
+} {
+  const isBrowser = typeof window !== 'undefined';
+  const ua = isBrowser && navigator?.userAgent ? navigator.userAgent.toLowerCase() : '';
+  const isMobileDevice = /android|iphone|ipad|ipod|mobile|silk/i.test(ua);
+  const hasRVFC = isBrowser && 'HTMLVideoElement' in window && 'requestVideoFrameCallback' in HTMLVideoElement.prototype;
+  const hasWebCodecs = isWebCodecsSupported();
+
+  // Modern mobile devices and GPU WebCodecs/RVFC pipelines support up to 120 FPS
+  let maxSupportedFps = 60;
+  if (isMobileDevice || hasWebCodecs || hasRVFC) {
+    maxSupportedFps = 120;
+  }
+
+  return {
+    supportsHighFrameRate: hasWebCodecs || hasRVFC || isMobileDevice,
+    maxSupportedFps,
+    isMobileDevice,
+    hasRVFC,
+    hasWebCodecs
+  };
+}
+
+/**
+ * Generates burst sampling time windows from detected movement phases.
+ */
+export function createBurstWindowsFromPhases(
+  phases: Array<{ name: string; startTime: number; endTime: number }>,
+  burstFps: number = 120,
+  sportId?: string
+): BurstSamplingWindow[] {
+  const targetBurstFps = Math.min(120, Math.max(30, burstFps));
+  const windows: BurstSamplingWindow[] = [];
+
+  for (const phase of phases) {
+    if (isFastActionPhase(phase.name, sportId)) {
+      // 50ms temporal lead-in and follow-through padding to cleanly bracket kinematic transitions
+      const padding = 0.05;
+      const start = Math.max(0, phase.startTime - padding);
+      const end = phase.endTime + padding;
+
+      windows.push({
+        startTime: start,
+        endTime: end,
+        burstFps: targetBurstFps,
+        phaseName: phase.name,
+        description: `High-velocity transition burst (${phase.name}) at ${targetBurstFps} FPS`
+      });
+    }
+  }
+
+  return windows;
+}
+
+/**
+ * Computes sampling interval and target FPS for a given timestamp based on active burst windows.
+ */
+export function getSamplingIntervalAtTime(
+  timeSec: number,
+  baseFps: number = 15,
+  windows: BurstSamplingWindow[] = [],
+  maxBurstFps: number = 120
+): { interval: number; currentFps: number; isBurst: boolean; window?: BurstSamplingWindow } {
+  const clampedBaseFps = Math.max(1, baseFps);
+  const clampedMaxBurstFps = Math.min(120, Math.max(clampedBaseFps, maxBurstFps));
+
+  for (const win of windows) {
+    if (timeSec >= win.startTime && timeSec <= win.endTime) {
+      const burstFps = Math.min(clampedMaxBurstFps, win.burstFps || clampedMaxBurstFps);
+      return {
+        interval: 1 / burstFps,
+        currentFps: burstFps,
+        isBurst: true,
+        window: win
+      };
+    }
+  }
+
+  return {
+    interval: 1 / clampedBaseFps,
+    currentFps: clampedBaseFps,
+    isBurst: false
+  };
+}
+
+/**
+ * Builds an adaptive non-linear timeline that increases sampling density (up to 120 FPS)
+ * during fast-action burst phases while maintaining baseline FPS elsewhere.
+ */
+export function generateAdaptiveTimeline(
+  startTime: number,
+  endTime: number,
+  baseFps: number = 15,
+  windows: BurstSamplingWindow[] = [],
+  maxBurstFps: number = 120
+): { timestamps: number[]; burstMap: Map<number, { isBurst: boolean; currentFps: number }> } {
+  const timestamps: number[] = [];
+  const burstMap = new Map<number, { isBurst: boolean; currentFps: number }>();
+
+  let curr = startTime;
+  const roundedEnd = Math.round(endTime * 1000) / 1000;
+
+  while (curr <= roundedEnd + 0.0005) {
+    const timeKey = Math.round(curr * 1000) / 1000;
+    const sampleInfo = getSamplingIntervalAtTime(timeKey, baseFps, windows, maxBurstFps);
+    timestamps.push(timeKey);
+    burstMap.set(timeKey, { isBurst: sampleInfo.isBurst, currentFps: sampleInfo.currentFps });
+
+    curr += sampleInfo.interval;
+  }
+
+  return { timestamps, burstMap };
 }
 
 /**
@@ -46,24 +240,52 @@ export async function extractFramesPipelined(
   targetHeight: number = 480,
   cropBox?: { x: number; y: number; width: number; height: number },
   startTime: number = 0,
-  endTime?: number
+  endTime?: number,
+  burstConfig?: BurstSamplingConfig | BurstSamplingWindow[]
 ): Promise<{ frameCount: number; duration: number }> {
+  // Resolve burst sampling configuration
+  const resolvedBurstConfig: BurstSamplingConfig = Array.isArray(burstConfig)
+    ? { enabled: burstConfig.length > 0, baseFps: targetFps, maxBurstFps: 120, windows: burstConfig }
+    : burstConfig || { enabled: false, baseFps: targetFps, maxBurstFps: 120, windows: [] };
+
   // 1. Attempt Native GPU WebCodecs + MP4Box.js Pipeline First (Fastest, zero seeking lag)
   if (isWebCodecsSupported() && videoUrl) {
     try {
       console.log('⚡ Initializing WebCodecs + MP4Box.js Native GPU Extraction Pipeline...');
       const pendingTasks: Promise<void>[] = [];
       const MAX_CONCURRENT = 1; // Strict limit for pose detection heavy tasks
+      let lastExtractedTs = -1;
 
       const result = await extractFramesWebCodecs(
         videoUrl,
         async (wcFrame: WebCodecsFrame) => {
+          const timestamp = wcFrame.timestamp;
+          const sampleInfo = getSamplingIntervalAtTime(
+            timestamp,
+            resolvedBurstConfig.baseFps,
+            resolvedBurstConfig.windows,
+            resolvedBurstConfig.maxBurstFps
+          );
+
+          if (resolvedBurstConfig.enabled && resolvedBurstConfig.windows && resolvedBurstConfig.windows.length > 0) {
+            const minInterval = sampleInfo.interval * 0.85;
+            if (lastExtractedTs >= 0 && (timestamp - lastExtractedTs) < minInterval) {
+              if (wcFrame.imageBitmap && wcFrame.imageBitmap.close) {
+                wcFrame.imageBitmap.close();
+              }
+              return;
+            }
+          }
+          lastExtractedTs = timestamp;
+
           const task = onFrame({
             imageBitmap: wcFrame.imageBitmap,
             timestamp: wcFrame.timestamp,
             index: wcFrame.index,
             hardwareGpuPipeline: true,
-            microsecondTimestamp: wcFrame.microsecondTimestamp
+            microsecondTimestamp: wcFrame.microsecondTimestamp,
+            isBurst: sampleInfo.isBurst,
+            effectiveFps: sampleInfo.currentFps
           });
           
           pendingTasks.push(task);
@@ -76,7 +298,7 @@ export async function extractFramesPipelined(
           onProgress(progressPct);
         },
         {
-          targetFps,
+          targetFps: resolvedBurstConfig.enabled ? resolvedBurstConfig.maxBurstFps : targetFps,
           targetHeight,
           cropBox,
           startTime,
@@ -154,21 +376,32 @@ export async function extractFramesPipelined(
           return;
         }
 
-        const frameInterval = 1 / targetFps;
-        const totalExpectedFrames = Math.floor(duration / frameInterval);
+        const { timestamps, burstMap } = generateAdaptiveTimeline(
+          0,
+          duration,
+          resolvedBurstConfig.baseFps,
+          resolvedBurstConfig.windows,
+          resolvedBurstConfig.maxBurstFps
+        );
         let frameCount = 0;
 
-        for (let t = 0; t < duration; t += frameInterval) {
-          const currentTime = Math.round(t * 1000) / 1000;
+        for (const currentTime of timestamps) {
+          const burstData = burstMap.get(currentTime) || { isBurst: false, currentFps: targetFps };
           renderSampleSportFrame(ctx, targetWidth, targetHeight, 'golf', currentTime);
 
           const imageBitmap = await createImageBitmap(canvas);
-          const frame: ExtractedFrame = { imageBitmap, timestamp: currentTime, index: frameCount };
+          const frame: ExtractedFrame = {
+            imageBitmap,
+            timestamp: currentTime,
+            index: frameCount,
+            isBurst: burstData.isBurst,
+            effectiveFps: burstData.currentFps
+          };
 
           await onFrame(frame);
           if (imageBitmap.close) imageBitmap.close();
           frameCount++;
-          onProgress(Math.min(99, Math.round((frameCount / Math.max(1, totalExpectedFrames)) * 100)));
+          onProgress(Math.min(99, Math.round((frameCount / Math.max(1, timestamps.length)) * 100)));
         }
 
         resolve({ frameCount, duration });
@@ -232,8 +465,6 @@ export async function extractFramesPipelined(
         }
 
         const idbPrefix = `frames_${videoUrl}_`;
-        const frameInterval = 1 / targetFps; // e.g., 0.0333s for 30 FPS
-        const totalExpectedFrames = Math.floor(duration / frameInterval);
         let frameCount = 0;
 
         // Attempt Native Hardware Sequential Frame Extraction via requestVideoFrameCallback
@@ -250,7 +481,6 @@ export async function extractFramesPipelined(
             });
 
             let lastCapturedTime = -1;
-            const minInterval = 0.85 / targetFps; // Prevents duplicate frames (~0.028s for 30fps)
             const cutoffTime = Math.max(actualStart + 0.1, actualEnd - 0.08);
 
             // Play video at 1.0x normal speed for real-time extraction
@@ -298,7 +528,15 @@ export async function extractFramesPipelined(
                 const mediaTime = metadata.mediaTime;
 
                 if (mediaTime >= actualStart && mediaTime <= actualEnd + 0.05) {
-                  if (lastCapturedTime < 0 || (mediaTime - lastCapturedTime) >= minInterval) {
+                  const sampleInfo = getSamplingIntervalAtTime(
+                    mediaTime,
+                    resolvedBurstConfig.baseFps,
+                    resolvedBurstConfig.windows,
+                    resolvedBurstConfig.maxBurstFps
+                  );
+                  const dynamicMinInterval = sampleInfo.interval * 0.85;
+
+                  if (lastCapturedTime < 0 || (mediaTime - lastCapturedTime) >= dynamicMinInterval) {
                     lastCapturedTime = mediaTime;
 
                     const vWidth = video.videoWidth || 640;
@@ -311,7 +549,13 @@ export async function extractFramesPipelined(
                     ctx.drawImage(video, sx, sy, sWidth, sHeight, 0, 0, targetWidth, targetHeight);
 
                     const imageBitmap = await createImageBitmap(canvas);
-                    const frame: ExtractedFrame = { imageBitmap, timestamp: mediaTime, index: frameCount };
+                    const frame: ExtractedFrame = {
+                      imageBitmap,
+                      timestamp: mediaTime,
+                      index: frameCount,
+                      isBurst: sampleInfo.isBurst,
+                      effectiveFps: sampleInfo.currentFps
+                    };
 
                     canvas.toBlob((blob) => {
                       if (blob) {
@@ -358,9 +602,17 @@ export async function extractFramesPipelined(
         // Fallback Step Extractor (for environments without rvfc or blocked playback)
         video.pause();
 
-        for (let t = actualStart; t <= actualEnd; t += frameInterval) {
+        const { timestamps, burstMap } = generateAdaptiveTimeline(
+          actualStart,
+          actualEnd,
+          resolvedBurstConfig.baseFps,
+          resolvedBurstConfig.windows,
+          resolvedBurstConfig.maxBurstFps
+        );
+
+        for (const currentTime of timestamps) {
           if (fallbackTriggered) break;
-          const currentTime = Math.round(t * 1000) / 1000;
+          const burstData = burstMap.get(currentTime) || { isBurst: false, currentFps: targetFps };
           
           try {
             video.currentTime = currentTime;
@@ -388,8 +640,6 @@ export async function extractFramesPipelined(
               setTimeout(handleSeeked, 150);
             });
 
-            const actualSeekedTime = video.currentTime;
-
             const vWidth = video.videoWidth || 640;
             const vHeight = video.videoHeight || 360;
             const sx = cropBox ? cropBox.x * vWidth : 0;
@@ -401,7 +651,13 @@ export async function extractFramesPipelined(
 
             const imageBitmap = await createImageBitmap(canvas);
 
-            const frame: ExtractedFrame = { imageBitmap, timestamp: currentTime, index: frameCount };
+            const frame: ExtractedFrame = {
+              imageBitmap,
+              timestamp: currentTime,
+              index: frameCount,
+              isBurst: burstData.isBurst,
+              effectiveFps: burstData.currentFps
+            };
 
             canvas.toBlob((blob) => {
               if (blob) {
@@ -414,7 +670,7 @@ export async function extractFramesPipelined(
             if (imageBitmap.close) imageBitmap.close();
 
             frameCount++;
-            onProgress(Math.min(99, Math.round((frameCount / Math.max(1, totalExpectedFrames)) * 100)));
+            onProgress(Math.min(99, Math.round((frameCount / Math.max(1, timestamps.length)) * 100)));
           } catch (seekErr) {
             console.warn('Seek or frame processing error:', seekErr);
           }
@@ -442,6 +698,83 @@ export async function extractFramesPipelined(
       (video.onloadedmetadata as any)();
     }
   });
+}
+
+/**
+ * Dedicated high-performance Burst Sampling utility.
+ * Dynamically increases capture frame rates up to 120 FPS on supported devices
+ * specifically during identified fast-action movement phases (e.g. Downswing Impact, Ball Strike).
+ */
+export async function extractFramesWithBurstSampling(
+  videoUrl: string,
+  onFrame: (frame: ExtractedFrame) => Promise<void>,
+  onProgress: (progress: number, telemetry?: BurstSamplingTelemetry) => void,
+  burstConfig?: Partial<BurstSamplingConfig>,
+  options: {
+    targetHeight?: number;
+    cropBox?: { x: number; y: number; width: number; height: number };
+    startTime?: number;
+    endTime?: number;
+  } = {}
+): Promise<{ frameCount: number; duration: number; telemetry: BurstSamplingTelemetry }> {
+  const hw = detectHighFrameRateCapability();
+  const baseFps = burstConfig?.baseFps || 15;
+  const maxBurstFps = Math.min(120, Math.max(baseFps, burstConfig?.maxBurstFps || hw.maxSupportedFps || 120));
+
+  const fullConfig: BurstSamplingConfig = {
+    enabled: burstConfig?.enabled !== false,
+    baseFps,
+    maxBurstFps,
+    windows: burstConfig?.windows ? [...burstConfig.windows] : [],
+    fastActionPhases: burstConfig?.fastActionPhases,
+    sportId: burstConfig?.sportId
+  };
+
+  const telemetry: BurstSamplingTelemetry = {
+    totalFrames: 0,
+    normalFrames: 0,
+    burstFrames: 0,
+    burstWindowsApplied: fullConfig.windows || [],
+    maxEffectiveFps: baseFps,
+    hardwareCapability: hw
+  };
+
+  console.log(`🚀 Burst Sampling initiated: base ${baseFps} FPS, burst up to ${maxBurstFps} FPS (Hardware support: ${hw.supportsHighFrameRate ? 'Yes' : 'Simulated'}, Mobile: ${hw.isMobileDevice})`);
+
+  const wrappedOnFrame = async (frame: ExtractedFrame) => {
+    telemetry.totalFrames++;
+    if (frame.isBurst) {
+      telemetry.burstFrames++;
+      if (frame.effectiveFps && frame.effectiveFps > telemetry.maxEffectiveFps) {
+        telemetry.maxEffectiveFps = frame.effectiveFps;
+      }
+    } else {
+      telemetry.normalFrames++;
+    }
+    await onFrame(frame);
+  };
+
+  const wrappedOnProgress = (p: number) => {
+    onProgress(p, telemetry);
+  };
+
+  const result = await extractFramesPipelined(
+    videoUrl,
+    wrappedOnFrame,
+    wrappedOnProgress,
+    baseFps,
+    options.targetHeight || 480,
+    options.cropBox,
+    options.startTime || 0,
+    options.endTime,
+    fullConfig
+  );
+
+  return {
+    frameCount: result.frameCount,
+    duration: result.duration,
+    telemetry
+  };
 }
 
 export async function getFrame(videoUrl: string, index: number): Promise<ExtractedFrame | undefined> {

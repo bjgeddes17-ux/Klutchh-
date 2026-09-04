@@ -145,21 +145,26 @@ export const KineticVideoPlayer: React.FC<KineticVideoPlayerProps> = ({
   };
 
   // Continuous Dynamic Pose Interpolation across the playback timeline
-  const { currentFrame, interpolatedLandmarks } = useMemo(() => {
+  const { currentFrame, interpolatedLandmarks, isPastData } = useMemo(() => {
     if (!sortedFrames || sortedFrames.length === 0) {
-      return { currentFrame: null, interpolatedLandmarks: null };
+      return { currentFrame: null, interpolatedLandmarks: null, isPastData: false };
     }
+
+    const lastIdx = sortedFrames.length - 1;
+    const lastTimestamp = sortedFrames[lastIdx].timestamp;
+    const isPast = currentTime > lastTimestamp;
 
     // Boundary cases: before first frame or after last frame
     if (currentTime <= sortedFrames[0].timestamp) {
-      return { currentFrame: sortedFrames[0], interpolatedLandmarks: sortedFrames[0].landmarks };
+      return { currentFrame: sortedFrames[0], interpolatedLandmarks: sortedFrames[0].landmarks, isPastData: false };
     }
-    const lastIdx = sortedFrames.length - 1;
-    if (currentTime >= sortedFrames[lastIdx].timestamp) {
-      // If we are past the tracked data, only show the skeleton if we're within a tiny window (300ms)
-      // Otherwise, the skeleton is outdated and should be hidden to avoid confusion.
-      if (currentTime - sortedFrames[lastIdx].timestamp > 0.3) return null;
-      return { currentFrame: sortedFrames[lastIdx], interpolatedLandmarks: sortedFrames[lastIdx].landmarks };
+    
+    if (isPast) {
+      return { 
+        currentFrame: sortedFrames[lastIdx], 
+        interpolatedLandmarks: sortedFrames[lastIdx].landmarks,
+        isPastData: true 
+      };
     }
 
     // Binary search for bounding frames: f1 (<= currentTime) and f2 (> currentTime)
@@ -180,7 +185,7 @@ export const KineticVideoPlayer: React.FC<KineticVideoPlayerProps> = ({
     const f2 = sortedFrames[Math.min(lastIdx, idx + 1)];
 
     if (!f2 || f1 === f2 || f2.timestamp <= f1.timestamp) {
-      return { currentFrame: f1, interpolatedLandmarks: f1.landmarks };
+      return { currentFrame: f1, interpolatedLandmarks: f1.landmarks, isPastData: false };
     }
 
     // Smooth Linear Interpolation (Lerp) between adjacent sampled frames
@@ -188,7 +193,7 @@ export const KineticVideoPlayer: React.FC<KineticVideoPlayerProps> = ({
     const alpha = Math.max(0, Math.min(1, (currentTime - f1.timestamp) / timeDelta));
 
     if (!f1.landmarks || !f2.landmarks) {
-      return { currentFrame: f1, interpolatedLandmarks: f1.landmarks || f2.landmarks };
+      return { currentFrame: f1, interpolatedLandmarks: f1.landmarks || f2.landmarks, isPastData: false };
     }
 
     const lerped: MediaPipeLandmark[] = f1.landmarks.map((lm1, i) => {
@@ -203,21 +208,27 @@ export const KineticVideoPlayer: React.FC<KineticVideoPlayerProps> = ({
 
     return { 
       currentFrame: alpha > 0.5 ? f2 : f1, 
-      interpolatedLandmarks: lerped 
+      interpolatedLandmarks: lerped,
+      isPastData: false
     };
   }, [sortedFrames, currentTime]);
 
   const handleReadyForDisplay = (event: any) => {
     if (event.naturalSize) {
       const { width, height } = event.naturalSize;
+      
+      // Pass natural sizes directly to let the geometry engine handle rotation/mapping
       setVideoDimensions({ width, height });
       
-      // ASPECT RATIO LOCK: Set container aspect ratio to match video exactly
+      // ASPECT RATIO LOCK
       if (width > 0 && height > 0) {
-        setContainerAspectRatio(width / height);
+        // Correct aspect ratio for container based on visual orientation
+        const isLayoutPortrait = (isFullscreenModal ? fullscreenLayout.height : layout.height) > 
+                                (isFullscreenModal ? fullscreenLayout.width : layout.width);
+        const visualAspect = (isLayoutPortrait && width > height) ? height / width : width / height;
+        setContainerAspectRatio(visualAspect);
       }
       
-      // Calculate initial rendered rect
       const rect = getVideoRenderRect(
         isFullscreenModal ? fullscreenLayout.width : layout.width,
         isFullscreenModal ? fullscreenLayout.height : layout.height,
@@ -244,6 +255,7 @@ export const KineticVideoPlayer: React.FC<KineticVideoPlayerProps> = ({
 
   const getScreenCoords = (lm?: MediaPipeLandmark) => {
     if (!lm) return { x: 0, y: 0, visible: false };
+    if ((lm.visibility ?? 1) < 0.35) return { x: 0, y: 0, visible: false };
 
     let targetLm = lm;
     if (skeletonScale !== 1.0 || skeletonOffsetY !== 0 || skeletonOffsetX !== 0) {
@@ -280,6 +292,13 @@ export const KineticVideoPlayer: React.FC<KineticVideoPlayerProps> = ({
     );
   };
 
+  // Sync Video CurrentTime to Parent State
+  useEffect(() => {
+    if (isFullscreenModal && fullscreenVideoRef.current && !isPlaying) {
+      fullscreenVideoRef.current.setPositionAsync(currentTime * 1000);
+    }
+  }, [currentTime, isFullscreenModal]);
+
   // Render Real Biometric Rules Callouts (Computing real angles from landmarks)
   const visibleRuleCallouts = useMemo(() => {
     if (!landmarks || landmarks.length < 29 || !sportRule?.jointRules) return [];
@@ -287,37 +306,56 @@ export const KineticVideoPlayer: React.FC<KineticVideoPlayerProps> = ({
     const activePhase = currentFrame?.detectedPhase || sportRule.phases?.[0];
     const rules = sportRule.jointRules.filter((r) => {
       if (!activePhase || activePhase === 'Auto-Detect' || activePhase === 'All') return true;
-      return r.phase === activePhase || currentFrame?.ruleResults?.[r.id] !== 'optimal';
+      // STRICT PHASE GATING: Only display rules corresponding to the active kinetic movement phase
+      return r.phase === activePhase;
     });
 
-    // Select top 3 relevant non-crowded rules
-    const selected = (rules.length > 3 ? rules.slice(0, 3) : rules).map((rule, index) => {
-      const [, vertexIdx] = rule.keypoints || [0, 11, 13];
-      const vertex = landmarks[vertexIdx] || landmarks[11];
-      const vScreen = getScreenCoords(vertex);
-      const vx = vScreen.visible ? vScreen.x : curW * 0.5;
-      const vy = vScreen.visible ? vScreen.y : curH * 0.3 + index * 40;
+    const validRulesWithAngles: { rule: typeof sportRule.jointRules[0]; angleVal: number; vertexScreen: { x: number; y: number } }[] = [];
 
-      // Calculate real angle from landmarks if precomputed angle is missing
+    for (const rule of rules) {
+      if (!rule.keypoints || rule.keypoints.length !== 3) continue;
+      const [kp1, kp2, kp3] = rule.keypoints;
+      const p1 = landmarks[kp1];
+      const p2 = landmarks[kp2];
+      const p3 = landmarks[kp3];
+      if (!p1 || !p2 || !p3) continue;
+
+      // Check keypoint visibility
+      const v1 = p1.visibility ?? 1;
+      const v2 = p2.visibility ?? 1;
+      const v3 = p3.visibility ?? 1;
+      if (v1 < 0.38 || v2 < 0.38 || v3 < 0.38) continue;
+
+      // Check for collapsed degenerate points
+      const d1 = Math.hypot(p1.x - p2.x, p1.y - p2.y);
+      const d2 = Math.hypot(p3.x - p2.x, p3.y - p2.y);
+      if (d1 < 0.012 || d2 < 0.012) continue;
+
       let angleVal = currentFrame?.angles?.[rule.id];
-      if (angleVal === undefined && rule.keypoints?.length === 3) {
-        const p1 = landmarks[rule.keypoints[0]];
-        const p2 = landmarks[rule.keypoints[1]];
-        const p3 = landmarks[rule.keypoints[2]];
-        if (p1 && p2 && p3) {
-          angleVal = calculateAngle(p1, p2, p3);
-        }
-      }
       if (angleVal === undefined) {
-        angleVal = Math.round((rule.idealMin + rule.idealMax) / 2);
+        angleVal = calculateAngle(p1, p2, p3);
       }
+      if (angleVal === undefined || isNaN(angleVal)) continue;
+
+      // Filter out degenerate angle singularities (e.g. 0-8° or 179-180° for spine/knee)
+      if (angleVal <= 8 || angleVal >= 179) continue;
+
+      const vScreen = getScreenCoords(p2);
+      if (!vScreen.visible) continue;
+
+      validRulesWithAngles.push({ rule, angleVal, vertexScreen: vScreen });
+    }
+
+    // Select top 3 relevant non-crowded rules
+    const selected = validRulesWithAngles.slice(0, 3).map(({ rule, angleVal, vertexScreen }, index) => {
+      const vx = vertexScreen.x;
+      const vy = vertexScreen.y;
 
       // Check against ideal corridor
       let status: 'optimal' | 'warning' | 'error' = 'optimal';
       if (angleVal < rule.idealMin || angleVal > rule.idealMax) {
         const delta = angleVal < rule.idealMin ? rule.idealMin - angleVal : angleVal - rule.idealMax;
-        // AGGRESSIVE RED: Trigger error if off by more than 5 degrees
-        status = delta > 5 ? 'error' : 'warning';
+        status = delta > 12 ? 'error' : 'warning';
       }
 
       const cleanName = rule.name
@@ -418,7 +456,6 @@ export const KineticVideoPlayer: React.FC<KineticVideoPlayerProps> = ({
         />
       )}
 
-      {/* Diagnostic Synchronization Overlay (Native) */}
       <View 
         pointerEvents="none"
         style={{
@@ -432,11 +469,14 @@ export const KineticVideoPlayer: React.FC<KineticVideoPlayerProps> = ({
           borderWidth: 1,
           borderColor: 'rgba(255, 255, 255, 0.1)',
           minWidth: 120,
+          opacity: isPastData ? 0.5 : 1,
         }}
       >
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 4 }}>
-          <View style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: '#10b981' }} />
-          <Text style={{ color: '#10b981', fontSize: 8, fontWeight: '900' }}>SYNC: ACTIVE</Text>
+          <View style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: isPastData ? '#71717a' : '#10b981' }} />
+          <Text style={{ color: isPastData ? '#71717a' : '#10b981', fontSize: 8, fontWeight: '900' }}>
+            {isPastData ? 'DATA ENDED' : 'SYNC: ACTIVE'}
+          </Text>
         </View>
         <Text style={{ color: '#a1a1aa', fontSize: 8 }}>TIME: <Text style={{ color: '#fff', fontWeight: 'bold' }}>{currentTime.toFixed(4)}s</Text></Text>
         <Text style={{ color: '#a1a1aa', fontSize: 8 }}>META: <Text style={{ color: '#fbbf24', fontWeight: 'bold' }}>{(currentFrame?.timestamp || 0).toFixed(4)}s</Text></Text>
@@ -447,7 +487,7 @@ export const KineticVideoPlayer: React.FC<KineticVideoPlayerProps> = ({
 
       {/* Svg Biomechanical Overlay */}
       {showSkeleton && landmarks && landmarks.length >= 29 && (
-        <Svg style={styles.svgOverlay} width={curW} height={curH}>
+        <Svg style={[styles.svgOverlay, { opacity: isPastData ? 0.35 : 1 }]} width={curW} height={curH}>
           {/* 1. Torso Volume Polygon */}
           {landmarks[11] && landmarks[12] && landmarks[24] && landmarks[23] && (() => {
             const p1 = getScreenCoords(landmarks[11]);

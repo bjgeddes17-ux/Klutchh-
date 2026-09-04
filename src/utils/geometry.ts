@@ -369,13 +369,25 @@ export function drawPoseSkeleton(
   if (sportRule && sportRule.jointRules) {
     let visibleRules = sportRule.jointRules.filter((rule) => {
       if (!activePhase || activePhase === 'Auto-Detect' || activePhase === 'All') return true;
-      const isRulePhase = rule.phase === activePhase;
-      const isFlagged = ruleResults[rule.id] !== 'optimal';
-      return isRulePhase || isFlagged;
+      // STRICT PHASE GATING: Only display rules corresponding to the active movement phase
+      return rule.phase === activePhase;
     });
 
-    if (visibleRules.length > 4) {
-      visibleRules = visibleRules.slice(0, 4);
+    visibleRules = visibleRules.filter((rule) => {
+      if (!rule.keypoints || rule.keypoints.length !== 3) return false;
+      const [kp1, kp2, kp3] = rule.keypoints;
+      const p1 = landmarks[kp1];
+      const p2 = landmarks[kp2];
+      const p3 = landmarks[kp3];
+      if (!p1 || !p2 || !p3) return false;
+      if ((p1.visibility ?? 1) < 0.38 || (p2.visibility ?? 1) < 0.38 || (p3.visibility ?? 1) < 0.38) return false;
+      const angleVal = angles[rule.id] ?? calculateAngle(p1, p2, p3);
+      if (angleVal <= 8 || angleVal >= 179) return false;
+      return true;
+    });
+
+    if (visibleRules.length > 3) {
+      visibleRules = visibleRules.slice(0, 3);
     }
 
     const renderedPills: { x: number; y: number; w: number; h: number }[] = [];
@@ -773,7 +785,7 @@ export function mapLandmarkToScreen(
   // USE FORCED RECT IF PROVIDED (Ensures perfect sync with the video player's actual surface)
   const videoRect = forcedRect || getVideoRenderRect(containerWidth, containerHeight, finalVW, finalVH);
 
-  const confidenceValid = landmark.visibility === undefined || landmark.visibility >= 0.15;
+  const confidenceValid = landmark.visibility === undefined || landmark.visibility >= 0.35;
   const visible = lx >= -0.3 && lx <= 1.3 && ly >= -0.3 && ly <= 1.3 && confidenceValid;
 
   const finalX = videoRect.x + (lx * videoRect.width);

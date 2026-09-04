@@ -80,6 +80,8 @@ export interface FrameAnalysis {
   isFlaggedForManualReview?: boolean;
   isDiscardedOutlier?: boolean;
   phaseConstraintScore?: number;
+  isBurst?: boolean;
+  effectiveFps?: number;
 }
 
 export interface PhaseTrigger {

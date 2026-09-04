@@ -64,30 +64,52 @@ export const detectPoseFromUri = async (imageUri: string): Promise<NativePoseLan
       if (result.landmarks.length === 0) return null;
       const w = result.width || 1;
       const h = result.height || 1;
-      return result.landmarks.map((lm: any) => {
-        const rawX = typeof lm.normX === 'number' ? lm.normX : lm.x;
-        const rawY = typeof lm.normY === 'number' ? lm.normY : lm.y;
-        return {
-          x: rawX > 1.5 ? Math.min(1, Math.max(0, rawX / w)) : rawX,
-          y: rawY > 1.5 ? Math.min(1, Math.max(0, rawY / h)) : rawY,
-          z: lm.z ?? 0,
-          visibility: lm.visibility ?? lm.score ?? 1.0,
-        };
+      const landmarkSlots: NativePoseLandmark[] = new Array(33);
+      for (let i = 0; i < 33; i++) {
+        landmarkSlots[i] = { x: 0, y: 0, z: 0, visibility: 0, type: i };
+      }
+
+      result.landmarks.forEach((lm: any, idx: number) => {
+        const type = typeof lm.type === 'number' && lm.type >= 0 && lm.type < 33 ? lm.type : idx;
+        if (type >= 0 && type < 33) {
+          const rawX = typeof lm.normX === 'number' ? lm.normX : lm.x;
+          const rawY = typeof lm.normY === 'number' ? lm.normY : lm.y;
+          landmarkSlots[type] = {
+            x: rawX > 1.5 ? Math.min(1, Math.max(0, rawX / w)) : rawX,
+            y: rawY > 1.5 ? Math.min(1, Math.max(0, rawY / h)) : rawY,
+            z: lm.z ?? 0,
+            visibility: lm.visibility ?? lm.score ?? 0,
+            name: lm.name,
+            type,
+          };
+        }
       });
+      return landmarkSlots;
     }
 
     // Case 2: Result is direct array of landmarks
     if (Array.isArray(result) && result.length > 0) {
-      return result.map((lm: any) => {
-        const rawX = typeof lm.normX === 'number' ? lm.normX : lm.x;
-        const rawY = typeof lm.normY === 'number' ? lm.normY : lm.y;
-        return {
-          x: rawX > 1.5 ? Math.min(1, Math.max(0, rawX / 1000)) : rawX,
-          y: rawY > 1.5 ? Math.min(1, Math.max(0, rawY / 1000)) : rawY,
-          z: lm.z ?? 0,
-          visibility: lm.visibility ?? lm.score ?? 1.0,
-        };
+      const landmarkSlots: NativePoseLandmark[] = new Array(33);
+      for (let i = 0; i < 33; i++) {
+        landmarkSlots[i] = { x: 0, y: 0, z: 0, visibility: 0, type: i };
+      }
+
+      result.forEach((lm: any, idx: number) => {
+        const type = typeof lm.type === 'number' && lm.type >= 0 && lm.type < 33 ? lm.type : idx;
+        if (type >= 0 && type < 33) {
+          const rawX = typeof lm.normX === 'number' ? lm.normX : lm.x;
+          const rawY = typeof lm.normY === 'number' ? lm.normY : lm.y;
+          landmarkSlots[type] = {
+            x: rawX > 1.5 ? Math.min(1, Math.max(0, rawX / 1000)) : rawX,
+            y: rawY > 1.5 ? Math.min(1, Math.max(0, rawY / 1000)) : rawY,
+            z: lm.z ?? 0,
+            visibility: lm.visibility ?? lm.score ?? 0,
+            name: lm.name,
+            type,
+          };
+        }
       });
+      return landmarkSlots;
     }
 
     return null;
