@@ -41,6 +41,22 @@ export const useVideoPlayback = ({
 
   const lastSeekTime = useRef<number>(-1);
 
+  // Imperative Play/Pause Enforcement to guarantee controls stop/start the video instantly
+  useEffect(() => {
+    if (isPlaying) {
+      if (isFullscreenModal) {
+        fullscreenVideoRef.current?.playAsync().catch(() => {});
+        videoRef.current?.pauseAsync().catch(() => {});
+      } else {
+        videoRef.current?.playAsync().catch(() => {});
+        fullscreenVideoRef.current?.pauseAsync().catch(() => {});
+      }
+    } else {
+      videoRef.current?.pauseAsync().catch(() => {});
+      fullscreenVideoRef.current?.pauseAsync().catch(() => {});
+    }
+  }, [isPlaying, isFullscreenModal]);
+
   const handlePlaybackStatusUpdate = useCallback((status: AVPlaybackStatus, fromFullscreen: boolean) => {
     // Only accept updates from the active player to prevent fighting between instances
     if (status.isLoaded && (fromFullscreen === isFullscreenModal)) {
@@ -56,12 +72,14 @@ export const useVideoPlayback = ({
         onDurationChange?.(durSec);
       }
 
-      // Fix: Stop playback at end of video to prevent "infinite play" bug
-      if (status.didJustFinish && !status.isLooping) {
-        if (onTogglePlay) onTogglePlay();
+      // Handle video loop / completion cleanly so skeleton and playback remain in 100% lockstep
+      if (status.didJustFinish) {
+        if (!status.isLooping) {
+          if (onPause) onPause();
+        }
       }
     }
-  }, [isFullscreenModal, onTimeUpdate, onDurationChange]);
+  }, [isFullscreenModal, onTimeUpdate, onDurationChange, onPause]);
 
   const handleSeek = useCallback((ratio: number, finished: boolean = false, currentTime: number) => {
     isScrubbing.current = true;

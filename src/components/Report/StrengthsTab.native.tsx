@@ -1,6 +1,7 @@
 import React from 'react';
 import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
-import { CheckCircle2, ShieldCheck, Flame, Zap, Award, ArrowUpRight, TrendingUp } from 'lucide-react-native';
+import { CheckCircle2, ShieldCheck, Flame, Zap, Award, ArrowUpRight, TrendingUp, Activity } from 'lucide-react-native';
+import Svg, { Polygon, Line, Circle, Text as SvgText, Path, Defs, LinearGradient, Stop, G } from 'react-native-svg';
 import { AICoachingReport, SportRule } from '../../types';
 
 interface StrengthsTabNativeProps {
@@ -28,7 +29,7 @@ export const StrengthsTabNative: React.FC<StrengthsTabNativeProps> = ({
   overallKneeSafety,
   onExploreEnergy,
 }) => {
-  // Extract high-performing attributes (Scores >= 80)
+  // Extract high-performing attributes
   const superpowers = [
     {
       name: 'Kinetic Segment Acceleration',
@@ -71,9 +72,46 @@ export const StrengthsTabNative: React.FC<StrengthsTabNativeProps> = ({
     'Strong bilateral kinetic symmetry during high-velocity rotation',
   ];
 
+  // Radar Chart Geometry Setup (6 Axes)
+  const radarMetrics = [
+    { label: 'POWER', val: explosivePower },
+    { label: 'ARMOR', val: jointArmor },
+    { label: 'PRECISION', val: precision },
+    { label: 'FLOW', val: kineticFlow },
+    { label: 'SYMMETRY', val: overallSymmetry },
+    { label: 'STABILITY', val: overallKneeSafety },
+  ];
+
+  const radarSize = 220;
+  const center = radarSize / 2;
+  const radius = 75;
+
+  const getCoordinates = (index: number, value: number) => {
+    const angle = (Math.PI / 3) * index - Math.PI / 2;
+    const r = (value / 100) * radius;
+    return {
+      x: center + r * Math.cos(angle),
+      y: center + r * Math.sin(angle),
+    };
+  };
+
+  const userPoints = radarMetrics
+    .map((m, i) => {
+      const p = getCoordinates(i, m.val);
+      return `${p.x.toFixed(1)},${p.y.toFixed(1)}`;
+    })
+    .join(' ');
+
+  const proPoints = radarMetrics
+    .map((_, i) => {
+      const p = getCoordinates(i, 92);
+      return `${p.x.toFixed(1)},${p.y.toFixed(1)}`;
+    })
+    .join(' ');
+
   return (
     <View style={styles.container}>
-      {/* Header Banner */}
+      {/* Hero Header Banner */}
       <View style={styles.heroCard}>
         <View style={styles.heroTopRow}>
           <View style={styles.trophyBox}>
@@ -93,6 +131,164 @@ export const StrengthsTabNative: React.FC<StrengthsTabNativeProps> = ({
         <Text style={styles.heroDesc}>
           Biomechanical metrics where your execution operates at elite or advanced levels. Protect these habits to anchor your performance.
         </Text>
+      </View>
+
+      {/* 1. Interactive Biomechanical Radar Graph */}
+      <View style={styles.graphCard}>
+        <View style={styles.graphHeaderRow}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+            <Activity color="#38bdf8" size={18} />
+            <Text style={styles.graphTitle}>BIOMECHANICAL RADAR POLYGON</Text>
+          </View>
+          <View style={styles.legendRow}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+              <View style={[styles.legendDot, { backgroundColor: '#38bdf8' }]} />
+              <Text style={styles.legendText}>You</Text>
+            </View>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+              <View style={[styles.legendDot, { backgroundColor: '#eab308' }]} />
+              <Text style={styles.legendText}>Pro (92%)</Text>
+            </View>
+          </View>
+        </View>
+
+        <View style={styles.radarBox}>
+          <Svg width={radarSize} height={radarSize}>
+            <Defs>
+              <LinearGradient id="radarGrad" x1="0" y1="0" x2="1" y2="1">
+                <Stop offset="0%" stopColor="#38bdf8" stopOpacity="0.45" />
+                <Stop offset="100%" stopColor="#818cf8" stopOpacity="0.15" />
+              </LinearGradient>
+            </Defs>
+
+            {/* Concentric Grid Hexagons */}
+            {[0.25, 0.5, 0.75, 1.0].map((scale, sIdx) => {
+              const hexPoints = radarMetrics
+                .map((_, i) => {
+                  const p = getCoordinates(i, 100 * scale);
+                  return `${p.x.toFixed(1)},${p.y.toFixed(1)}`;
+                })
+                .join(' ');
+              return (
+                <Polygon
+                  key={sIdx}
+                  points={hexPoints}
+                  fill="none"
+                  stroke="rgba(255, 255, 255, 0.08)"
+                  strokeWidth="1"
+                />
+              );
+            })}
+
+            {/* Radial Axis Lines */}
+            {radarMetrics.map((_, i) => {
+              const outer = getCoordinates(i, 100);
+              return (
+                <Line
+                  key={i}
+                  x1={center}
+                  y1={center}
+                  x2={outer.x}
+                  y2={outer.y}
+                  stroke="rgba(255, 255, 255, 0.12)"
+                  strokeWidth="1"
+                  strokeDasharray="2,2"
+                />
+              );
+            })}
+
+            {/* Pro Reference Polygon */}
+            <Polygon
+              points={proPoints}
+              fill="none"
+              stroke="#eab308"
+              strokeWidth="1.5"
+              strokeDasharray="4,3"
+              opacity={0.8}
+            />
+
+            {/* User Polygon */}
+            <Polygon
+              points={userPoints}
+              fill="url(#radarGrad)"
+              stroke="#38bdf8"
+              strokeWidth="2.5"
+            />
+
+            {/* Axis Labels and Vertices */}
+            {radarMetrics.map((m, i) => {
+              const labelPos = getCoordinates(i, 120);
+              const nodePos = getCoordinates(i, m.val);
+              return (
+                <G key={i}>
+                  <Circle cx={nodePos.x} cy={nodePos.y} r={4} fill="#38bdf8" stroke="#ffffff" strokeWidth={1.5} />
+                  <SvgText
+                    x={labelPos.x}
+                    y={labelPos.y + 3}
+                    fill="#a1a1aa"
+                    fontSize="8.5"
+                    fontWeight="800"
+                    textAnchor="middle"
+                  >
+                    {m.label} ({m.val.toFixed(0)}%)
+                  </SvgText>
+                </G>
+              );
+            })}
+          </Svg>
+        </View>
+      </View>
+
+      {/* 2. Kinetic Velocity Whip Sequence Curve */}
+      <View style={styles.graphCard}>
+        <View style={styles.graphHeaderRow}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+            <TrendingUp color="#22c55e" size={18} />
+            <Text style={styles.graphTitle}>PROXIMAL-TO-DISTAL WHIP ACCELERATION</Text>
+          </View>
+          <Text style={{ color: '#22c55e', fontSize: 10, fontWeight: '900' }}>4-STAGE TIMING</Text>
+        </View>
+
+        <View style={{ paddingVertical: 8 }}>
+          <Svg width="100%" height={110} viewBox="0 0 300 100">
+            <Defs>
+              <LinearGradient id="whipGrad" x1="0" y1="0" x2="0" y2="1">
+                <Stop offset="0%" stopColor="#22c55e" stopOpacity="0.3" />
+                <Stop offset="100%" stopColor="#22c55e" stopOpacity="0.0" />
+              </LinearGradient>
+            </Defs>
+
+            {/* Grid baseline */}
+            <Line x1="10" y1="85" x2="290" y2="85" stroke="rgba(255,255,255,0.1)" strokeWidth="1" />
+            
+            {/* Pelvic Rotation Curve (Purple) */}
+            <Path d="M 20 85 Q 50 85, 75 35 T 130 80" fill="none" stroke="#c084fc" strokeWidth="2" />
+            
+            {/* Torso Drive Curve (Cyan) */}
+            <Path d="M 50 85 Q 90 85, 120 25 T 180 82" fill="none" stroke="#38bdf8" strokeWidth="2" />
+
+            {/* Lead Arm Whip Curve (Amber) */}
+            <Path d="M 90 85 Q 130 85, 175 18 T 230 85" fill="none" stroke="#f59e0b" strokeWidth="2" />
+
+            {/* End Effector Release Curve (Green Area Fill) */}
+            <Path d="M 140 85 Q 185 85, 225 10 T 280 85 Z" fill="url(#whipGrad)" />
+            <Path d="M 140 85 Q 185 85, 225 10 T 280 85" fill="none" stroke="#22c55e" strokeWidth="2.5" />
+
+            {/* Peak Release Marker */}
+            <Line x1="225" y1="10" x2="225" y2="85" stroke="#22c55e" strokeWidth="1" strokeDasharray="3,3" />
+            <Circle cx="225" cy="10" r="4" fill="#22c55e" />
+            <SvgText x="225" y="8" fill="#22c55e" fontSize="7.5" fontWeight="bold" textAnchor="middle">
+              PEAK IMPACT (1.80s)
+            </SvgText>
+          </Svg>
+
+          <View style={styles.whipLegendRow}>
+            <View style={styles.whipLegendItem}><View style={[styles.dot, { backgroundColor: '#c084fc' }]} /><Text style={styles.whipLegendText}>Hips</Text></View>
+            <View style={styles.whipLegendItem}><View style={[styles.dot, { backgroundColor: '#38bdf8' }]} /><Text style={styles.whipLegendText}>Torso</Text></View>
+            <View style={styles.whipLegendItem}><View style={[styles.dot, { backgroundColor: '#f59e0b' }]} /><Text style={styles.whipLegendText}>Arm</Text></View>
+            <View style={styles.whipLegendItem}><View style={[styles.dot, { backgroundColor: '#22c55e' }]} /><Text style={styles.whipLegendText}>Hand/Strike</Text></View>
+          </View>
+        </View>
       </View>
 
       {/* Ranked Superpower Cards */}
@@ -142,21 +338,6 @@ export const StrengthsTabNative: React.FC<StrengthsTabNativeProps> = ({
           );
         })}
       </View>
-
-      {/* Symmetry & Stability Overview */}
-      <View style={styles.metricsSummaryCard}>
-        <View style={styles.summaryItem}>
-          <Text style={styles.summaryLabel}>BILATERAL SYMMETRY</Text>
-          <Text style={[styles.summaryValue, { color: '#38bdf8' }]}>{overallSymmetry}%</Text>
-          <Text style={styles.summaryNote}>Left vs. Right Balance</Text>
-        </View>
-        <View style={styles.summaryDivider} />
-        <View style={styles.summaryItem}>
-          <Text style={styles.summaryLabel}>JOINT ARMOR</Text>
-          <Text style={[styles.summaryValue, { color: '#22c55e' }]}>{overallKneeSafety}%</Text>
-          <Text style={styles.summaryNote}>Ligament Protection</Text>
-        </View>
-      </View>
     </View>
   );
 };
@@ -166,7 +347,7 @@ const styles = StyleSheet.create({
     marginBottom: 20,
   },
   heroCard: {
-    backgroundColor: '#121215',
+    backgroundColor: '#0c0c10',
     borderRadius: 18,
     borderWidth: 1,
     borderColor: 'rgba(234, 179, 8, 0.4)',
@@ -220,6 +401,70 @@ const styles = StyleSheet.create({
     fontSize: 11.5,
     lineHeight: 17,
   },
+  graphCard: {
+    backgroundColor: '#0c0c10',
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.08)',
+    padding: 14,
+    marginBottom: 16,
+  },
+  graphHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 12,
+  },
+  graphTitle: {
+    color: '#ffffff',
+    fontSize: 11,
+    fontWeight: '900',
+    letterSpacing: 0.5,
+  },
+  legendRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  legendDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+  },
+  legendText: {
+    color: '#a1a1aa',
+    fontSize: 9,
+    fontWeight: '700',
+  },
+  radarBox: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 4,
+  },
+  whipLegendRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-around',
+    marginTop: 8,
+    paddingTop: 8,
+    borderTopWidth: 1,
+    borderTopColor: 'rgba(255, 255, 255, 0.06)',
+  },
+  whipLegendItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+  },
+  dot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+  },
+  whipLegendText: {
+    color: '#a1a1aa',
+    fontSize: 9.5,
+    fontWeight: '700',
+  },
   sectionHeader: {
     marginBottom: 10,
   },
@@ -235,7 +480,7 @@ const styles = StyleSheet.create({
     marginTop: 2,
   },
   powerCard: {
-    backgroundColor: '#121215',
+    backgroundColor: '#0c0c10',
     borderRadius: 16,
     borderWidth: 1,
     padding: 14,
@@ -299,7 +544,7 @@ const styles = StyleSheet.create({
     borderRadius: 3,
   },
   verifiedCard: {
-    backgroundColor: '#121215',
+    backgroundColor: '#0c0c10',
     borderRadius: 16,
     borderWidth: 1,
     borderColor: '#27272a',
@@ -329,39 +574,5 @@ const styles = StyleSheet.create({
     fontSize: 11.5,
     lineHeight: 16.5,
     flex: 1,
-  },
-  metricsSummaryCard: {
-    flexDirection: 'row',
-    backgroundColor: '#121215',
-    borderRadius: 14,
-    borderWidth: 1,
-    borderColor: '#27272a',
-    padding: 14,
-  },
-  summaryItem: {
-    flex: 1,
-    alignItems: 'center',
-  },
-  summaryLabel: {
-    color: '#71717a',
-    fontSize: 9,
-    fontWeight: '900',
-    letterSpacing: 0.5,
-    marginBottom: 4,
-  },
-  summaryValue: {
-    fontSize: 22,
-    fontWeight: '900',
-    fontFamily: 'monospace',
-    marginBottom: 2,
-  },
-  summaryNote: {
-    color: '#a1a1aa',
-    fontSize: 9.5,
-  },
-  summaryDivider: {
-    width: 1,
-    backgroundColor: '#27272a',
-    marginHorizontal: 10,
   },
 });

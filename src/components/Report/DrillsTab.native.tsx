@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
-import { Flame, Play, Zap } from 'lucide-react-native';
+import { Flame, Play, Zap, Award, CheckCircle2, Shield, Plus, Minus } from 'lucide-react-native';
+import Svg, { Circle, Text as SvgText, G } from 'react-native-svg';
 import { DrillItem } from '../../data/drillLibrary';
 import { AnimatedDrillVisualizer } from './AnimatedDrillVisualizer.native';
 
@@ -18,9 +19,91 @@ export const DrillsTabNative: React.FC<DrillsTabNativeProps> = ({
   onInspectFrames,
 }) => {
   const [expandedDrillIdx, setExpandedDrillIdx] = useState<number | null>(0);
+  const [repCounts, setRepCounts] = useState<Record<number, number>>({ 0: 10, 1: 5, 2: 0 });
+
+  const completedCount = Object.values(drillStatuses).filter(s => s === 'completed').length;
+  const masteredCount = Object.values(drillStatuses).filter(s => s === 'mastered').length;
+  const totalDrills = drills.length || 3;
+  const totalXp = masteredCount * 250 + completedCount * 100;
+
+  // Donut Ring SVG Math
+  const ringSize = 90;
+  const strokeWidth = 10;
+  const radius = (ringSize - strokeWidth) / 2;
+  const circumference = 2 * Math.PI * radius;
+  const progressPct = Math.min(100, Math.max(0, ((masteredCount + completedCount * 0.5) / totalDrills) * 100));
+  const strokeDashoffset = circumference - (progressPct / 100) * circumference;
+
+  const updateReps = (idx: number, delta: number) => {
+    setRepCounts(prev => ({
+      ...prev,
+      [idx]: Math.max(0, (prev[idx] || 0) + delta)
+    }));
+  };
 
   return (
     <View style={styles.container}>
+      {/* Biomechanical Mastery Summary Card */}
+      <View style={styles.summaryCard}>
+        <View style={styles.summaryLeft}>
+          <View style={styles.summaryBadge}>
+            <Award color="#eab308" size={14} />
+            <Text style={styles.summaryBadgeText}>ATHLETE QUEST MATRIX</Text>
+          </View>
+          <Text style={styles.summaryTitle}>Corrective Action Plan</Text>
+          <Text style={styles.summarySubtitle}>
+            Complete assigned repetitions to re-train neural pathways and fix kinetic leaks.
+          </Text>
+
+          <View style={styles.xpRow}>
+            <View style={styles.xpPill}>
+              <Zap color="#eab308" size={12} />
+              <Text style={styles.xpText}>+{totalXp} XP EARNED</Text>
+            </View>
+            <Text style={styles.statText}>
+              {masteredCount}/{totalDrills} MASTERED
+            </Text>
+          </View>
+        </View>
+
+        {/* SVG Progress Ring */}
+        <View style={styles.ringBox}>
+          <Svg width={ringSize} height={ringSize}>
+            <G rotation="-90" origin={`${ringSize / 2}, ${ringSize / 2}`}>
+              <Circle
+                cx={ringSize / 2}
+                cy={ringSize / 2}
+                r={radius}
+                stroke="#1f1f23"
+                strokeWidth={strokeWidth}
+                fill="none"
+              />
+              <Circle
+                cx={ringSize / 2}
+                cy={ringSize / 2}
+                r={radius}
+                stroke="#eab308"
+                strokeWidth={strokeWidth}
+                strokeDasharray={circumference}
+                strokeDashoffset={strokeDashoffset}
+                strokeLinecap="round"
+                fill="none"
+              />
+            </G>
+            <SvgText
+              x={ringSize / 2}
+              y={ringSize / 2 + 4}
+              fill="#ffffff"
+              fontSize="16"
+              fontWeight="900"
+              textAnchor="middle"
+            >
+              {Math.round(progressPct)}%
+            </SvgText>
+          </Svg>
+        </View>
+      </View>
+
       <View style={styles.drillsHeader}>
         <Text style={styles.sectionTitle}>PRESCRIPTION DRILL MATRIX</Text>
         <Text style={styles.sectionSubtitle}>
@@ -31,6 +114,7 @@ export const DrillsTabNative: React.FC<DrillsTabNativeProps> = ({
       {drills.map((drill, idx) => {
         const isExpanded = expandedDrillIdx === idx;
         const status = drillStatuses[idx] || 'pending';
+        const currentReps = repCounts[idx] || 0;
 
         return (
           <View key={drill.id || idx} style={styles.drillCardBig}>
@@ -110,6 +194,20 @@ export const DrillsTabNative: React.FC<DrillsTabNativeProps> = ({
               </View>
             )}
 
+            {/* Drill Interactive Rep Counter Row */}
+            <View style={styles.repTrackerRow}>
+              <Text style={styles.repTrackerLabel}>LOG REPS COMPLETED:</Text>
+              <View style={styles.counterGroup}>
+                <TouchableOpacity onPress={() => updateReps(idx, -1)} style={styles.counterBtn}>
+                  <Minus color="#ffffff" size={12} />
+                </TouchableOpacity>
+                <Text style={styles.counterVal}>{currentReps} REPS</Text>
+                <TouchableOpacity onPress={() => updateReps(idx, 1)} style={styles.counterBtnPlus}>
+                  <Plus color="#000000" size={12} />
+                </TouchableOpacity>
+              </View>
+            </View>
+
             {/* Drill Footer Row */}
             <View style={styles.drillFooterRow}>
               <View style={styles.repBadge}>
@@ -136,6 +234,74 @@ const styles = StyleSheet.create({
   container: {
     marginBottom: 16,
   },
+  summaryCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#0c0c10',
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: 'rgba(234, 179, 8, 0.4)',
+    padding: 14,
+    marginBottom: 16,
+  },
+  summaryLeft: {
+    flex: 1,
+  },
+  summaryBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginBottom: 4,
+  },
+  summaryBadgeText: {
+    color: '#eab308',
+    fontSize: 9,
+    fontWeight: '900',
+    letterSpacing: 0.5,
+  },
+  summaryTitle: {
+    color: '#ffffff',
+    fontSize: 15,
+    fontWeight: '900',
+  },
+  summarySubtitle: {
+    color: '#a1a1aa',
+    fontSize: 11,
+    lineHeight: 15,
+    marginTop: 2,
+    marginBottom: 10,
+  },
+  xpRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  xpPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: 'rgba(234, 179, 8, 0.15)',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: 'rgba(234, 179, 8, 0.3)',
+  },
+  xpText: {
+    color: '#eab308',
+    fontSize: 9.5,
+    fontWeight: '900',
+  },
+  statText: {
+    color: '#22c55e',
+    fontSize: 10,
+    fontWeight: '900',
+  },
+  ringBox: {
+    marginLeft: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   drillsHeader: {
     marginBottom: 12,
   },
@@ -152,7 +318,7 @@ const styles = StyleSheet.create({
     lineHeight: 16,
   },
   drillCardBig: {
-    backgroundColor: '#121215',
+    backgroundColor: '#0c0c10',
     borderRadius: 18,
     padding: 14,
     borderWidth: 1,
@@ -178,38 +344,39 @@ const styles = StyleSheet.create({
   },
   drillTitleBig: {
     color: '#ffffff',
-    fontSize: 13,
+    fontSize: 14,
     fontWeight: '900',
   },
   drillTargetText: {
-    color: '#71717a',
+    color: '#a1a1aa',
     fontSize: 10,
-    marginTop: 1,
+    marginTop: 2,
   },
   statusPill: {
     paddingHorizontal: 8,
     paddingVertical: 4,
-    borderRadius: 6,
+    borderRadius: 8,
     borderWidth: 1,
   },
   statusPending: {
-    backgroundColor: 'rgba(113, 113, 122, 0.15)',
-    borderColor: '#3f3f46',
+    backgroundColor: 'rgba(239, 68, 68, 0.12)',
+    borderColor: 'rgba(239, 68, 68, 0.3)',
   },
   statusCompleted: {
-    backgroundColor: 'rgba(56, 189, 248, 0.15)',
-    borderColor: '#38bdf8',
+    backgroundColor: 'rgba(56, 189, 248, 0.12)',
+    borderColor: 'rgba(56, 189, 248, 0.3)',
   },
   statusMastered: {
     backgroundColor: 'rgba(34, 197, 94, 0.15)',
-    borderColor: '#22c55e',
+    borderColor: 'rgba(34, 197, 94, 0.4)',
   },
   statusPillText: {
     fontSize: 9,
     fontWeight: '900',
+    letterSpacing: 0.5,
   },
   statusPendingText: {
-    color: '#a1a1aa',
+    color: '#ef4444',
   },
   statusCompletedText: {
     color: '#38bdf8',
@@ -220,21 +387,21 @@ const styles = StyleSheet.create({
   drillDescriptionBig: {
     color: '#d4d4d8',
     fontSize: 11.5,
-    lineHeight: 17,
+    lineHeight: 16.5,
     marginBottom: 10,
   },
   stepsContainer: {
-    backgroundColor: '#09090b',
+    backgroundColor: 'rgba(255,255,255,0.03)',
     borderRadius: 12,
-    padding: 12,
-    marginTop: 8,
+    padding: 10,
+    marginTop: 10,
     marginBottom: 10,
   },
   stepsHeading: {
-    color: '#eab308',
+    color: '#a1a1aa',
     fontSize: 9,
     fontWeight: '900',
-    letterSpacing: 0.8,
+    letterSpacing: 0.5,
     marginBottom: 8,
   },
   stepItem: {
@@ -244,24 +411,23 @@ const styles = StyleSheet.create({
     marginBottom: 6,
   },
   stepNumberBadge: {
-    width: 16,
-    height: 16,
-    borderRadius: 8,
+    width: 18,
+    height: 18,
+    borderRadius: 9,
     backgroundColor: '#27272a',
     alignItems: 'center',
     justifyContent: 'center',
-    marginTop: 1,
   },
   stepNumberText: {
     color: '#ffffff',
     fontSize: 9,
-    fontWeight: '900',
+    fontWeight: '800',
   },
   stepDescriptionText: {
-    color: '#d4d4d8',
+    color: '#e4e4e7',
     fontSize: 11,
-    flex: 1,
     lineHeight: 16,
+    flex: 1,
   },
   benefitBox: {
     flexDirection: 'row',
@@ -275,23 +441,63 @@ const styles = StyleSheet.create({
   benefitText: {
     color: '#eab308',
     fontSize: 10.5,
+    fontWeight: '700',
     flex: 1,
-    fontWeight: '600',
+  },
+  repTrackerRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: '#18181b',
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    marginTop: 8,
+    marginBottom: 10,
+  },
+  repTrackerLabel: {
+    color: '#a1a1aa',
+    fontSize: 9.5,
+    fontWeight: '900',
+    letterSpacing: 0.5,
+  },
+  counterGroup: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  counterBtn: {
+    width: 24,
+    height: 24,
+    borderRadius: 6,
+    backgroundColor: '#27272a',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  counterBtnPlus: {
+    width: 24,
+    height: 24,
+    borderRadius: 6,
+    backgroundColor: '#eab308',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  counterVal: {
+    color: '#ffffff',
+    fontSize: 11,
+    fontWeight: '900',
+    fontFamily: 'monospace',
   },
   drillFooterRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    marginTop: 4,
-    paddingTop: 8,
-    borderTopWidth: 1,
-    borderTopColor: '#18181b',
   },
   repBadge: {
-    backgroundColor: '#18181b',
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 6,
+    backgroundColor: '#1f1f23',
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 8,
   },
   repText: {
     color: '#a1a1aa',
@@ -301,15 +507,16 @@ const styles = StyleSheet.create({
   startQuestBtn: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 4,
+    gap: 6,
     backgroundColor: '#eab308',
+    borderRadius: 8,
     paddingHorizontal: 12,
     paddingVertical: 6,
-    borderRadius: 8,
   },
   startQuestBtnText: {
     color: '#000000',
-    fontSize: 10,
+    fontSize: 9.5,
     fontWeight: '900',
+    letterSpacing: 0.5,
   },
 });

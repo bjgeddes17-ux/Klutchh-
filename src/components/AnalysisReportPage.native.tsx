@@ -55,6 +55,7 @@ import { DrillsTabNative } from './Report/DrillsTab.native';
 import { StrengthsTabNative } from './Report/StrengthsTab.native';
 import { LeaksTabNative } from './Report/LeaksTab.native';
 import { CorridorsTabNative } from './Report/CorridorsTab.native';
+import { LongitudinalProgressEngineNative } from './Report/LongitudinalProgressEngine.native';
 import { calculateAngle } from '../utils/geometry';
 import { exportToKlutchhLocal, persistSessionVideo } from '../utils/klutchhStorage';
 
@@ -94,7 +95,7 @@ export const AnalysisReportPage: React.FC<AnalysisReportPageProps> = ({
   onSaveReport,
 }) => {
   // Navigation & View State (4-tab educational overhaul)
-  const [activeTab, setActiveTab] = useState<'strengths' | 'leaks' | 'corridors' | 'drills'>('strengths');
+  const [activeTab, setActiveTab] = useState<'strengths' | 'leaks' | 'corridors' | 'drills' | 'history'>('strengths');
 
   const [currentTime, setCurrentTime] = useState<number>(0);
   const [isPlaying, setIsPlaying] = useState<boolean>(false);
@@ -521,6 +522,16 @@ export const AnalysisReportPage: React.FC<AnalysisReportPageProps> = ({
               4. Corrective Action Plan ({resolvedDrills.length})
             </Text>
           </TouchableOpacity>
+
+          <TouchableOpacity
+            onPress={() => setActiveTab('history')}
+            style={[styles.tabButton, activeTab === 'history' && styles.tabButtonActive]}
+          >
+            <Activity color={activeTab === 'history' ? '#000' : '#22c55e'} size={14} />
+            <Text style={[styles.tabText, activeTab === 'history' && styles.tabTextActive]}>
+              5. Multi-Session History
+            </Text>
+          </TouchableOpacity>
         </ScrollView>
 
         {/* Drill Thresholds Section */}
@@ -604,6 +615,21 @@ export const AnalysisReportPage: React.FC<AnalysisReportPageProps> = ({
               drillStatuses={drillProgress}
               onCycleStatus={cycleDrillStatus}
               onInspectFrames={() => setActiveTab('corridors')}
+            />
+          </View>
+        )}
+
+        {/* 8. Tab 5: Multi-Session History (Longitudinal Progress) */}
+        {activeTab === 'history' && (
+          <View style={styles.tabSection}>
+            <LongitudinalProgressEngineNative
+              sportRule={sportRule}
+              currentTitanRating={titanRating}
+              currentPower={explosivePower}
+              currentArmor={jointArmor}
+              currentPrecision={precision}
+              currentFlow={kineticFlow}
+              aiReport={aiReport}
             />
           </View>
         )}

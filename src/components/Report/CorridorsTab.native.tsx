@@ -1,6 +1,7 @@
 import React from 'react';
 import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
-import { Gauge, Check, X, Sliders, ArrowRight, Play, Compass } from 'lucide-react-native';
+import { Gauge, Check, X, Sliders, ArrowRight, Play, Compass, Activity } from 'lucide-react-native';
+import Svg, { Path, Line, Circle, Text as SvgText, Defs, LinearGradient, Stop, Rect, G } from 'react-native-svg';
 import { SportRule, JointRule, BiomechanicalFrame } from '../../types';
 
 interface CorridorsTabNativeProps {
@@ -44,6 +45,73 @@ export const CorridorsTabNative: React.FC<CorridorsTabNativeProps> = ({
         <Text style={styles.heroDesc}>
           Every elite athlete operates inside tight angular boundaries. If your joints are in the green corridor, energy flows seamlessly. If in red, power is bleeding.
         </Text>
+      </View>
+
+      {/* SVG Pro Corridor Envelope Tracking Chart */}
+      <View style={styles.graphCard}>
+        <View style={styles.graphHeaderRow}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+            <Activity color="#38bdf8" size={18} />
+            <Text style={styles.graphTitle}>ANGULAR CORRIDOR ENVELOPE (0.0s - 3.25s)</Text>
+          </View>
+          <Text style={{ color: '#22c55e', fontSize: 10, fontWeight: '900' }}>GREEN = SAFE ZONE</Text>
+        </View>
+
+        <View style={{ paddingVertical: 6 }}>
+          <Svg width="100%" height={120} viewBox="0 0 320 100">
+            <Defs>
+              <LinearGradient id="corridorGrad" x1="0" y1="0" x2="0" y2="1">
+                <Stop offset="0%" stopColor="#22c55e" stopOpacity="0.25" />
+                <Stop offset="100%" stopColor="#22c55e" stopOpacity="0.08" />
+              </LinearGradient>
+            </Defs>
+
+            {/* Baseline */}
+            <Line x1="10" y1="90" x2="310" y2="90" stroke="rgba(255,255,255,0.1)" strokeWidth="1" />
+
+            {/* Safe Green Corridor Envelope (Top Band Min/Max) */}
+            <Path
+              d="M 15 25 Q 100 20, 160 15 T 305 25 L 305 65 Q 160 55, 100 60 T 15 65 Z"
+              fill="url(#corridorGrad)"
+              stroke="#22c55e"
+              strokeWidth="1"
+              strokeDasharray="2,2"
+            />
+
+            {/* Athlete Actual Angle Trajectory */}
+            <Path
+              d="M 15 45 Q 80 50, 130 18 T 220 72 T 305 50"
+              fill="none"
+              stroke="#38bdf8"
+              strokeWidth="2.5"
+            />
+
+            {/* Scrub Time Vertical Marker */}
+            {(() => {
+              const scrubX = 15 + Math.min(290, Math.max(0, (currentTime / 3.25) * 290));
+              return (
+                <G>
+                  <Line x1={scrubX} y1="10" x2={scrubX} y2="90" stroke="#eab308" strokeWidth="2" />
+                  <Circle cx={scrubX} cy="45" r="5" fill="#eab308" stroke="#ffffff" strokeWidth="1.5" />
+                  <SvgText x={scrubX} y="8" fill="#eab308" fontSize="8" fontWeight="900" textAnchor="middle">
+                    {currentTime.toFixed(2)}s
+                  </SvgText>
+                </G>
+              );
+            })()}
+          </Svg>
+
+          <View style={styles.graphFooterRow}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+              <View style={{ width: 8, height: 8, borderRadius: 2, backgroundColor: 'rgba(34, 197, 94, 0.4)' }} />
+              <Text style={{ color: '#a1a1aa', fontSize: 9 }}>Tour Gold Standard Range</Text>
+            </View>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+              <View style={{ width: 8, height: 2, backgroundColor: '#38bdf8' }} />
+              <Text style={{ color: '#38bdf8', fontSize: 9, fontWeight: 'bold' }}>Athlete Measured Trajectory</Text>
+            </View>
+          </View>
+        </View>
       </View>
 
       {/* Joint Angle Corridor Gauges */}
@@ -165,7 +233,7 @@ const styles = StyleSheet.create({
     marginBottom: 20,
   },
   heroCard: {
-    backgroundColor: '#121215',
+    backgroundColor: '#0c0c10',
     borderRadius: 18,
     borderWidth: 1,
     borderColor: 'rgba(56, 189, 248, 0.4)',
@@ -193,7 +261,7 @@ const styles = StyleSheet.create({
     marginBottom: 4,
   },
   proBadge: {
-    backgroundColor: 'rgba(56, 189, 248, 0.15)',
+    backgroundColor: 'rgba(56, 189, 248, 0.2)',
     paddingHorizontal: 8,
     paddingVertical: 2,
     borderRadius: 6,
@@ -205,10 +273,9 @@ const styles = StyleSheet.create({
     letterSpacing: 0.5,
   },
   frameTimestampText: {
-    color: '#a1a1aa',
+    color: '#eab308',
     fontSize: 10,
-    fontWeight: '700',
-    fontFamily: 'monospace',
+    fontWeight: '900',
   },
   heroTitle: {
     color: '#ffffff',
@@ -219,6 +286,35 @@ const styles = StyleSheet.create({
     color: '#a1a1aa',
     fontSize: 11.5,
     lineHeight: 17,
+  },
+  graphCard: {
+    backgroundColor: '#0c0c10',
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: 'rgba(56, 189, 248, 0.3)',
+    padding: 14,
+    marginBottom: 16,
+  },
+  graphHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 8,
+  },
+  graphTitle: {
+    color: '#ffffff',
+    fontSize: 11,
+    fontWeight: '900',
+    letterSpacing: 0.5,
+  },
+  graphFooterRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginTop: 6,
+    paddingTop: 6,
+    borderTopWidth: 1,
+    borderTopColor: 'rgba(255, 255, 255, 0.06)',
   },
   sectionHeader: {
     marginBottom: 10,
@@ -235,7 +331,7 @@ const styles = StyleSheet.create({
     marginTop: 2,
   },
   corridorCard: {
-    backgroundColor: '#121215',
+    backgroundColor: '#0c0c10',
     borderRadius: 16,
     borderWidth: 1,
     padding: 14,
@@ -244,18 +340,18 @@ const styles = StyleSheet.create({
   cardTopRow: {
     flexDirection: 'row',
     alignItems: 'flex-start',
-    justifyContent: 'space-between',
-    marginBottom: 12,
+    gap: 12,
+    marginBottom: 10,
   },
   jointName: {
     color: '#ffffff',
-    fontSize: 13,
+    fontSize: 13.5,
     fontWeight: '900',
   },
   phasePill: {
-    backgroundColor: '#27272a',
+    backgroundColor: 'rgba(255,255,255,0.08)',
     paddingHorizontal: 6,
-    paddingVertical: 2,
+    paddingVertical: 1,
     borderRadius: 4,
   },
   phasePillText: {
@@ -264,8 +360,8 @@ const styles = StyleSheet.create({
     fontWeight: '800',
   },
   jointDesc: {
-    color: '#71717a',
-    fontSize: 10.5,
+    color: '#a1a1aa',
+    fontSize: 11,
     marginTop: 2,
   },
   measureBox: {
@@ -285,42 +381,40 @@ const styles = StyleSheet.create({
     marginBottom: 10,
   },
   gaugeTrack: {
-    height: 10,
-    backgroundColor: '#27272a',
-    borderRadius: 5,
+    height: 12,
+    backgroundColor: '#1f1f23',
+    borderRadius: 6,
     position: 'relative',
-    overflow: 'visible',
-    justifyContent: 'center',
+    overflow: 'hidden',
+    marginBottom: 6,
   },
   greenCorridorZone: {
     position: 'absolute',
     top: 0,
     bottom: 0,
-    backgroundColor: 'rgba(34, 197, 94, 0.45)',
-    borderRadius: 4,
-    borderWidth: 1,
+    backgroundColor: 'rgba(34, 197, 94, 0.4)',
+    borderLeftWidth: 1,
+    borderRightWidth: 1,
     borderColor: '#22c55e',
   },
   needle: {
     position: 'absolute',
-    width: 6,
-    height: 16,
-    borderRadius: 3,
-    top: -3,
-    marginLeft: -3,
-    borderWidth: 1,
-    borderColor: '#ffffff',
-    zIndex: 10,
+    top: 0,
+    bottom: 0,
+    width: 4,
+    marginLeft: -2,
+    borderRadius: 2,
+    elevation: 4,
   },
   gaugeLabelsRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    marginTop: 6,
+    alignItems: 'center',
   },
   gaugeMinLabel: {
     color: '#71717a',
     fontSize: 9,
-    fontFamily: 'monospace',
+    fontWeight: '700',
   },
   gaugeTargetLabel: {
     color: '#22c55e',
@@ -331,15 +425,15 @@ const styles = StyleSheet.create({
   gaugeMaxLabel: {
     color: '#71717a',
     fontSize: 9,
-    fontFamily: 'monospace',
+    fontWeight: '700',
   },
   ruleFooter: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
-    borderTopWidth: 1,
-    borderTopColor: '#18181b',
-    paddingTop: 8,
+    backgroundColor: 'rgba(255,255,255,0.03)',
+    padding: 8,
+    borderRadius: 8,
   },
   statusIndicatorDot: {
     width: 6,
@@ -349,7 +443,7 @@ const styles = StyleSheet.create({
   feedbackText: {
     color: '#d4d4d8',
     fontSize: 10.5,
-    flex: 1,
     lineHeight: 15,
+    flex: 1,
   },
 });

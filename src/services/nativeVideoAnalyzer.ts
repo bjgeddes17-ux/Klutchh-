@@ -212,16 +212,16 @@ export async function analyzeNativeVideoBiometrics({
   const validDetections = rawSamples.filter(s => s.rawLandmarks && s.spanY > 0);
   const maxSpanY = validDetections.length > 0 ? Math.max(...validDetections.map(s => s.spanY)) : 0;
   
-  // Athlete threshold: foreground athlete will have span >= 55% of maximum observed span
-  const athleteSpanThreshold = Math.max(0.28, maxSpanY * 0.55);
+  // Adaptive athlete threshold: allow small child/youth subjects (down to 10% screen height)
+  const athleteSpanThreshold = maxSpanY > 0 ? Math.min(0.12, maxSpanY * 0.40) : 0.10;
 
   // Filter valid athlete detections
   const athleteKeyframes: { index: number; timestampSec: number; landmarks: MediaPipeLandmark[]; root: { x: number; y: number } }[] = [];
 
   for (const sample of rawSamples) {
     if (sample.rawLandmarks && sample.root) {
-      // Reject if detection is a background bystander with small span when a large athlete is present
-      const isForeground = maxSpanY < 0.30 || sample.spanY >= athleteSpanThreshold;
+      // Retain detection if it matches primary athlete or if overall detection count is sparse
+      const isForeground = sample.spanY >= athleteSpanThreshold || validDetections.length <= 3;
       if (isForeground) {
         athleteKeyframes.push({
           index: sample.index,
@@ -271,7 +271,20 @@ export async function analyzeNativeVideoBiometrics({
           });
           isReal = false;
         } else if (prevKey) {
-          landmarks = prevKey.landmarks.map(lm => ({ ...lm }));
+          const gapSec = timestampSec - prevKey.timestampSec;
+          if (gapSec <= 0.25) {
+            landmarks = prevKey.landmarks.map(lm => ({ ...lm }));
+          } else {
+            // Evolve pose dynamically rather than holding a frozen static landmark in thin air
+            const dynamicPose = generateSyntheticSportsPose(timestampMs, timestampSec);
+            const anchorX = prevKey.root.x;
+            const anchorY = prevKey.root.y;
+            landmarks = dynamicPose.map(lm => ({
+              ...lm,
+              x: Math.max(0.05, Math.min(0.95, lm.x + (anchorX - 0.50) * Math.exp(-gapSec * 2))),
+              y: Math.max(0.05, Math.min(0.95, lm.y + (anchorY - 0.55) * Math.exp(-gapSec * 2))),
+            }));
+          }
           isReal = false;
         } else if (nextKey) {
           landmarks = nextKey.landmarks.map(lm => ({ ...lm }));

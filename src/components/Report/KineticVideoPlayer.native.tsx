@@ -10,6 +10,7 @@ import {
   Dimensions,
   Image,
   ActivityIndicator,
+  ScrollView,
 } from 'react-native';
 import { Video, ResizeMode, AVPlaybackStatus } from 'expo-av';
 import Svg, {
@@ -30,9 +31,12 @@ import {
   Maximize2,
   Minimize2,
   RefreshCw,
+  Target,
+  Compass,
 } from 'lucide-react-native';
 import { SportRule, FrameAnalysis, MediaPipeLandmark } from '../../types';
 import { calculateAngle, mapLandmarkToScreen, getVideoRenderRect } from '../../utils/geometry';
+import { detectMovementKeyframes } from '../../services/movementKeyframeEngine';
 
 interface KineticVideoPlayerProps {
   videoUrl: string;
@@ -119,6 +123,10 @@ export const KineticVideoPlayer: React.FC<KineticVideoPlayerProps> = ({
       if (onTogglePlay) onTogglePlay();
     }
   }, [isPlaying, onPause, onTogglePlay]);
+
+  const movementKeyframes = useMemo(() => {
+    return detectMovementKeyframes(sortedFrames, sportRule, duration || fallbackDuration);
+  }, [sortedFrames, sportRule, duration, fallbackDuration]);
 
   const [isMirrored, setIsMirrored] = useState(false);
   const [layout, setLayout] = useState({ width: 360, height: 480 });
@@ -468,7 +476,7 @@ export const KineticVideoPlayer: React.FC<KineticVideoPlayerProps> = ({
     <View 
       style={[
         styles.container, 
-        containerAspectRatio ? { aspectRatio: containerAspectRatio, maxHeight: 560 } : {}
+        containerAspectRatio ? { aspectRatio: Math.max(0.6, Math.min(1.2, containerAspectRatio)), minHeight: 520, maxHeight: 680 } : {}
       ]} 
       onLayout={handleLayout}
     >
@@ -484,7 +492,7 @@ export const KineticVideoPlayer: React.FC<KineticVideoPlayerProps> = ({
         resizeMode={ResizeMode.STRETCH}
         shouldPlay={isPlaying && !isFullscreenModal}
         isLooping={true}
-        progressUpdateIntervalMillis={16}
+        progressUpdateIntervalMillis={33}
         onPlaybackStatusUpdate={isFullscreenModal ? undefined : (s) => handlePlaybackStatusUpdate(s, false)}
         onReadyForDisplay={handleReadyForDisplay}
         style={styles.video}
@@ -927,6 +935,77 @@ export const KineticVideoPlayer: React.FC<KineticVideoPlayerProps> = ({
               )}
             </View>
           </View>
+
+          {/* Movement-Specific Keyframes Jump Strip */}
+          {movementKeyframes && movementKeyframes.length > 0 && (
+            <View style={{
+              marginTop: 10,
+              paddingTop: 10,
+              borderTopWidth: 1,
+              borderTopColor: 'rgba(255, 255, 255, 0.08)',
+            }}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                  <Compass color="#eab308" size={12} />
+                  <Text style={{ color: '#ffffff', fontSize: 10, fontWeight: '900', letterSpacing: 0.5 }}>
+                    {sportRule.name.toUpperCase()} KEYFRAMES
+                  </Text>
+                </View>
+                <Text style={{ color: '#eab308', fontSize: 8.5, fontWeight: '900' }}>TAP CHIP TO JUMP</Text>
+              </View>
+
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8, paddingRight: 8 }}>
+                {movementKeyframes.map((kf) => {
+                  const isActive = Math.abs(currentTime - kf.timestamp) < 0.2;
+                  return (
+                    <TouchableOpacity
+                      key={kf.id}
+                      onPress={() => handleSeekToTime(kf.timestamp)}
+                      style={{
+                        backgroundColor: isActive ? '#eab308' : 'rgba(255, 255, 255, 0.06)',
+                        borderRadius: 10,
+                        borderWidth: 1,
+                        borderColor: isActive ? '#fef08a' : kf.importance === 'critical' ? 'rgba(234, 179, 8, 0.4)' : 'rgba(255, 255, 255, 0.12)',
+                        paddingHorizontal: 10,
+                        paddingVertical: 6,
+                        minWidth: 105,
+                      }}
+                      activeOpacity={0.7}
+                    >
+                      <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 2 }}>
+                        <View style={{
+                          width: 5,
+                          height: 5,
+                          borderRadius: 2.5,
+                          backgroundColor: isActive ? '#000000' : kf.status === 'error' ? '#ef4444' : kf.status === 'warning' ? '#eab308' : '#22c55e',
+                        }} />
+                        <Text style={{ color: isActive ? '#000000' : '#eab308', fontSize: 9, fontWeight: '900', fontFamily: 'monospace' }}>
+                          {kf.timestamp.toFixed(2)}s
+                        </Text>
+                      </View>
+
+                      <Text
+                        style={{
+                          color: isActive ? '#000000' : '#ffffff',
+                          fontSize: 10,
+                          fontWeight: '900',
+                        }}
+                        numberOfLines={1}
+                      >
+                        {kf.name}
+                      </Text>
+
+                      {kf.measuredValue !== undefined && (
+                        <Text style={{ color: isActive ? '#1c1917' : '#a1a1aa', fontSize: 8.5, marginTop: 1 }}>
+                          {kf.jointTrigger}: <Text style={{ color: isActive ? '#000' : '#fff', fontWeight: 'bold' }}>{kf.measuredValue}°</Text>
+                        </Text>
+                      )}
+                    </TouchableOpacity>
+                  );
+                })}
+              </ScrollView>
+            </View>
+          )}
         </View>
       </View>
 
@@ -961,7 +1040,7 @@ export const KineticVideoPlayer: React.FC<KineticVideoPlayerProps> = ({
               resizeMode={ResizeMode.STRETCH}
               shouldPlay={isPlaying && isFullscreenModal}
               isLooping={true}
-              progressUpdateIntervalMillis={16} // 60fps update interval
+              progressUpdateIntervalMillis={33}
               onPlaybackStatusUpdate={isFullscreenModal ? (s) => handlePlaybackStatusUpdate(s, true) : undefined}
               onReadyForDisplay={handleReadyForDisplay}
               style={{ width: '100%', height: '100%' }}
@@ -1314,15 +1393,15 @@ const styles = StyleSheet.create({
   container: {
     width: '100%',
     alignSelf: 'stretch',
-    height: 480, // High-impact centerpiece height
-    backgroundColor: '#000000',
+    height: 540, // Expanded high-impact centerpiece height
+    backgroundColor: '#050508',
     borderRadius: 24,
     overflow: 'hidden',
     position: 'relative',
     borderWidth: 1.5,
-    borderColor: 'rgba(255,255,255,0.1)',
-    marginBottom: 20,
-    elevation: 10,
+    borderColor: 'rgba(56, 189, 248, 0.25)',
+    marginBottom: 24,
+    elevation: 12,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 10 },
     shadowOpacity: 0.5,
