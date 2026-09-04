@@ -514,7 +514,7 @@ export const AnalysisReportPage: React.FC<AnalysisReportPageProps> = ({
             isDataReady={true}
             onTogglePlay={() => setIsPlaying(!isPlaying)}
             onPause={() => setIsPlaying(false)}
-            initialSkeletonScale={0.45}
+            initialSkeletonScale={1.0}
           />
         </View>
 
@@ -1001,7 +1001,7 @@ export const AnalysisReportPage: React.FC<AnalysisReportPageProps> = ({
                     </View>
 
                     <Text style={styles.corridorDesc}>
-                      Phase: {frame.detectedPhase || 'Dynamic Execution'} • Match Consistency: {Math.round((frame.matchScore || 0.9 * 100))}%
+                      Phase: {frame.detectedPhase || 'Dynamic Execution'} • Match Consistency: {Math.round((frame.matchScore || 0.9) * 100)}%
                     </Text>
 
                     <View style={{ marginTop: 4, gap: 4 }}>

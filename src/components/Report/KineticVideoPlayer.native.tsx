@@ -108,20 +108,13 @@ export const KineticVideoPlayer: React.FC<KineticVideoPlayerProps> = ({
     initialDuration: fallbackDuration,
   });
 
-  const handleTogglePlay = useCallback(async () => {
-    const targetRef = isFullscreenModal ? fullscreenVideoRef.current : videoRef.current;
+  const handleTogglePlay = useCallback(() => {
     if (isPlaying) {
       if (onPause) onPause();
-      if (targetRef) {
-        await targetRef.pauseAsync().catch(() => {});
-      }
     } else {
       if (onTogglePlay) onTogglePlay();
-      if (targetRef) {
-        await targetRef.playAsync().catch(() => {});
-      }
     }
-  }, [isPlaying, isFullscreenModal, onPause, onTogglePlay]);
+  }, [isPlaying, onPause, onTogglePlay]);
 
   const [isMirrored, setIsMirrored] = useState(false);
   const [layout, setLayout] = useState({ width: 360, height: 480 });
@@ -273,7 +266,8 @@ export const KineticVideoPlayer: React.FC<KineticVideoPlayerProps> = ({
       isMirrored,
       false, // debugForceNativeRotation
       true,  // isNative: TRUE
-      landmarks
+      landmarks,
+      renderedRect || undefined
     );
   };
 
@@ -388,7 +382,7 @@ export const KineticVideoPlayer: React.FC<KineticVideoPlayerProps> = ({
                 `}
                 fill="rgba(56, 189, 248, 0.08)"
                 stroke="rgba(56, 189, 248, 0.25)"
-                strokeWidth={1.2}
+                strokeWidth={1.0}
               />
             );
           })()}
@@ -401,10 +395,10 @@ export const KineticVideoPlayer: React.FC<KineticVideoPlayerProps> = ({
               <Circle
                 cx={p.x}
                 cy={p.y - 4}
-                r={8}
+                r={6}
                 fill="rgba(56, 189, 248, 0.12)"
                 stroke="rgba(56, 189, 248, 0.4)"
-                strokeWidth={1.2}
+                strokeWidth={1.0}
               />
             );
           })()}
@@ -433,7 +427,7 @@ export const KineticVideoPlayer: React.FC<KineticVideoPlayerProps> = ({
                 x2={p2.x}
                 y2={p2.y}
                 stroke={color}
-                strokeWidth={2.5}
+                strokeWidth={1.5}
                 strokeLinecap="round"
               />
             );
@@ -463,7 +457,7 @@ export const KineticVideoPlayer: React.FC<KineticVideoPlayerProps> = ({
                 x2={p2.x}
                 y2={p2.y}
                 stroke={color}
-                strokeWidth={2.5}
+                strokeWidth={1.5}
                 strokeLinecap="round"
               />
             );
@@ -481,7 +475,7 @@ export const KineticVideoPlayer: React.FC<KineticVideoPlayerProps> = ({
                 x2={p2.x}
                 y2={p2.y}
                 stroke="#38bdf8"
-                strokeWidth={1.6}
+                strokeWidth={1.2}
               />
             );
           })()}
@@ -496,7 +490,7 @@ export const KineticVideoPlayer: React.FC<KineticVideoPlayerProps> = ({
                 x2={p2.x}
                 y2={p2.y}
                 stroke="#38bdf8"
-                strokeWidth={1.6}
+                strokeWidth={1.2}
               />
             );
           })()}
@@ -525,15 +519,15 @@ export const KineticVideoPlayer: React.FC<KineticVideoPlayerProps> = ({
                 <Circle
                   cx={p.x}
                   cy={p.y}
-                  r={4.5}
+                  r={3.5}
                   fill="rgba(0,0,0,0.85)"
                   stroke={ringColor}
-                  strokeWidth={1.5}
+                  strokeWidth={1.2}
                 />
                 <Circle
                   cx={p.x}
                   cy={p.y}
-                  r={1.8}
+                  r={1.0}
                   fill="#ffffff"
                 />
               </G>
@@ -857,7 +851,7 @@ export const KineticVideoPlayer: React.FC<KineticVideoPlayerProps> = ({
                     x2={p2.x}
                     y2={p2.y}
                     stroke={color}
-                    strokeWidth={2.8}
+                    strokeWidth={1.8}
                     strokeLinecap="round"
                   />
                 );
@@ -887,7 +881,7 @@ export const KineticVideoPlayer: React.FC<KineticVideoPlayerProps> = ({
                     x2={p2.x}
                     y2={p2.y}
                     stroke={color}
-                    strokeWidth={2.8}
+                    strokeWidth={1.8}
                     strokeLinecap="round"
                   />
                 );
@@ -905,7 +899,7 @@ export const KineticVideoPlayer: React.FC<KineticVideoPlayerProps> = ({
                     x2={p2.x}
                     y2={p2.y}
                     stroke="#38bdf8"
-                    strokeWidth={1.8}
+                    strokeWidth={1.4}
                   />
                 );
               })()}
@@ -920,7 +914,7 @@ export const KineticVideoPlayer: React.FC<KineticVideoPlayerProps> = ({
                     x2={p2.x}
                     y2={p2.y}
                     stroke="#38bdf8"
-                    strokeWidth={1.8}
+                    strokeWidth={1.4}
                   />
                 );
               })()}
@@ -936,15 +930,15 @@ export const KineticVideoPlayer: React.FC<KineticVideoPlayerProps> = ({
                     <Circle
                       cx={p.x}
                       cy={p.y}
-                      r={4.5}
+                      r={3.8}
                       fill="rgba(0,0,0,0.85)"
                       stroke={isLeft ? '#c084fc' : '#22c55e'}
-                      strokeWidth={1.5}
+                      strokeWidth={1.2}
                     />
                     <Circle
                       cx={p.x}
                       cy={p.y}
-                      r={1.8}
+                      r={1.2}
                       fill="#ffffff"
                     />
                   </G>

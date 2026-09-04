@@ -39,15 +39,16 @@ export const useVideoPlayback = ({
 
   const activeVideoRef = isFullscreenModal ? fullscreenVideoRef : videoRef;
 
+  const lastSeekTime = useRef<number>(-1);
+
   const handlePlaybackStatusUpdate = useCallback((status: AVPlaybackStatus, fromFullscreen: boolean) => {
     // Only accept updates from the active player to prevent fighting between instances
     if (status.isLoaded && (fromFullscreen === isFullscreenModal)) {
+      // If we are actively scrubbing or recently finished a seek, ignore position updates
+      if (isScrubbing.current) return;
+
       const posSec = status.positionMillis / 1000;
-      
-      // If we are scrubbing, we already updated onTimeUpdate in handleSeek
-      if (!isScrubbing.current) {
-        onTimeUpdate(posSec);
-      }
+      onTimeUpdate(posSec);
       
       if (status.durationMillis && status.durationMillis > 500) {
         const durSec = status.durationMillis / 1000;
@@ -58,35 +59,41 @@ export const useVideoPlayback = ({
   }, [isFullscreenModal, onTimeUpdate, onDurationChange]);
 
   const handleSeek = useCallback((ratio: number, finished: boolean = false, currentTime: number) => {
-    isScrubbing.current = !finished;
+    isScrubbing.current = true;
     if (onPause) onPause();
     
-    // Clear any previous debounce
     if (seekLockoutTimer.current) {
       clearTimeout(seekLockoutTimer.current);
     }
 
     const targetSec = Math.max(0, Math.min(duration, ratio * duration));
+    const seekTime = Math.round(targetSec * 1000);
+
+    // Prevent redundant seeks to the same millisecond
+    if (seekTime === lastSeekTime.current && !finished) return;
+    lastSeekTime.current = seekTime;
     
-    // Always update UI time immediately so skeleton & thumb move without lag
+    // UI update is INSTANT
     onTimeUpdate(targetSec);
     
-    const seekTime = Math.round(targetSec * 1000);
     const targetRef = isFullscreenModal ? fullscreenVideoRef.current : videoRef.current;
 
     if (targetRef) {
-      targetRef.pauseAsync().catch(() => {});
+      // High tolerance during scrub for speed, zero tolerance on finish for accuracy
+      const tolerance = finished ? 0 : 100; 
       targetRef.setPositionAsync(seekTime, {
-        toleranceMillisBefore: 5,
-        toleranceMillisAfter: 5,
+        toleranceMillisBefore: tolerance,
+        toleranceMillisAfter: tolerance,
       }).catch(() => {});
     }
 
     if (finished) {
-      // Keep isScrubbing locked briefly (150ms) to allow video decoder to stabilize at seek point
+      // 250ms lockout ensures the native player has time to settle at the new position
+      // and stop sending "ghost" status updates from the previous location
       seekLockoutTimer.current = setTimeout(() => {
         isScrubbing.current = false;
-      }, 150);
+        lastSeekTime.current = -1;
+      }, 250);
     }
   }, [duration, isFullscreenModal, onTimeUpdate, onPause]);
 

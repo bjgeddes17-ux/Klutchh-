@@ -204,7 +204,7 @@ export function drawPoseSkeleton(
     ctx.fillStyle = activeThemeColor.replace('0.3', '0.08'); // light inner body volume
     ctx.fill();
     ctx.strokeStyle = activeThemeColor.replace('0.3', '0.15');
-    ctx.lineWidth = 3;
+    ctx.lineWidth = 1.2; // Refined from 2
     ctx.stroke();
   }
 
@@ -225,7 +225,7 @@ export function drawPoseSkeleton(
       ctx.moveTo(c1.x, c1.y);
       ctx.lineTo(c2.x, c2.y);
       ctx.strokeStyle = activeThemeColor.replace('0.3', '0.12');
-      ctx.lineWidth = 5; // Sleeker volumetric bone outline (reduced from 14 to 5)
+      ctx.lineWidth = 2.5; // Refined from 3.5
       ctx.stroke();
 
       // Additional center core glow
@@ -234,7 +234,7 @@ export function drawPoseSkeleton(
       ctx.lineTo(c2.x, c2.y);
       ctx.strokeStyle = '#ffffff';
       ctx.globalAlpha = 0.04;
-      ctx.lineWidth = 3;
+      ctx.lineWidth = 1.5;
       ctx.stroke();
       ctx.globalAlpha = 1.0;
     }
@@ -244,11 +244,11 @@ export function drawPoseSkeleton(
   const cNose = getCoord(landmarks[0]);
   if (cNose.visible) {
     ctx.beginPath();
-    ctx.arc(cNose.x, cNose.y - 8, 12, 0, 2 * Math.PI);
+    ctx.arc(cNose.x, cNose.y - 6, 9, 0, 2 * Math.PI); // Smaller head circle
     ctx.fillStyle = activeThemeColor.replace('0.3', '0.1');
     ctx.fill();
     ctx.strokeStyle = activeThemeColor.replace('0.3', '0.2');
-    ctx.lineWidth = 2;
+    ctx.lineWidth = 1.5;
     ctx.stroke();
   }
 
@@ -315,7 +315,7 @@ export function drawPoseSkeleton(
         ctx.strokeStyle = '#38bdf8'; // Cyan (Torso / Core)
       }
 
-      ctx.lineWidth = 2.8;
+      ctx.lineWidth = 1.8; // Refined from 2.8
       ctx.lineCap = 'round';
       ctx.stroke();
     }
@@ -338,27 +338,27 @@ export function drawPoseSkeleton(
       if (jointStatus === 'error' || jointStatus === 'warning') {
         // Glowing target ring for warning/error joints
         ctx.beginPath();
-        ctx.arc(cx, cy, jointStatus === 'error' ? 9 : 7, 0, 2 * Math.PI);
+        ctx.arc(cx, cy, jointStatus === 'error' ? 7 : 5.5, 0, 2 * Math.PI); // Smaller rings
         ctx.strokeStyle = color;
-        ctx.lineWidth = 1.5;
+        ctx.lineWidth = 1.2;
         ctx.stroke();
 
         ctx.beginPath();
-        ctx.arc(cx, cy, jointStatus === 'error' ? 4 : 3.5, 0, 2 * Math.PI);
+        ctx.arc(cx, cy, jointStatus === 'error' ? 3.2 : 2.8, 0, 2 * Math.PI);
         ctx.fillStyle = color;
         ctx.fill();
       } else {
         // Solid dot with inner white core (matching Picture 1)
         ctx.beginPath();
-        ctx.arc(cx, cy, 4.5, 0, 2 * Math.PI);
-        ctx.fillStyle = 'rgba(0, 0, 0, 0.6)';
+        ctx.arc(cx, cy, 3.2, 0, 2 * Math.PI); // Smaller dots
+        ctx.fillStyle = 'rgba(0, 0, 0, 0.8)';
         ctx.fill();
-        ctx.lineWidth = 1.5;
+        ctx.lineWidth = 1.0;
         ctx.strokeStyle = color;
         ctx.stroke();
 
         ctx.beginPath();
-        ctx.arc(cx, cy, 2, 0, 2 * Math.PI);
+        ctx.arc(cx, cy, 1.0, 0, 2 * Math.PI);
         ctx.fillStyle = '#ffffff';
         ctx.fill();
       }
@@ -702,7 +702,8 @@ export function mapLandmarkToScreen(
   isMirrored: boolean = false,
   debugForceNativeRotation: boolean = false,
   isNative: boolean = false,
-  allLandmarks?: MediaPipeLandmark[]
+  allLandmarks?: MediaPipeLandmark[],
+  forcedRect?: { x: number; y: number; width: number; height: number }
 ): { x: number; y: number; visible: boolean } {
   if (!landmark || containerWidth <= 0 || containerHeight <= 0) {
     return { x: 0, y: 0, visible: false };
@@ -769,7 +770,8 @@ export function mapLandmarkToScreen(
   }
 
   // 6. Calculate video letterbox render rect using CORRECTED source dimensions
-  const videoRect = getVideoRenderRect(containerWidth, containerHeight, finalVW, finalVH);
+  // USE FORCED RECT IF PROVIDED (Ensures perfect sync with the video player's actual surface)
+  const videoRect = forcedRect || getVideoRenderRect(containerWidth, containerHeight, finalVW, finalVH);
 
   const confidenceValid = landmark.visibility === undefined || landmark.visibility >= 0.15;
   const visible = lx >= -0.3 && lx <= 1.3 && ly >= -0.3 && ly <= 1.3 && confidenceValid;
