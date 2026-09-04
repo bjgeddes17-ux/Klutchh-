@@ -152,6 +152,9 @@ export const KineticVideoPlayer: React.FC<KineticVideoPlayerProps> = ({
     }
     const lastIdx = sortedFrames.length - 1;
     if (currentTime >= sortedFrames[lastIdx].timestamp) {
+      // If we are past the tracked data, only show the skeleton if we're within a tiny window (300ms)
+      // Otherwise, the skeleton is outdated and should be hidden to avoid confusion.
+      if (currentTime - sortedFrames[lastIdx].timestamp > 0.3) return null;
       return { currentFrame: sortedFrames[lastIdx], interpolatedLandmarks: sortedFrames[lastIdx].landmarks };
     }
 
@@ -185,17 +188,19 @@ export const KineticVideoPlayer: React.FC<KineticVideoPlayerProps> = ({
     }
 
     const lerped: MediaPipeLandmark[] = f1.landmarks.map((lm1, i) => {
-      const lm2 = f2.landmarks[i];
-      if (!lm2) return lm1;
+      const lm2 = f2.landmarks[i] || lm1;
       return {
         x: lm1.x + (lm2.x - lm1.x) * alpha,
         y: lm1.y + (lm2.y - lm1.y) * alpha,
-        z: (lm1.z !== undefined && lm2.z !== undefined) ? lm1.z + (lm2.z - lm1.z) * alpha : lm1.z,
-        visibility: Math.min(lm1.visibility ?? 1, lm2.visibility ?? 1),
+        z: (lm1.z || 0) + ((lm2.z || 0) - (lm1.z || 0)) * alpha,
+        visibility: Math.min(lm1.visibility || 0, lm2.visibility || 0),
       };
     });
 
-    return { currentFrame: f1, interpolatedLandmarks: lerped };
+    return { 
+      currentFrame: alpha > 0.5 ? f2 : f1, 
+      interpolatedLandmarks: lerped 
+    };
   }, [sortedFrames, currentTime]);
 
   const handleReadyForDisplay = (event: any) => {
@@ -427,7 +432,7 @@ export const KineticVideoPlayer: React.FC<KineticVideoPlayerProps> = ({
                 x2={p2.x}
                 y2={p2.y}
                 stroke={color}
-                strokeWidth={1.5}
+                strokeWidth={1.2}
                 strokeLinecap="round"
               />
             );
@@ -457,7 +462,7 @@ export const KineticVideoPlayer: React.FC<KineticVideoPlayerProps> = ({
                 x2={p2.x}
                 y2={p2.y}
                 stroke={color}
-                strokeWidth={1.5}
+                strokeWidth={1.2}
                 strokeLinecap="round"
               />
             );
@@ -519,15 +524,15 @@ export const KineticVideoPlayer: React.FC<KineticVideoPlayerProps> = ({
                 <Circle
                   cx={p.x}
                   cy={p.y}
-                  r={3.5}
+                  r={2.8}
                   fill="rgba(0,0,0,0.85)"
                   stroke={ringColor}
-                  strokeWidth={1.2}
+                  strokeWidth={1.1}
                 />
                 <Circle
                   cx={p.x}
                   cy={p.y}
-                  r={1.0}
+                  r={0.8}
                   fill="#ffffff"
                 />
               </G>

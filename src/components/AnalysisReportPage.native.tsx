@@ -35,6 +35,7 @@ import {
   Sliders,
   ChevronDown,
   ChevronUp,
+  BookOpen,
 } from 'lucide-react-native';
 import {
   SportRule,
@@ -147,8 +148,20 @@ export const AnalysisReportPage: React.FC<AnalysisReportPageProps> = ({
         const bWarnings = Object.values(b.ruleResults || {}).filter(r => r === 'warning').length;
         return bWarnings - aWarnings;
       })
-      .slice(0, 10);
+      .slice(0, 5);
   }, [sortedFrames]);
+
+  // Drill Mapping for Reinforcement
+  const DRILL_MAPPING: Record<string, string> = {
+    'gf_driver_spine_tilt_away': 'golf-spine-hinge-posture',
+    'gf_reverse_pivot_spine_check': 'golf-spine-hinge-posture',
+    'gf_chicken_wing_lead_elbow': 'golf-lead-arm-straight-backswing',
+    'gf_over_the_top_early_extension': 'golf-spine-hinge-posture',
+    'gf_putting_eye_over_ball': 'golf-putting-pendulum-rock',
+    'gf_putting_pendulum_elbow': 'golf-putting-pendulum-rock',
+    'Address Forward Spine Hinge': 'golf-spine-hinge-posture',
+    'Lead Arm Top Swing Straight': 'golf-lead-arm-straight-backswing',
+  };
 
   // Biomechanical Executive Ratings
   const titanRating = useMemo(() => {
@@ -963,11 +976,11 @@ export const AnalysisReportPage: React.FC<AnalysisReportPageProps> = ({
               </TouchableOpacity>
             ))}
 
-            {/* Worst 10 Faults Section */}
+            {/* Worst 5 Faults Section */}
             <View style={[styles.corridorHeader, { marginTop: 24 }]}>
-              <Text style={styles.sectionTitle}>CRITICAL FAULT AUDIT (WORST 10)</Text>
+              <Text style={styles.sectionTitle}>CRITICAL FAULT AUDIT (WORST 5)</Text>
               <Text style={styles.sectionSubtitle}>
-                Identified the 10 most severe biomechanical deviations from this session. Tap to inspect.
+                The 5 most severe biomechanical deviations. Tap to inspect or see corrective drills.
               </Text>
             </View>
 
@@ -982,49 +995,96 @@ export const AnalysisReportPage: React.FC<AnalysisReportPageProps> = ({
                 const ruleEntries = Object.entries(frame.ruleResults || {});
                 const failedRules = ruleEntries.filter(([k, v]) => v === 'error' || v === 'warning');
                 
+                // Find suggested drill for the first failed rule
+                const topRuleId = failedRules[0]?.[0];
+                const suggestedDrillId = topRuleId ? DRILL_MAPPING[topRuleId] : null;
+                const suggestedDrill = suggestedDrillId ? COMPREHENSIVE_DRILL_LIBRARY.find(d => d.id === suggestedDrillId) : null;
+
                 return (
-                  <TouchableOpacity
-                    key={`worst-${idx}`}
-                    onPress={() => setCurrentTime(frame.timestamp)}
-                    style={[styles.corridorCard, { borderColor: '#ef4444', borderWidth: 1 }]}
-                  >
-                    <View style={styles.corridorTopRow}>
-                      <View style={styles.corridorTitleBox}>
-                        <View style={[styles.statusDot, { backgroundColor: '#ef4444' }]} />
-                        <Text style={styles.corridorName}>Critical Deviation @ {frame.timestamp.toFixed(2)}s</Text>
-                      </View>
-                      <View style={[styles.targetPill, { backgroundColor: 'rgba(239, 68, 68, 0.15)', borderColor: '#ef4444' }]}>
-                        <Text style={[styles.targetPillText, { color: '#ef4444' }]}>
-                          {failedRules.length} FAULTS
-                        </Text>
-                      </View>
-                    </View>
-
-                    <Text style={styles.corridorDesc}>
-                      Phase: {frame.detectedPhase || 'Dynamic Execution'} • Match Consistency: {Math.round((frame.matchScore || 0.9) * 100)}%
-                    </Text>
-
-                    <View style={{ marginTop: 4, gap: 4 }}>
-                      {failedRules.map(([ruleId, status], rIdx) => (
-                        <View key={rIdx} style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                          <X size={10} color="#fca5a5" />
-                          <Text style={{ color: '#fca5a5', fontSize: 11 }}>
-                            {ruleId}: <Text style={{ fontWeight: 'bold', color: '#ffffff' }}>{status === 'error' ? 'Critical Error' : 'Warning'}</Text>
+                  <View key={`worst-container-${idx}`}>
+                    <TouchableOpacity
+                      onPress={() => {
+                        setCurrentTime(frame.timestamp);
+                        setActiveTab('inspector'); // Switch to video tab to see it
+                      }}
+                      style={[styles.corridorCard, { borderColor: '#ef4444', borderWidth: 1, marginBottom: suggestedDrill ? 0 : 12, borderBottomLeftRadius: suggestedDrill ? 0 : 12, borderBottomRightRadius: suggestedDrill ? 0 : 12 }]}
+                    >
+                      <View style={styles.corridorTopRow}>
+                        <View style={styles.corridorTitleBox}>
+                          <View style={[styles.statusDot, { backgroundColor: '#ef4444' }]} />
+                          <Text style={styles.corridorName}>Critical Deviation @ {frame.timestamp.toFixed(2)}s</Text>
+                        </View>
+                        <View style={[styles.targetPill, { backgroundColor: 'rgba(239, 68, 68, 0.15)', borderColor: '#ef4444' }]}>
+                          <Text style={[styles.targetPillText, { color: '#ef4444' }]}>
+                            {failedRules.length} FAULTS
                           </Text>
                         </View>
-                      ))}
-                      {frame.validationIssues?.map((issue, iIdx) => (
-                        <View key={`issue-${iIdx}`} style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                          <Info size={10} color="#fca5a5" />
-                          <Text style={{ color: '#fca5a5', fontSize: 11 }}>{issue}</Text>
-                        </View>
-                      ))}
-                    </View>
+                      </View>
 
-                    <View style={styles.corridorFooter}>
-                      <Text style={styles.impactText}>Tap to Analyze Deviation →</Text>
-                    </View>
-                  </TouchableOpacity>
+                      <Text style={styles.corridorDesc}>
+                        Phase: {frame.detectedPhase || 'Dynamic Execution'} • Match Consistency: {Math.round((frame.matchScore || 0.9) * 100)}%
+                      </Text>
+
+                      <View style={{ marginTop: 4, gap: 4 }}>
+                        {failedRules.slice(0, 5).map(([ruleId, status], rIdx) => (
+                          <View key={rIdx} style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                            <X size={10} color="#fca5a5" />
+                            <Text style={{ color: '#fca5a5', fontSize: 11 }}>
+                              {ruleId.replace('gf_', '').replace(/_/g, ' ')}: <Text style={{ fontWeight: 'bold', color: '#ffffff' }}>{status === 'error' ? 'Critical' : 'Warning'}</Text>
+                            </Text>
+                          </View>
+                        ))}
+                        {failedRules.length > 5 && (
+                          <Text style={{ color: '#71717a', fontSize: 9, marginLeft: 16 }}>
+                            + {failedRules.length - 5} other biomechanical deviations
+                          </Text>
+                        )}
+                      </View>
+
+                      <View style={styles.corridorFooter}>
+                        <Text style={styles.impactText}>Tap to View in Video →</Text>
+                      </View>
+                    </TouchableOpacity>
+
+                    {suggestedDrill && (
+                      <View style={[styles.corridorCard, { 
+                        backgroundColor: '#18181b', 
+                        marginTop: 0, 
+                        borderTopWidth: 0, 
+                        borderTopLeftRadius: 0, 
+                        borderTopRightRadius: 0,
+                        borderLeftWidth: 1,
+                        borderRightWidth: 1,
+                        borderBottomWidth: 1,
+                        borderColor: '#3f3f46',
+                        paddingTop: 8,
+                        marginBottom: 12
+                      }]}>
+                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 4 }}>
+                          <BookOpen size={14} color="#34d399" />
+                          <Text style={{ color: '#34d399', fontSize: 12, fontWeight: 'bold' }}>RECOMMENDED DRILL</Text>
+                        </View>
+                        <Text style={{ color: '#ffffff', fontSize: 13, fontWeight: 'bold', marginBottom: 2 }}>{suggestedDrill.title}</Text>
+                        <Text style={{ color: '#a1a1aa', fontSize: 11, marginBottom: 8 }} numberOfLines={2}>{suggestedDrill.description}</Text>
+                        
+                        <TouchableOpacity 
+                          style={{ 
+                            backgroundColor: 'rgba(52, 211, 153, 0.1)', 
+                            paddingVertical: 6, 
+                            paddingHorizontal: 12, 
+                            borderRadius: 6,
+                            alignSelf: 'flex-start'
+                          }}
+                          onPress={() => {
+                            // Find the drill in the library and open it
+                            setActiveTab('drills');
+                          }}
+                        >
+                          <Text style={{ color: '#34d399', fontSize: 11, fontWeight: 'bold' }}>VIEW FULL DRILL →</Text>
+                        </TouchableOpacity>
+                      </View>
+                    )}
+                  </View>
                 );
               })
             )}

@@ -88,12 +88,12 @@ export const useVideoPlayback = ({
     }
 
     if (finished) {
-      // 250ms lockout ensures the native player has time to settle at the new position
-      // and stop sending "ghost" status updates from the previous location
+      // 120ms lockout ensures the native player has time to settle at the new position
+      // but is fast enough to feel responsive for rapid scrubbing.
       seekLockoutTimer.current = setTimeout(() => {
         isScrubbing.current = false;
         lastSeekTime.current = -1;
-      }, 250);
+      }, 120);
     }
   }, [duration, isFullscreenModal, onTimeUpdate, onPause]);
 
@@ -117,7 +117,7 @@ export const useVideoPlayback = ({
       .finally(() => {
         setTimeout(() => {
           isScrubbing.current = false;
-        }, 150);
+        }, 100);
       });
     }
   }, [duration, isFullscreenModal, onTimeUpdate]);
