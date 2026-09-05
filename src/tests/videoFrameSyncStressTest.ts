@@ -5,12 +5,16 @@ import { HighPrecisionVideoSynchronizer, SyncTelemetry, VideoFrameCallbackMetada
 import { FrameAnalysis, SportRule } from '../types';
 
 const mockSportRule: SportRule = {
-  id: 'cricket_bowling',
+  id: 'cricket',
   name: 'Cricket Fast Bowling',
-  sportId: 'cricket',
+  iconName: 'Activity',
+  category: 'Athletics',
+  description: 'Cricket Bowling Biomechanics',
+  kidFocus: 'Arm Extension',
+  techniques: [],
   phases: ['runup', 'bound', 'back_foot_impact', 'front_foot_strike', 'release', 'follow_through'],
+  sequence: ['runup', 'bound', 'back_foot_impact', 'front_foot_strike', 'release', 'follow_through'],
   jointRules: [],
-  coachingCues: [],
 };
 
 function generateTestFrames(count: number, fps: number): FrameAnalysis[] {

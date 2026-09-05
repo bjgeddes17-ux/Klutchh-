@@ -1,16 +1,16 @@
 import { MediaPipeLandmark, SportRule } from '../types';
 
 /**
- * Calculates the angle (in degrees 0-180) at vertex point p2 formed by lines p1-p2 and p3-p2.
+ * Calculates true 3D angle (in degrees 0-180) in Euclidean 3D space using vectors u and v.
+ * Resolves perspective distortion and foreshortening when limbs move toward or away from camera.
  */
-export function calculateAngle(
+export function calculateAngle3D(
   p1: MediaPipeLandmark,
   p2: MediaPipeLandmark,
   p3: MediaPipeLandmark
 ): number {
   if (!p1 || !p2 || !p3) return 0;
 
-  // Vectors from vertex p2 to p1 and p3 (supporting 3D coordinates x, y, z)
   const v1x = p1.x - p2.x;
   const v1y = p1.y - p2.y;
   const v1z = (p1.z || 0) - (p2.z || 0);
@@ -19,7 +19,6 @@ export function calculateAngle(
   const v2y = p3.y - p2.y;
   const v2z = (p3.z || 0) - (p2.z || 0);
 
-  // Dot product and magnitudes for Law of Cosines
   const dotProduct = v1x * v2x + v1y * v2y + v1z * v2z;
   const mag1 = Math.sqrt(v1x * v1x + v1y * v1y + v1z * v1z);
   const mag2 = Math.sqrt(v2x * v2x + v2y * v2y + v2z * v2z);
@@ -33,6 +32,17 @@ export function calculateAngle(
   const angleDeg = (angleRad * 180.0) / Math.PI;
 
   return Math.round(angleDeg * 10) / 10;
+}
+
+/**
+ * Calculates the angle (in degrees 0-180) at vertex point p2 formed by lines p1-p2 and p3-p2.
+ */
+export function calculateAngle(
+  p1: MediaPipeLandmark,
+  p2: MediaPipeLandmark,
+  p3: MediaPipeLandmark
+): number {
+  return calculateAngle3D(p1, p2, p3);
 }
 
 /**
@@ -301,13 +311,30 @@ export function drawPoseSkeleton(
     }
   };
 
-  // 1. Draw Skeleton Connection Lines with Dual-Tone (Purple Left, Neon Green Right, Cyan Core)
+  // 1. Draw Skeleton Connection Lines with 3D Depth-Sorting & Dual-Tone (Lead vs Trail)
   const leftJoints = new Set([11, 13, 15, 23, 25, 27, 29, 31]);
   const rightJoints = new Set([12, 14, 16, 24, 26, 28, 30, 32]);
 
-  POSE_CONNECTIONS.forEach(({ points: [i1, i2] }) => {
-    const c1 = getCoord(landmarks[i1]);
-    const c2 = getCoord(landmarks[i2]);
+  // Sort connections by depth (z > 0 in background drawn first, z <= 0 in foreground drawn on top)
+  const depthSortedConnections = [...POSE_CONNECTIONS].map(conn => {
+    const [i1, i2] = conn.points;
+    const lm1 = landmarks[i1];
+    const lm2 = landmarks[i2];
+    const avgZ = ((lm1?.z || 0) + (lm2?.z || 0)) / 2;
+    return { ...conn, avgZ, lm1, lm2 };
+  }).sort((a, b) => b.avgZ - a.avgZ); // Deepest background first
+
+  depthSortedConnections.forEach(({ points: [i1, i2], avgZ, lm1, lm2 }) => {
+    if (!lm1 || !lm2) return;
+    if ((lm1.visibility ?? 1) < 0.35 || (lm2.visibility ?? 1) < 0.35) return;
+    if ((lm1.x <= 0.02 && lm1.y <= 0.02) || (lm2.x <= 0.02 && lm2.y <= 0.02)) return;
+
+    // Physiological bone length limit: reject spiderweb connections (> 0.38 normalized screen distance)
+    const normDist = Math.hypot(lm1.x - lm2.x, lm1.y - lm2.y);
+    if (normDist > 0.38) return;
+
+    const c1 = getCoord(lm1);
+    const c2 = getCoord(lm2);
 
     if (c1.visible && c2.visible) {
       ctx.beginPath();
@@ -331,9 +358,13 @@ export function drawPoseSkeleton(
         ctx.strokeStyle = '#38bdf8'; // Cyan (Torso / Core)
       }
 
-      ctx.lineWidth = 1.8; // Refined from 2.8
+      // 3D Depth Attenuation: Rear limbs slightly dimmer, foreground limbs crisp and bold
+      const depthAlpha = avgZ > 0.15 ? 0.75 : 1.0;
+      ctx.globalAlpha = depthAlpha;
+      ctx.lineWidth = avgZ > 0.15 ? 1.5 : 2.0;
       ctx.lineCap = 'round';
       ctx.stroke();
+      ctx.globalAlpha = 1.0;
     }
   });
 

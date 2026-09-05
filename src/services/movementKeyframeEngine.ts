@@ -1,5 +1,5 @@
 // src/services/movementKeyframeEngine.ts
-// Software Engineering Solution for Movement-Specific Keyframes across All Sports & Movements
+// Robust Movement-Specific Keyframes across All Sports & Movement Techniques
 
 import { SportId, SportRule, BiomechanicalFrame, JointRule } from '../types';
 
@@ -31,17 +31,45 @@ export interface MovementProfile {
 export function detectMovementKeyframes(
   frames: BiomechanicalFrame[],
   sportRule: SportRule,
-  durationSec: number
+  durationSec: number,
+  techniqueId?: string
 ): MovementKeyframeEvent[] {
+  const safeDuration = durationSec && durationSec > 0.3 ? durationSec : 3.5;
   if (!frames || frames.length === 0) {
-    return getDefaultFallbackKeyframes(sportRule, durationSec);
+    return getDefaultFallbackKeyframes(sportRule, safeDuration);
   }
 
   const sportId = sportRule.id;
 
-  // 1. Analyze wrist/hand elevation trajectory across frames (0 = top of image, 1 = bottom)
+  // 1. Analyze velocity profiles and landmark trajectories across all frames
+  let maxVelocity = 0;
+  let maxVelIdx = Math.floor(frames.length * 0.5);
+
+  for (let i = 0; i < frames.length; i++) {
+    const f = frames[i];
+    const prevF = frames[Math.max(0, i - 1)];
+
+    let v = 0;
+    if (f.landmarks && prevF.landmarks && f.landmarks.length >= 17 && prevF.landmarks.length >= 17) {
+      const dx1 = f.landmarks[15].x - prevF.landmarks[15].x;
+      const dy1 = f.landmarks[15].y - prevF.landmarks[15].y;
+      const dx2 = f.landmarks[16].x - prevF.landmarks[16].x;
+      const dy2 = f.landmarks[16].y - prevF.landmarks[16].y;
+      const dt = Math.max(0.001, f.timestamp - prevF.timestamp);
+      v = (Math.hypot(dx1, dy1) + Math.hypot(dx2, dy2)) / (2 * dt);
+    } else {
+      v = (f.velocity?.wrist || 0) + (f.velocity?.shoulder || 0);
+    }
+
+    if (v > maxVelocity) {
+      maxVelocity = v;
+      maxVelIdx = i;
+    }
+  }
+
+  // 2. Find min hand Y (Top of Backswing / High Cock / High Reach)
   let minHandY = 999;
-  let minHandYIdx = 0;
+  let minHandYIdx = Math.max(0, Math.floor(maxVelIdx * 0.5));
 
   frames.forEach((f, idx) => {
     if (f.landmarks && f.landmarks.length >= 17) {
@@ -49,8 +77,8 @@ export function detectMovementKeyframes(
       const rightY = f.landmarks[16]?.y ?? 0.5;
       const avgHandY = (leftY + rightY) / 2;
 
-      // Look for peak hand elevation (minimum Y) between 15% and 80% of clip duration
-      if (f.timestamp >= durationSec * 0.15 && f.timestamp <= durationSec * 0.8) {
+      // Peak hand elevation should precede or coincide with peak acceleration
+      if (idx <= Math.min(frames.length - 1, maxVelIdx + 2)) {
         if (avgHandY < minHandY) {
           minHandY = avgHandY;
           minHandYIdx = idx;
@@ -59,68 +87,29 @@ export function detectMovementKeyframes(
     }
   });
 
-  const backswingTopTime = frames[minHandYIdx]?.timestamp || durationSec * 0.45;
+  const backswingTopTime = frames[minHandYIdx]?.timestamp || safeDuration * 0.4;
+  const impactTime = frames[maxVelIdx]?.timestamp || safeDuration * 0.65;
+  const addressTime = frames[Math.max(0, Math.floor(minHandYIdx * 0.25))]?.timestamp || safeDuration * 0.12;
+  const followThroughTime = frames[Math.min(frames.length - 1, maxVelIdx + Math.max(2, Math.floor((frames.length - 1 - maxVelIdx) * 0.6)))]?.timestamp || safeDuration * 0.88;
 
-  // 2. Find Ball Impact / Release / Strike moment AFTER Top of Backswing
-  let maxImpactVel = 0;
-  let impactFrameIdx = minHandYIdx;
-
-  for (let i = minHandYIdx + 1; i < frames.length; i++) {
-    const f = frames[i];
-    const prevF = frames[Math.max(0, i - 1)];
-
-    let handVel = 0;
-    if (f.landmarks && prevF.landmarks && f.landmarks.length >= 17 && prevF.landmarks.length >= 17) {
-      const dx1 = f.landmarks[15].x - prevF.landmarks[15].x;
-      const dy1 = f.landmarks[15].y - prevF.landmarks[15].y;
-      const dx2 = f.landmarks[16].x - prevF.landmarks[16].x;
-      const dy2 = f.landmarks[16].y - prevF.landmarks[16].y;
-      const dt = Math.max(0.001, f.timestamp - prevF.timestamp);
-      handVel = (Math.hypot(dx1, dy1) + Math.hypot(dx2, dy2)) / (2 * dt);
-    } else {
-      handVel = (f.velocity?.wrist || 0) + (f.velocity?.shoulder || 0);
-    }
-
-    if (handVel > maxImpactVel) {
-      maxImpactVel = handVel;
-      impactFrameIdx = i;
-    }
-  }
-
-  // Fallback if impact frame is invalid or too close to backswing top
-  if (impactFrameIdx <= minHandYIdx || impactFrameIdx >= frames.length - 1) {
-    const remainingFrames = frames.length - 1 - minHandYIdx;
-    impactFrameIdx = Math.min(frames.length - 1, minHandYIdx + Math.max(2, Math.round(remainingFrames * 0.5)));
-  }
-
-  const impactTime = frames[impactFrameIdx]?.timestamp || durationSec * 0.7;
-
-  // 3. Address / Setup time (stationary moment before takeaway)
-  let addressFrameIdx = Math.max(0, Math.round(minHandYIdx * 0.25));
-  const addressTime = frames[addressFrameIdx]?.timestamp || durationSec * 0.15;
-
-  // 4. Follow through time
-  let finishFrameIdx = Math.min(frames.length - 1, impactFrameIdx + Math.max(2, Math.round((frames.length - 1 - impactFrameIdx) * 0.6)));
-  const followThroughTime = frames[finishFrameIdx]?.timestamp || durationSec * 0.88;
-
-  // 5. Movement-Specific Keyframe Generators
+  // 3. Movement-Specific Keyframe Generators
   switch (sportId) {
     case 'golf':
-      return buildGolfKeyframes(frames, durationSec, addressTime, backswingTopTime, impactTime, followThroughTime, addressFrameIdx, minHandYIdx, impactFrameIdx, finishFrameIdx);
+      return buildGolfKeyframes(frames, safeDuration, addressTime, backswingTopTime, impactTime, followThroughTime, Math.floor(minHandYIdx * 0.25), minHandYIdx, maxVelIdx, frames.length - 1);
     case 'rugby':
-      return buildRugbyKeyframes(frames, durationSec, impactTime, impactFrameIdx);
+      return buildRugbyKeyframes(frames, safeDuration, impactTime, maxVelIdx);
     case 'soccer':
-      return buildSoccerKeyframes(frames, durationSec, impactTime, impactFrameIdx);
+      return buildSoccerKeyframes(frames, safeDuration, impactTime, maxVelIdx);
     case 'tennis':
-      return buildTennisKeyframes(frames, durationSec, impactTime, impactFrameIdx);
+      return buildTennisKeyframes(frames, safeDuration, impactTime, maxVelIdx);
     case 'cricket':
-      return buildCricketKeyframes(frames, durationSec, impactTime, impactFrameIdx);
+      return buildCricketKeyframes(frames, safeDuration, impactTime, maxVelIdx, techniqueId);
     case 'netball':
-      return buildNetballKeyframes(frames, durationSec, impactTime, impactFrameIdx);
+      return buildNetballKeyframes(frames, safeDuration, impactTime, maxVelIdx);
     case 'hockey':
-      return buildHockeyKeyframes(frames, durationSec, impactTime, impactFrameIdx);
+      return buildHockeyKeyframes(frames, safeDuration, impactTime, maxVelIdx);
     default:
-      return buildGenericKeyframes(frames, sportRule, durationSec, impactTime);
+      return buildGenericKeyframes(frames, sportRule, safeDuration, impactTime);
   }
 }
 
@@ -495,65 +484,133 @@ function buildCricketKeyframes(
   frames: BiomechanicalFrame[],
   durationSec: number,
   impactTime: number,
-  impactIdx: number
+  impactIdx: number,
+  techniqueId?: string
 ): MovementKeyframeEvent[] {
-  const prepTime = Math.max(0, impactTime - 0.45);
-  const backliftTime = Math.max(0, impactTime - 0.25);
-  const followTime = Math.min(durationSec, impactTime + 0.35);
+  const isBowling = techniqueId ? techniqueId.toLowerCase().includes('bowl') : true;
 
-  const prepFrame = findClosestFrame(frames, prepTime);
+  if (isBowling) {
+    const gatherTime = Math.max(0, impactTime - 0.45);
+    const backFootTime = Math.max(0, impactTime - 0.22);
+    const releaseTime = impactTime;
+    const followTime = Math.min(durationSec, impactTime + 0.38);
+
+    const gatherFrame = findClosestFrame(frames, gatherTime);
+    const backFootFrame = findClosestFrame(frames, backFootTime);
+    const releaseFrame = findClosestFrame(frames, releaseTime);
+    const followFrame = findClosestFrame(frames, followTime);
+
+    return [
+      {
+        id: 'cricket_bound_gather',
+        name: 'Bound & Coil Gather',
+        timestamp: Math.round(gatherTime * 100) / 100,
+        frameNumber: gatherFrame?.frameNumber || 0,
+        importance: 'secondary',
+        status: 'optimal',
+        jointTrigger: 'Knee Bound Height',
+        measuredValue: gatherFrame?.angles?.knee || 122,
+        idealRange: '110° - 135°',
+        coachingHint: 'High lead knee drive powering into delivery bound.',
+      },
+      {
+        id: 'cricket_back_foot_contact',
+        name: 'Back-Foot Plant & Thoracic Load',
+        timestamp: Math.round(backFootTime * 100) / 100,
+        frameNumber: backFootFrame?.frameNumber || 0,
+        importance: 'primary',
+        status: 'optimal',
+        jointTrigger: 'Hip-Shoulder Separation',
+        measuredValue: backFootFrame?.angles?.hip || 138,
+        idealRange: '130° - 150°',
+        coachingHint: 'Coil shoulders side-on while back foot establishes firm base.',
+      },
+      {
+        id: 'cricket_front_brace_release',
+        name: 'Front-Knee Brace & High Arm Release',
+        timestamp: Math.round(releaseTime * 100) / 100,
+        frameNumber: releaseFrame?.frameNumber || impactIdx,
+        importance: 'critical',
+        status: (releaseFrame?.angles?.knee || 170) < 162 ? 'warning' : 'optimal',
+        jointTrigger: 'Front Knee Lock (168°-180°)',
+        measuredValue: releaseFrame?.angles?.knee || 172,
+        idealRange: '168° - 180°',
+        coachingHint: 'Brace front knee firm into the turf to snap upper torso through delivery arc.',
+      },
+      {
+        id: 'cricket_follow_through',
+        name: 'Follow-Through Deceleration',
+        timestamp: Math.round(followTime * 100) / 100,
+        frameNumber: followFrame?.frameNumber || 0,
+        importance: 'secondary',
+        status: 'optimal',
+        jointTrigger: 'Trunk Deceleration',
+        measuredValue: followFrame?.angles?.hip || 118,
+        idealRange: '110° - 130°',
+        coachingHint: 'Smooth trunk flexion past lead hip protecting lumbar vertebrae.',
+      },
+    ];
+  }
+
+  // Batting (Cover Drive / Pull / Punch)
+  const stanceTime = Math.max(0, impactTime - 0.48);
+  const backliftTime = Math.max(0, impactTime - 0.25);
+  const impactMoment = impactTime;
+  const finishTime = Math.min(durationSec, impactTime + 0.35);
+
+  const stanceFrame = findClosestFrame(frames, stanceTime);
   const backliftFrame = findClosestFrame(frames, backliftTime);
-  const releaseFrame = findClosestFrame(frames, impactTime);
-  const followFrame = findClosestFrame(frames, followTime);
+  const impactFrame = findClosestFrame(frames, impactMoment);
+  const finishFrame = findClosestFrame(frames, finishTime);
 
   return [
     {
       id: 'cricket_stance',
-      name: 'Stance & Alignment',
-      timestamp: prepTime,
-      frameNumber: prepFrame?.frameNumber || 0,
+      name: 'Stance & Head Alignment',
+      timestamp: Math.round(stanceTime * 100) / 100,
+      frameNumber: stanceFrame?.frameNumber || 0,
       importance: 'secondary',
       status: 'optimal',
       jointTrigger: 'Head Position',
-      measuredValue: prepFrame?.angles?.hip || 140,
+      measuredValue: stanceFrame?.angles?.hip || 140,
       idealRange: '135° - 150°',
       coachingHint: 'Side-on stance, head directly over front foot line.',
     },
     {
       id: 'cricket_backlift',
-      name: 'Backlift & Cock Phase',
-      timestamp: backliftTime,
+      name: 'High Backlift & Stride',
+      timestamp: Math.round(backliftTime * 100) / 100,
       frameNumber: backliftFrame?.frameNumber || 0,
       importance: 'primary',
       status: 'optimal',
-      jointTrigger: 'Elbow Flexion',
+      jointTrigger: 'Lead Elbow Cock',
       measuredValue: backliftFrame?.angles?.elbow || 120,
       idealRange: '110° - 135°',
-      coachingHint: 'High lead elbow pointing towards bowler.',
+      coachingHint: 'High lead elbow pointing toward bowler with soft hands.',
     },
     {
-      id: 'cricket_release',
-      name: 'Ball Impact / High Release',
-      timestamp: impactTime,
-      frameNumber: releaseFrame?.frameNumber || impactIdx,
+      id: 'cricket_impact',
+      name: 'Ball Impact Under Eyes',
+      timestamp: Math.round(impactMoment * 100) / 100,
+      frameNumber: impactFrame?.frameNumber || impactIdx,
       importance: 'critical',
       status: 'optimal',
-      jointTrigger: 'Arm Extension',
-      measuredValue: releaseFrame?.angles?.shoulder || 165,
+      jointTrigger: 'Full Arm Flow',
+      measuredValue: impactFrame?.angles?.shoulder || 165,
       idealRange: '155° - 175°',
-      coachingHint: 'Lock lead shoulder facing target with full high extension.',
+      coachingHint: 'Present full bat face directly underneath eye line.',
     },
     {
       id: 'cricket_follow',
-      name: 'Follow-Through Drive',
-      timestamp: followTime,
-      frameNumber: followFrame?.frameNumber || 0,
+      name: 'High Extension Finish',
+      timestamp: Math.round(finishTime * 100) / 100,
+      frameNumber: finishFrame?.frameNumber || 0,
       importance: 'secondary',
       status: 'optimal',
       jointTrigger: 'Weight Transfer',
-      measuredValue: followFrame?.angles?.knee || 170,
+      measuredValue: finishFrame?.angles?.knee || 170,
       idealRange: '160° - 180°',
-      coachingHint: 'Complete swing path through ball line with balanced footwork.',
+      coachingHint: 'Complete swing arc with balanced posture on front foot.',
     },
   ];
 }

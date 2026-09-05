@@ -225,34 +225,72 @@ export async function analyzeNativeVideoBiometrics({
     updateProgress(15 + Math.round((i / totalFrames) * 45));
   }
 
-  // Phase 2: Identify Foreground Athlete & Reject Background Bystanders (e.g. person on couch)
-  const validDetections = rawSamples.filter(s => s.rawLandmarks && s.spanY > 0);
-  const maxSpanY = validDetections.length > 0 ? Math.max(...validDetections.map(s => s.spanY)) : 0;
+  // Phase 2: Identify Primary Foreground Athlete & Lock Trajectory Anchor
+  // 1. Find initial candidate detections in first 35% of timeline with highest standing span & activity
+  const initialWindowSamples = rawSamples.slice(0, Math.max(5, Math.floor(totalFrames * 0.35)));
+  const initialDetections = initialWindowSamples.filter(s => s.rawLandmarks && s.spanY > 0.15);
   
-  // Adaptive athlete threshold: allow small child/youth subjects (down to 10% screen height)
-  const athleteSpanThreshold = maxSpanY > 0 ? Math.min(0.12, maxSpanY * 0.40) : 0.10;
+  let primaryAthleteSeedRoot: { x: number; y: number } | null = null;
+  let primaryAthleteSpan: number = 0.45;
 
-  // Filter valid athlete detections
-  const athleteKeyframes: { index: number; timestampSec: number; landmarks: MediaPipeLandmark[]; root: { x: number; y: number } }[] = [];
+  if (initialDetections.length > 0) {
+    // Select seed candidate with maximum vertical standing span and active visibility
+    const bestSeed = [...initialDetections].sort((a, b) => (b.spanY * 0.7 + b.area * 0.3) - (a.spanY * 0.7 + a.area * 0.3))[0];
+    primaryAthleteSeedRoot = bestSeed.root;
+    primaryAthleteSpan = bestSeed.spanY;
+    console.log(`[NativeBiometrics] Primary Athlete Seed: (${bestSeed.root?.x.toFixed(2)}, ${bestSeed.root?.y.toFixed(2)}) Span: ${(bestSeed.spanY * 100).toFixed(0)}% at t=${bestSeed.timestampSec.toFixed(2)}s`);
+  }
+
+  // 2. Continuous Trajectory Follower with Centroid Filtering & Bystander Rejection
+  const athleteKeyframes: { 
+    index: number; 
+    timestampSec: number; 
+    landmarks: MediaPipeLandmark[]; 
+    root: { x: number; y: number; z?: number };
+    spanY: number;
+  }[] = [];
+
+  let lastTrackedRoot = primaryAthleteSeedRoot || { x: 0.5, y: 0.5 };
+  let currentVelocity = { vx: 0, vy: 0, vz: 0 };
 
   for (const sample of rawSamples) {
     if (sample.rawLandmarks && sample.root) {
-      // Retain detection if it matches primary athlete or if overall detection count is sparse
-      const isForeground = sample.spanY >= athleteSpanThreshold || validDetections.length <= 3;
-      if (isForeground) {
+      // Calculate distance to currently tracked trajectory anchor
+      const distFromTrack = Math.hypot(sample.root.x - lastTrackedRoot.x, sample.root.y - lastTrackedRoot.y);
+      
+      // Candidate is accepted if within trajectory corridor (< 0.40 normalized distance) and meets standing span
+      const isTrajectoryMatch = distFromTrack < 0.40 || athleteKeyframes.length < 2;
+      const isSizeMatch = sample.spanY >= primaryAthleteSpan * 0.35;
+
+      if (isTrajectoryMatch && isSizeMatch) {
+        // Update velocity tracking
+        if (athleteKeyframes.length > 0) {
+          const lastKey = athleteKeyframes[athleteKeyframes.length - 1];
+          const dt = Math.max(0.016, sample.timestampSec - lastKey.timestampSec);
+          currentVelocity = {
+            vx: (sample.root.x - lastKey.root.x) / dt,
+            vy: (sample.root.y - lastKey.root.y) / dt,
+            vz: ((sample.rawLandmarks[23]?.z || 0) - (lastKey.landmarks[23]?.z || 0)) / dt,
+          };
+        }
+
+        lastTrackedRoot = sample.root;
+        primaryAthleteSpan = Math.max(primaryAthleteSpan, sample.spanY);
+
         athleteKeyframes.push({
           index: sample.index,
           timestampSec: sample.timestampSec,
           landmarks: sample.rawLandmarks,
-          root: sample.root,
+          root: { ...sample.root, z: sample.rawLandmarks[23]?.z || 0 },
+          spanY: sample.spanY,
         });
       }
     }
   }
 
-  console.log(`[NativeBiometrics] Athlete Trajectory Solver: ${athleteKeyframes.length} / ${rawSamples.length} frames matched foreground athlete (Max Span: ${(maxSpanY * 100).toFixed(0)}%)`);
+  console.log(`[NativeBiometrics] Primary Athlete Trajectory: ${athleteKeyframes.length} / ${rawSamples.length} frames locked to active athlete`);
 
-  // Phase 3: Construct resolved frames with trajectory interpolation and biomechanical auditing
+  // Phase 3: Construct resolved frames with 3D Momentum Extrapolation and Biomechanical Auditing
   for (let i = 0; i < totalFrames; i++) {
     const sample = rawSamples[i];
     const timestampSec = sample.timestampSec;
@@ -270,34 +308,49 @@ export async function analyzeNativeVideoBiometrics({
         isReal = true;
         realDetectionCount++;
       } else {
-        // Interpolate between surrounding athlete keyframes
+        // Interpolate or Momentum-Extrapolate between athlete trajectory keyframes
         const prevKey = [...athleteKeyframes].reverse().find(k => k.index < i);
         const nextKey = athleteKeyframes.find(k => k.index > i);
 
         if (prevKey && nextKey) {
+          // Smooth Hermite / Catmull-Rom trajectory bridge across motion blur gap
           const tAlpha = (timestampSec - prevKey.timestampSec) / Math.max(0.001, nextKey.timestampSec - prevKey.timestampSec);
           const alpha = Math.max(0, Math.min(1, tAlpha));
+          const t2 = alpha * alpha;
+          const t3 = t2 * alpha;
+          const blend = 3 * t2 - 2 * t3; // Smooth cubic S-curve
+
           landmarks = prevKey.landmarks.map((lm1, lmIdx) => {
             const lm2 = nextKey.landmarks[lmIdx] || lm1;
             return {
-              x: lm1.x + (lm2.x - lm1.x) * alpha,
-              y: lm1.y + (lm2.y - lm1.y) * alpha,
-              z: (lm1.z || 0) + ((lm2.z || 0) - (lm1.z || 0)) * alpha,
+              x: lm1.x + (lm2.x - lm1.x) * blend,
+              y: lm1.y + (lm2.y - lm1.y) * blend,
+              z: (lm1.z || 0) + ((lm2.z || 0) - (lm1.z || 0)) * blend,
               visibility: Math.min(lm1.visibility || 1, lm2.visibility || 1),
             };
           });
           isReal = false;
         } else if (prevKey) {
-          // Hold and settle the athlete's real posture in place anchored to their root coordinates
+          // Momentum velocity forward projection (Prevents freezing on couch when athlete runs forward)
+          const dt = timestampSec - prevKey.timestampSec;
+          // Apply velocity damping over time (taper off forward translation up to 0.8s)
+          const decay = Math.max(0, 1 - (dt / 0.8));
+          const dx = currentVelocity.vx * dt * decay * 0.65;
+          const dy = currentVelocity.vy * dt * decay * 0.65;
+          const dz = currentVelocity.vz * dt * decay * 0.65;
+
           landmarks = prevKey.landmarks.map(lm => ({
             ...lm,
-            visibility: Math.max(0.4, (lm.visibility ?? 1) * 0.95),
+            x: Math.max(0.05, Math.min(0.95, lm.x + dx)),
+            y: Math.max(0.05, Math.min(0.95, lm.y + dy)),
+            z: (lm.z || 0) + dz,
+            visibility: Math.max(0.45, (lm.visibility ?? 1) * 0.92),
           }));
           isReal = false;
         } else if (nextKey) {
           landmarks = nextKey.landmarks.map(lm => ({
             ...lm,
-            visibility: Math.max(0.4, (lm.visibility ?? 1) * 0.95),
+            visibility: Math.max(0.45, (lm.visibility ?? 1) * 0.92),
           }));
           isReal = false;
         }

@@ -83,14 +83,16 @@ export const useVideoPlayback = ({
       const posSec = status.positionMillis / 1000;
       onTimeUpdate(posSec);
       
-      if (status.durationMillis && status.durationMillis > 500) {
+      if (status.durationMillis && status.durationMillis > 100) {
         const durSec = status.durationMillis / 1000;
-        setDuration(durSec);
-        onDurationChange?.(durSec);
+        if (Math.abs(durSec - duration) > 0.05) {
+          setDuration(durSec);
+          onDurationChange?.(durSec);
+        }
       }
 
-      // Handle video completion cleanly so playback stops at the end and never loops infinitely
-      if (status.didJustFinish || (status.durationMillis && status.positionMillis >= status.durationMillis - 45)) {
+      // Handle video completion cleanly only when it actually finishes or reaches the very last milliseconds
+      if (status.didJustFinish || (status.durationMillis && status.positionMillis >= status.durationMillis - 10)) {
         if (onPause) onPause();
       }
     }

@@ -280,8 +280,8 @@ export const KineticVideoPlayer: React.FC<KineticVideoPlayerProps> = ({
   }, [isPlaying, onPause, onTogglePlay, currentTime, duration, fallbackDuration, handleSeekToTime]);
 
   const movementKeyframes = useMemo(() => {
-    return detectMovementKeyframes(sortedFrames, sportRule, duration || fallbackDuration);
-  }, [sortedFrames, sportRule, duration, fallbackDuration]);
+    return detectMovementKeyframes(sortedFrames, sportRule, duration || fallbackDuration, techniqueId);
+  }, [sortedFrames, sportRule, duration, fallbackDuration, techniqueId]);
 
   const [isMirrored, setIsMirrored] = useState(false);
   const [layout, setLayout] = useState({ width: 360, height: 480 });
@@ -698,114 +698,56 @@ export const KineticVideoPlayer: React.FC<KineticVideoPlayerProps> = ({
             );
           })()}
 
-          {/* 3. Left Limbs */}
-          {[
-            [11, 13], [13, 15],
-            [23, 25], [25, 27], [27, 31], [27, 29],
-            [11, 23],
-          ].map(([i1, i2], idx) => {
-            const lm1 = landmarks[i1];
-            const lm2 = landmarks[i2];
-            if (!lm1 || !lm2) return null;
-            if ((lm1.visibility ?? 1) < 0.35 || (lm2.visibility ?? 1) < 0.35) return null;
-            if ((lm1.x <= 0.02 && lm1.y <= 0.02) || (lm2.x <= 0.02 && lm2.y <= 0.02)) return null;
+          {/* 3. 3D Depth-Sorted Bone Segments (Lead, Trail, and Torso) */}
+          {(() => {
+            const allBonePairs = [
+              [11, 13], [13, 15], // Left Arm
+              [12, 14], [14, 16], // Right Arm
+              [23, 25], [25, 27], [27, 31], [27, 29], // Left Leg & Foot
+              [24, 26], [26, 28], [28, 32], [28, 30], // Right Leg & Foot
+              [11, 23], [12, 24], // Spine/Sides
+              [11, 12], [23, 24]  // Clavicle & Pelvis Bridges
+            ];
 
-            // Reject anatomically impossible stretched limbs (spiderweb lines across screen)
-            const distNorm = Math.hypot(lm1.x - lm2.x, lm1.y - lm2.y);
-            if (distNorm > 0.45) return null;
-
-            const p1 = getScreenCoords(lm1);
-            const p2 = getScreenCoords(lm2);
-            if (!p1.visible || !p2.visible) return null;
+            const sortedBones = allBonePairs.map(([i1, i2]) => {
+              const lm1 = landmarks[i1];
+              const lm2 = landmarks[i2];
+              const avgZ = ((lm1?.z || 0) + (lm2?.z || 0)) / 2;
+              return { i1, i2, lm1, lm2, avgZ };
+            }).sort((a, b) => b.avgZ - a.avgZ); // Deepest background limbs drawn first
 
             const activePhase = currentFrame?.detectedPhase || activeTechnique?.phases?.[0] || sportRule.phases?.[0];
-            const { color, strokeWidth } = getSegmentColor(i1, i2, landmarks, sportRule, activePhase, activeTechniqueRules);
 
-            return (
-              <Line
-                key={`left-limb-${idx}`}
-                x1={p1.x}
-                y1={p1.y}
-                x2={p2.x}
-                y2={p2.y}
-                stroke={color}
-                strokeWidth={strokeWidth}
-                strokeLinecap="round"
-              />
-            );
-          })}
+            return sortedBones.map(({ i1, i2, lm1, lm2, avgZ }, idx) => {
+              if (!lm1 || !lm2) return null;
+              if ((lm1.visibility ?? 1) < 0.35 || (lm2.visibility ?? 1) < 0.35) return null;
+              if ((lm1.x <= 0.02 && lm1.y <= 0.02) || (lm2.x <= 0.02 && lm2.y <= 0.02)) return null;
 
-          {/* 4. Right Limbs */}
-          {[
-            [12, 14], [14, 16],
-            [24, 26], [26, 28], [28, 32], [28, 30],
-            [12, 24],
-          ].map(([i1, i2], idx) => {
-            const lm1 = landmarks[i1];
-            const lm2 = landmarks[i2];
-            if (!lm1 || !lm2) return null;
-            if ((lm1.visibility ?? 1) < 0.35 || (lm2.visibility ?? 1) < 0.35) return null;
-            if ((lm1.x <= 0.02 && lm1.y <= 0.02) || (lm2.x <= 0.02 && lm2.y <= 0.02)) return null;
+              // Reject anatomically impossible stretched limbs (spiderweb lines across screen)
+              const distNorm = Math.hypot(lm1.x - lm2.x, lm1.y - lm2.y);
+              if (distNorm > 0.38) return null;
 
-            // Reject anatomically impossible stretched limbs (spiderweb lines across screen)
-            const distNorm = Math.hypot(lm1.x - lm2.x, lm1.y - lm2.y);
-            if (distNorm > 0.45) return null;
+              const p1 = getScreenCoords(lm1);
+              const p2 = getScreenCoords(lm2);
+              if (!p1.visible || !p2.visible) return null;
 
-            const p1 = getScreenCoords(lm1);
-            const p2 = getScreenCoords(lm2);
-            if (!p1.visible || !p2.visible) return null;
+              const { color, strokeWidth } = getSegmentColor(i1, i2, landmarks, sportRule, activePhase, activeTechniqueRules);
+              const depthOpacity = avgZ > 0.15 ? 0.72 : 1.0;
 
-            const activePhase = currentFrame?.detectedPhase || activeTechnique?.phases?.[0] || sportRule.phases?.[0];
-            const { color, strokeWidth } = getSegmentColor(i1, i2, landmarks, sportRule, activePhase, activeTechniqueRules);
-
-            return (
-              <Line
-                key={`right-limb-${idx}`}
-                x1={p1.x}
-                y1={p1.y}
-                x2={p2.x}
-                y2={p2.y}
-                stroke={color}
-                strokeWidth={strokeWidth}
-                strokeLinecap="round"
-              />
-            );
-          })}
-
-          {/* 5. Center Shoulders & Hips Connections */}
-          {landmarks[11] && landmarks[12] && (() => {
-            const p1 = getScreenCoords(landmarks[11]);
-            const p2 = getScreenCoords(landmarks[12]);
-            if (!p1.visible || !p2.visible) return null;
-            const activePhase = currentFrame?.detectedPhase || activeTechnique?.phases?.[0] || sportRule.phases?.[0];
-            const { color, strokeWidth } = getSegmentColor(11, 12, landmarks, sportRule, activePhase, activeTechniqueRules);
-            return (
-              <Line
-                x1={p1.x}
-                y1={p1.y}
-                x2={p2.x}
-                y2={p2.y}
-                stroke={color}
-                strokeWidth={strokeWidth}
-              />
-            );
-          })()}
-          {landmarks[23] && landmarks[24] && (() => {
-            const p1 = getScreenCoords(landmarks[23]);
-            const p2 = getScreenCoords(landmarks[24]);
-            if (!p1.visible || !p2.visible) return null;
-            const activePhase = currentFrame?.detectedPhase || activeTechnique?.phases?.[0] || sportRule.phases?.[0];
-            const { color, strokeWidth } = getSegmentColor(23, 24, landmarks, sportRule, activePhase, activeTechniqueRules);
-            return (
-              <Line
-                x1={p1.x}
-                y1={p1.y}
-                x2={p2.x}
-                y2={p2.y}
-                stroke={color}
-                strokeWidth={strokeWidth}
-              />
-            );
+              return (
+                <Line
+                  key={`bone-3d-${i1}-${i2}-${idx}`}
+                  x1={p1.x}
+                  y1={p1.y}
+                  x2={p2.x}
+                  y2={p2.y}
+                  stroke={color}
+                  strokeWidth={avgZ > 0.15 ? Math.max(1.2, strokeWidth - 0.5) : strokeWidth}
+                  strokeLinecap="round"
+                  opacity={depthOpacity}
+                />
+              );
+            });
           })()}
 
           {/* 6. Joint Pivot Circles */}
@@ -1192,114 +1134,56 @@ export const KineticVideoPlayer: React.FC<KineticVideoPlayerProps> = ({
                 );
               })()}
 
-              {/* Left Limbs */}
-              {[
-                [11, 13], [13, 15],
-                [23, 25], [25, 27], [27, 31], [27, 29],
-                [11, 23],
-              ].map(([i1, i2], idx) => {
-                const lm1 = landmarks[i1];
-                const lm2 = landmarks[i2];
-                if (!lm1 || !lm2) return null;
-                if ((lm1.visibility ?? 1) < 0.35 || (lm2.visibility ?? 1) < 0.35) return null;
-                if ((lm1.x <= 0.02 && lm1.y <= 0.02) || (lm2.x <= 0.02 && lm2.y <= 0.02)) return null;
+              {/* 3. 3D Depth-Sorted Bone Segments (Lead, Trail, and Torso) */}
+              {(() => {
+                const allBonePairs = [
+                  [11, 13], [13, 15], // Left Arm
+                  [12, 14], [14, 16], // Right Arm
+                  [23, 25], [25, 27], [27, 31], [27, 29], // Left Leg & Foot
+                  [24, 26], [26, 28], [28, 32], [28, 30], // Right Leg & Foot
+                  [11, 23], [12, 24], // Spine/Sides
+                  [11, 12], [23, 24]  // Clavicle & Pelvis Bridges
+                ];
 
-                // Reject anatomically impossible stretched limbs (spiderweb lines across screen)
-                const distNorm = Math.hypot(lm1.x - lm2.x, lm1.y - lm2.y);
-                if (distNorm > 0.45) return null;
-
-                const p1 = getScreenCoords(lm1);
-                const p2 = getScreenCoords(lm2);
-                if (!p1.visible || !p2.visible) return null;
+                const sortedBones = allBonePairs.map(([i1, i2]) => {
+                  const lm1 = landmarks[i1];
+                  const lm2 = landmarks[i2];
+                  const avgZ = ((lm1?.z || 0) + (lm2?.z || 0)) / 2;
+                  return { i1, i2, lm1, lm2, avgZ };
+                }).sort((a, b) => b.avgZ - a.avgZ); // Deepest background limbs drawn first
 
                 const activePhase = currentFrame?.detectedPhase || sportRule.phases?.[0];
-                const { color, strokeWidth } = getSegmentColor(i1, i2, landmarks, sportRule, activePhase);
 
-                return (
-                  <Line
-                    key={`fs-left-${idx}`}
-                    x1={p1.x}
-                    y1={p1.y}
-                    x2={p2.x}
-                    y2={p2.y}
-                    stroke={color}
-                    strokeWidth={strokeWidth}
-                    strokeLinecap="round"
-                  />
-                );
-              })}
+                return sortedBones.map(({ i1, i2, lm1, lm2, avgZ }, idx) => {
+                  if (!lm1 || !lm2) return null;
+                  if ((lm1.visibility ?? 1) < 0.35 || (lm2.visibility ?? 1) < 0.35) return null;
+                  if ((lm1.x <= 0.02 && lm1.y <= 0.02) || (lm2.x <= 0.02 && lm2.y <= 0.02)) return null;
 
-              {/* Right Limbs */}
-              {[
-                [12, 14], [14, 16],
-                [24, 26], [26, 28], [28, 32], [28, 30],
-                [12, 24],
-              ].map(([i1, i2], idx) => {
-                const lm1 = landmarks[i1];
-                const lm2 = landmarks[i2];
-                if (!lm1 || !lm2) return null;
-                if ((lm1.visibility ?? 1) < 0.35 || (lm2.visibility ?? 1) < 0.35) return null;
-                if ((lm1.x <= 0.02 && lm1.y <= 0.02) || (lm2.x <= 0.02 && lm2.y <= 0.02)) return null;
+                  // Reject anatomically impossible stretched limbs (spiderweb lines across screen)
+                  const distNorm = Math.hypot(lm1.x - lm2.x, lm1.y - lm2.y);
+                  if (distNorm > 0.38) return null;
 
-                // Reject anatomically impossible stretched limbs (spiderweb lines across screen)
-                const distNorm = Math.hypot(lm1.x - lm2.x, lm1.y - lm2.y);
-                if (distNorm > 0.45) return null;
+                  const p1 = getScreenCoords(lm1);
+                  const p2 = getScreenCoords(lm2);
+                  if (!p1.visible || !p2.visible) return null;
 
-                const p1 = getScreenCoords(lm1);
-                const p2 = getScreenCoords(lm2);
-                if (!p1.visible || !p2.visible) return null;
+                  const { color, strokeWidth } = getSegmentColor(i1, i2, landmarks, sportRule, activePhase);
+                  const depthOpacity = avgZ > 0.15 ? 0.72 : 1.0;
 
-                const activePhase = currentFrame?.detectedPhase || sportRule.phases?.[0];
-                const { color, strokeWidth } = getSegmentColor(i1, i2, landmarks, sportRule, activePhase);
-
-                return (
-                  <Line
-                    key={`fs-right-${idx}`}
-                    x1={p1.x}
-                    y1={p1.y}
-                    x2={p2.x}
-                    y2={p2.y}
-                    stroke={color}
-                    strokeWidth={strokeWidth}
-                    strokeLinecap="round"
-                  />
-                );
-              })}
-
-              {/* Center Connectors */}
-              {landmarks[11] && landmarks[12] && (() => {
-                const p1 = getScreenCoords(landmarks[11]);
-                const p2 = getScreenCoords(landmarks[12]);
-                if (!p1.visible || !p2.visible) return null;
-                const activePhase = currentFrame?.detectedPhase || sportRule.phases?.[0];
-                const { color, strokeWidth } = getSegmentColor(11, 12, landmarks, sportRule, activePhase);
-                return (
-                  <Line
-                    x1={p1.x}
-                    y1={p1.y}
-                    x2={p2.x}
-                    y2={p2.y}
-                    stroke={color}
-                    strokeWidth={strokeWidth}
-                  />
-                );
-              })()}
-              {landmarks[23] && landmarks[24] && (() => {
-                const p1 = getScreenCoords(landmarks[23]);
-                const p2 = getScreenCoords(landmarks[24]);
-                if (!p1.visible || !p2.visible) return null;
-                const activePhase = currentFrame?.detectedPhase || sportRule.phases?.[0];
-                const { color, strokeWidth } = getSegmentColor(23, 24, landmarks, sportRule, activePhase);
-                return (
-                  <Line
-                    x1={p1.x}
-                    y1={p1.y}
-                    x2={p2.x}
-                    y2={p2.y}
-                    stroke={color}
-                    strokeWidth={strokeWidth}
-                  />
-                );
+                  return (
+                    <Line
+                      key={`fs-bone-3d-${i1}-${i2}-${idx}`}
+                      x1={p1.x}
+                      y1={p1.y}
+                      x2={p2.x}
+                      y2={p2.y}
+                      stroke={color}
+                      strokeWidth={avgZ > 0.15 ? Math.max(1.2, strokeWidth - 0.5) : strokeWidth}
+                      strokeLinecap="round"
+                      opacity={depthOpacity}
+                    />
+                  );
+                });
               })()}
 
               {/* Joint Circles */}
@@ -1447,6 +1331,28 @@ export const KineticVideoPlayer: React.FC<KineticVideoPlayerProps> = ({
                 handleSeek(ratio, true, currentTime);
               }}
             >
+              {/* Keyframe Markers on Fullscreen Timeline */}
+              {movementKeyframes?.map((kf) => {
+                const tickLeft = Math.max(0, Math.min(100, (kf.timestamp / (duration || 1)) * 100));
+                return (
+                  <View
+                    key={`fs-tick-${kf.id}`}
+                    pointerEvents="none"
+                    style={{
+                      position: 'absolute',
+                      left: `${tickLeft}%`,
+                      top: -2,
+                      marginLeft: -2,
+                      width: 4,
+                      height: 12,
+                      borderRadius: 2,
+                      backgroundColor: kf.status === 'error' ? '#ef4444' : kf.status === 'warning' ? '#eab308' : '#38bdf8',
+                      zIndex: 2,
+                    }}
+                  />
+                );
+              })}
+
               <View
                 pointerEvents="none"
                 style={[
@@ -1518,6 +1424,64 @@ export const KineticVideoPlayer: React.FC<KineticVideoPlayerProps> = ({
                 ))}
               </View>
             </View>
+
+            {/* Fullscreen Movement-Specific Keyframes Strip */}
+            {movementKeyframes && movementKeyframes.length > 0 && (
+              <View style={{ marginTop: 8 }}>
+                <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 6 }}>
+                  {movementKeyframes.map((kf) => {
+                    const isActive = Math.abs(currentTime - kf.timestamp) < 0.2;
+                    return (
+                      <TouchableOpacity
+                        key={`fs-chip-${kf.id}`}
+                        onPress={() => handleSeekToTime(kf.timestamp)}
+                        style={[
+                          styles.keyframeChip,
+                          isActive ? styles.keyframeChipActive : styles.keyframeChipInactive,
+                        ]}
+                        activeOpacity={0.7}
+                      >
+                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+                          <View
+                            style={{
+                              width: 4,
+                              height: 4,
+                              borderRadius: 2,
+                              backgroundColor: isActive
+                                ? '#000000'
+                                : kf.status === 'error'
+                                ? '#ef4444'
+                                : kf.status === 'warning'
+                                ? '#eab308'
+                                : '#22c55e',
+                            }}
+                          />
+                          <Text
+                            style={[
+                              styles.keyframeChipText,
+                              { color: isActive ? '#000000' : '#ffffff' },
+                            ]}
+                            numberOfLines={1}
+                          >
+                            {kf.name}
+                          </Text>
+                          <Text
+                            style={{
+                              color: isActive ? '#1c1917' : '#eab308',
+                              fontSize: 8.5,
+                              fontWeight: '800',
+                              fontFamily: 'monospace',
+                            }}
+                          >
+                            {kf.timestamp.toFixed(2)}s
+                          </Text>
+                        </View>
+                      </TouchableOpacity>
+                    );
+                  })}
+                </ScrollView>
+              </View>
+            )}
           </View>
         </View>
       </Modal>

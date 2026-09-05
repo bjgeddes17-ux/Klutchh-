@@ -140,7 +140,7 @@ export function interpolatePoseAtTime(
       const t2 = alpha * alpha;
       const t3 = t2 * alpha;
 
-      const interpAxis = (p0: number, p1: number, p2: number, p3: number) => {
+      const interpAxis = (p0: number, p1: number, p2: number, p3: number, isZAxis: boolean = false) => {
         const rawSpline =
           0.5 *
           (2 * p1 +
@@ -153,14 +153,20 @@ export function interpolatePoseAtTime(
         const margin = Math.max(0.015, step * 0.25);
         const lowerBound = Math.min(p1, p2) - margin;
         const upperBound = Math.max(p1, p2) + margin;
+        const clampedToStep = Math.max(lowerBound, Math.min(upperBound, rawSpline));
 
-        return Math.max(0, Math.min(1, Math.max(lowerBound, Math.min(upperBound, rawSpline))));
+        if (isZAxis) {
+          // Relative depth z spans [-1.5, 1.5] relative to hip depth
+          return Math.max(-1.5, Math.min(1.5, clampedToStep));
+        }
+
+        return Math.max(0, Math.min(1, clampedToStep));
       };
 
       return {
-        x: interpAxis(lm0.x, lm1.x, lm2.x, lm3.x),
-        y: interpAxis(lm0.y, lm1.y, lm2.y, lm3.y),
-        z: interpAxis(lm0.z || 0, lm1.z || 0, lm2.z || 0, lm3.z || 0),
+        x: interpAxis(lm0.x, lm1.x, lm2.x, lm3.x, false),
+        y: interpAxis(lm0.y, lm1.y, lm2.y, lm3.y, false),
+        z: interpAxis(lm0.z || 0, lm1.z || 0, lm2.z || 0, lm3.z || 0, true),
         visibility: (lm1.visibility ?? 1) * (1 - alpha) + (lm2.visibility ?? 1) * alpha,
       };
     }
