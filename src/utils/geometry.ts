@@ -9,6 +9,7 @@ export function calculateAngle3D(
   p2: MediaPipeLandmark,
   p3: MediaPipeLandmark
 ): number {
+  'worklet';
   if (!p1 || !p2 || !p3) return 0;
 
   const v1x = p1.x - p2.x;
@@ -42,6 +43,7 @@ export function calculateAngle(
   p2: MediaPipeLandmark,
   p3: MediaPipeLandmark
 ): number {
+  'worklet';
   return calculateAngle3D(p1, p2, p3);
 }
 

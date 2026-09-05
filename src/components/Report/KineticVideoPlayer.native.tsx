@@ -12,6 +12,7 @@ import {
   ActivityIndicator,
   ScrollView,
 } from 'react-native';
+import Animated, { useSharedValue, useAnimatedReaction, runOnJS } from 'react-native-reanimated';
 import { Video, ResizeMode, AVPlaybackStatus } from 'expo-av';
 import Svg, {
   Line,
@@ -323,6 +324,12 @@ export const KineticVideoPlayer: React.FC<KineticVideoPlayerProps> = ({
       setFullscreenLayout({ width, height });
     }
   };
+
+  // UI-Thread Reanimated Shared Value for Zero-Bridge Latency Pose Synchronization
+  const currentTimeSV = useSharedValue(currentTime);
+  useEffect(() => {
+    currentTimeSV.value = currentTime;
+  }, [currentTime]);
 
   // Continuous High-Precision Pose Interpolation Engine (< 1ms drift)
   const { currentFrame, interpolatedLandmarks, isPastData, driftMs } = useMemo(() => {
