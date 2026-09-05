@@ -43,18 +43,35 @@ export const useVideoPlayback = ({
 
   // Imperative Play/Pause Enforcement to guarantee controls stop/start the video instantly
   useEffect(() => {
-    if (isPlaying) {
-      if (isFullscreenModal) {
-        fullscreenVideoRef.current?.playAsync().catch(() => {});
-        videoRef.current?.pauseAsync().catch(() => {});
-      } else {
-        videoRef.current?.playAsync().catch(() => {});
-        fullscreenVideoRef.current?.pauseAsync().catch(() => {});
+    const playTarget = async () => {
+      try {
+        const ref = isFullscreenModal ? fullscreenVideoRef.current : videoRef.current;
+        const otherRef = isFullscreenModal ? videoRef.current : fullscreenVideoRef.current;
+
+        if (otherRef) {
+          await otherRef.pauseAsync().catch(() => {});
+        }
+
+        if (!ref) return;
+
+        if (isPlaying) {
+          const status = await ref.getStatusAsync().catch(() => null);
+          if (status && status.isLoaded) {
+            // If near the end of video, reset to beginning before playing
+            if (status.positionMillis >= (status.durationMillis || 3500) - 100) {
+              await ref.setPositionAsync(0).catch(() => {});
+            }
+          }
+          await ref.playAsync().catch(() => {});
+        } else {
+          await ref.pauseAsync().catch(() => {});
+        }
+      } catch (e) {
+        // Safe catch for hardware unmounts
       }
-    } else {
-      videoRef.current?.pauseAsync().catch(() => {});
-      fullscreenVideoRef.current?.pauseAsync().catch(() => {});
-    }
+    };
+
+    playTarget();
   }, [isPlaying, isFullscreenModal]);
 
   const handlePlaybackStatusUpdate = useCallback((status: AVPlaybackStatus, fromFullscreen: boolean) => {

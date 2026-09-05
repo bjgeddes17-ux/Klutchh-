@@ -77,14 +77,18 @@ export const DrillsTabNative: React.FC<DrillsTabNativeProps> = ({
 
   const categories = ['ALL', 'MOBILITY', 'KINETIC CHAIN', 'STRENGTH & POWER', 'STABILITY', 'INJURY PREVENTION'];
 
-  const filteredDrills = drills.filter((d) => {
+  const safeDrills = Array.isArray(drills) ? drills : [];
+  const safeStatuses = drillStatuses || {};
+
+  const filteredDrills = safeDrills.filter((d) => {
+    if (!d) return false;
     if (selectedCategory === 'ALL') return true;
-    return d.category?.toUpperCase() === selectedCategory;
+    return (d.category || '').toUpperCase() === selectedCategory;
   });
 
-  const completedCount = Object.values(drillStatuses).filter((s) => s === 'completed').length;
-  const masteredCount = Object.values(drillStatuses).filter((s) => s === 'mastered').length;
-  const totalDrills = drills.length || 3;
+  const completedCount = Object.values(safeStatuses).filter((s) => s === 'completed').length;
+  const masteredCount = Object.values(safeStatuses).filter((s) => s === 'mastered').length;
+  const totalDrills = safeDrills.length || 3;
   const totalXp = masteredCount * 250 + completedCount * 100 + 150;
 
   // Donut Ring SVG Math
@@ -220,11 +224,17 @@ export const DrillsTabNative: React.FC<DrillsTabNativeProps> = ({
 
       {/* Drill Cards */}
       {filteredDrills.map((drill, idx) => {
-        const origIdx = drills.findIndex((d) => d.id === drill.id) >= 0 ? drills.findIndex((d) => d.id === drill.id) : idx;
+        const origIdx = safeDrills.findIndex((d) => d && d.id === drill.id) >= 0 ? safeDrills.findIndex((d) => d && d.id === drill.id) : idx;
         const isExpanded = expandedDrillIdx === origIdx;
-        const status = drillStatuses[origIdx] || 'pending';
+        const status = safeStatuses[origIdx] || 'pending';
         const currentReps = repCounts[origIdx] || 10;
         const setsStatus = completedSets[origIdx] || [false, false, false];
+
+        const catText = (drill.category || 'Corrective').toUpperCase();
+        const diffText = (drill.difficulty || 'All Levels').toUpperCase();
+        const titleText = drill.title || 'Corrective Drill';
+        const targetText = drill.targetJoint || 'Kinetic Chain';
+        const repsText = drill.reps || '3 sets x 10 reps';
 
         return (
           <View key={drill.id || idx} style={styles.drillCardBig}>
@@ -237,10 +247,10 @@ export const DrillsTabNative: React.FC<DrillsTabNativeProps> = ({
                   <View style={styles.badgeGroup}>
                     <View style={styles.categoryTag}>
                       <Flame color="#ef4444" size={11} />
-                      <Text style={styles.categoryTagText}>{drill.category.toUpperCase()}</Text>
+                      <Text style={styles.categoryTagText}>{catText}</Text>
                     </View>
                     <View style={styles.difficultyTag}>
-                      <Text style={styles.difficultyTagText}>{drill.difficulty.toUpperCase()}</Text>
+                      <Text style={styles.difficultyTagText}>{diffText}</Text>
                     </View>
                   </View>
 
@@ -274,9 +284,9 @@ export const DrillsTabNative: React.FC<DrillsTabNativeProps> = ({
 
                 {/* Cover Title Overlay */}
                 <View style={styles.photoTitleContainer}>
-                  <Text style={styles.coverTitle}>{drill.title}</Text>
+                  <Text style={styles.coverTitle}>{titleText}</Text>
                   <Text style={styles.coverTargetText}>
-                    🎯 Target: <Text style={{ color: '#fff', fontWeight: 'bold' }}>{drill.targetJoint}</Text> • {drill.reps}
+                    🎯 Target: <Text style={{ color: '#fff', fontWeight: 'bold' }}>{targetText}</Text> • {repsText}
                   </Text>
                 </View>
               </View>
@@ -287,15 +297,15 @@ export const DrillsTabNative: React.FC<DrillsTabNativeProps> = ({
                   <View style={styles.badgeGroup}>
                     <View style={styles.categoryTag}>
                       <Flame color="#ef4444" size={11} />
-                      <Text style={styles.categoryTagText}>{drill.category.toUpperCase()}</Text>
+                      <Text style={styles.categoryTagText}>{catText}</Text>
                     </View>
                     <View style={styles.difficultyTag}>
-                      <Text style={styles.difficultyTagText}>{drill.difficulty.toUpperCase()}</Text>
+                      <Text style={styles.difficultyTagText}>{diffText}</Text>
                     </View>
                   </View>
-                  <Text style={styles.drillTitleBig}>{drill.title}</Text>
+                  <Text style={styles.drillTitleBig}>{titleText}</Text>
                   <Text style={styles.drillTargetText}>
-                    🎯 Target: {drill.targetJoint} • {drill.reps}
+                    🎯 Target: {targetText} • {repsText}
                   </Text>
                 </View>
 
@@ -482,7 +492,7 @@ export const DrillsTabNative: React.FC<DrillsTabNativeProps> = ({
                 </TouchableOpacity>
                 <View style={{ alignItems: 'center' }}>
                   <Text style={styles.modalNavTitle}>ACTIVE PRACTICE SESSION</Text>
-                  <Text style={styles.modalNavSubtitle}>{practiceModalDrill.category.toUpperCase()}</Text>
+                  <Text style={styles.modalNavSubtitle}>{(practiceModalDrill.category || 'General').toUpperCase()}</Text>
                 </View>
                 <View style={{ width: 36 }} />
               </View>

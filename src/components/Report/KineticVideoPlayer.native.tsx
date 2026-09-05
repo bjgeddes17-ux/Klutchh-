@@ -37,8 +37,9 @@ import {
 import { SportRule, FrameAnalysis, MediaPipeLandmark } from '../../types';
 import { calculateAngle, mapLandmarkToScreen, getVideoRenderRect } from '../../utils/geometry';
 import { detectMovementKeyframes } from '../../services/movementKeyframeEngine';
+import { interpolatePoseAtTime } from '../../utils/poseInterpolation';
 
-// Helper functions for dynamic Red (Error), Yellow (Warning), Blue (Optimal) Biomechanical Coloring
+// Dynamic Biomechanical Deviation Color Scale (Green -> Blue -> Purple -> Red)
 function getSegmentColor(
   kp1: number,
   kp2: number,
@@ -46,11 +47,11 @@ function getSegmentColor(
   sportRule: SportRule
 ): { color: string; strokeWidth: number } {
   if (!landmarks || landmarks.length < 29 || !sportRule?.jointRules) {
-    return { color: '#00f0ff', strokeWidth: 1.8 };
+    return { color: '#3b82f6', strokeWidth: 2.0 };
   }
 
-  let isError = false;
-  let isWarning = false;
+  let maxDelta = 0;
+  let hasMatchingRule = false;
 
   for (const rule of sportRule.jointRules) {
     if (!rule.keypoints || rule.keypoints.length !== 3) continue;
@@ -65,20 +66,24 @@ function getSegmentColor(
     const angle = calculateAngle(p1, p2, p3);
     if (angle === undefined || isNaN(angle)) continue;
 
-    if (angle < rule.idealMin || angle > rule.idealMax) {
-      const delta = angle < rule.idealMin ? rule.idealMin - angle : angle - rule.idealMax;
-      if (delta > 8) {
-        isError = true;
-        break;
-      } else {
-        isWarning = true;
-      }
+    hasMatchingRule = true;
+    if (angle < rule.idealMin) {
+      const delta = rule.idealMin - angle;
+      if (delta > maxDelta) maxDelta = delta;
+    } else if (angle > rule.idealMax) {
+      const delta = angle - rule.idealMax;
+      if (delta > maxDelta) maxDelta = delta;
     }
   }
 
-  if (isError) return { color: '#ef4444', strokeWidth: 2.8 }; // Bright Red (Biomechanical Fault / Leak)
-  if (isWarning) return { color: '#f59e0b', strokeWidth: 2.2 }; // Amber Yellow (Near Threshold)
-  return { color: '#00f0ff', strokeWidth: 1.8 }; // Electric Blue / Cyan (Optimal Corridor)
+  if (!hasMatchingRule) {
+    return { color: '#3b82f6', strokeWidth: 2.0 }; // Default Structural Bone: Electric Blue
+  }
+
+  if (maxDelta <= 5) return { color: '#10b981', strokeWidth: 2.2 }; // Optimal Corridor: Emerald Green
+  if (maxDelta <= 14) return { color: '#3b82f6', strokeWidth: 2.2 }; // Slight Variance: Electric Blue
+  if (maxDelta <= 25) return { color: '#a855f7', strokeWidth: 2.5 }; // Moderate Variance: Neon Purple
+  return { color: '#ef4444', strokeWidth: 3.0 }; // Severe Mechanical Fault: Crimson Red
 }
 
 function getJointColor(
@@ -86,10 +91,10 @@ function getJointColor(
   landmarks: MediaPipeLandmark[] | null | undefined,
   sportRule: SportRule
 ): string {
-  if (!landmarks || landmarks.length < 29 || !sportRule?.jointRules) return '#00f0ff';
+  if (!landmarks || landmarks.length < 29 || !sportRule?.jointRules) return '#3b82f6';
 
-  let isError = false;
-  let isWarning = false;
+  let maxDelta = 0;
+  let hasMatchingRule = false;
 
   for (const rule of sportRule.jointRules) {
     if (!rule.keypoints || !rule.keypoints.includes(jointIdx)) continue;
@@ -102,20 +107,22 @@ function getJointColor(
     const angle = calculateAngle(p1, p2, p3);
     if (angle === undefined || isNaN(angle)) continue;
 
-    if (angle < rule.idealMin || angle > rule.idealMax) {
-      const delta = angle < rule.idealMin ? rule.idealMin - angle : angle - rule.idealMax;
-      if (delta > 8) {
-        isError = true;
-        break;
-      } else {
-        isWarning = true;
-      }
+    hasMatchingRule = true;
+    if (angle < rule.idealMin) {
+      const delta = rule.idealMin - angle;
+      if (delta > maxDelta) maxDelta = delta;
+    } else if (angle > rule.idealMax) {
+      const delta = angle - rule.idealMax;
+      if (delta > maxDelta) maxDelta = delta;
     }
   }
 
-  if (isError) return '#ef4444';
-  if (isWarning) return '#f59e0b';
-  return '#00f0ff';
+  if (!hasMatchingRule) return '#3b82f6'; // Neutral Joint Pivot
+
+  if (maxDelta <= 5) return '#10b981'; // Emerald Green (Optimal)
+  if (maxDelta <= 14) return '#3b82f6'; // Electric Blue (Good)
+  if (maxDelta <= 25) return '#a855f7'; // Neon Purple (Warning)
+  return '#ef4444'; // Crimson Red (Error)
 }
 
 interface KineticVideoPlayerProps {
@@ -232,73 +239,9 @@ export const KineticVideoPlayer: React.FC<KineticVideoPlayerProps> = ({
     }
   };
 
-  // Continuous Dynamic Pose Interpolation across the playback timeline
-  const { currentFrame, interpolatedLandmarks, isPastData } = useMemo(() => {
-    if (!sortedFrames || sortedFrames.length === 0) {
-      return { currentFrame: null, interpolatedLandmarks: null, isPastData: false };
-    }
-
-    const lastIdx = sortedFrames.length - 1;
-    const lastTimestamp = sortedFrames[lastIdx].timestamp;
-    const isPast = currentTime > lastTimestamp;
-
-    // Boundary cases: before first frame or after last frame
-    if (currentTime <= sortedFrames[0].timestamp) {
-      return { currentFrame: sortedFrames[0], interpolatedLandmarks: sortedFrames[0].landmarks, isPastData: false };
-    }
-    
-    if (isPast) {
-      return { 
-        currentFrame: sortedFrames[lastIdx], 
-        interpolatedLandmarks: sortedFrames[lastIdx].landmarks,
-        isPastData: true 
-      };
-    }
-
-    // Binary search for bounding frames: f1 (<= currentTime) and f2 (> currentTime)
-    let low = 0;
-    let high = lastIdx;
-    let idx = 0;
-    while (low <= high) {
-      const mid = (low + high) >> 1;
-      if (sortedFrames[mid].timestamp <= currentTime) {
-        idx = mid;
-        low = mid + 1;
-      } else {
-        high = mid - 1;
-      }
-    }
-
-    const f1 = sortedFrames[idx];
-    const f2 = sortedFrames[Math.min(lastIdx, idx + 1)];
-
-    if (!f2 || f1 === f2 || f2.timestamp <= f1.timestamp) {
-      return { currentFrame: f1, interpolatedLandmarks: f1.landmarks, isPastData: false };
-    }
-
-    // Smooth Linear Interpolation (Lerp) between adjacent sampled frames
-    const timeDelta = f2.timestamp - f1.timestamp;
-    const alpha = Math.max(0, Math.min(1, (currentTime - f1.timestamp) / timeDelta));
-
-    if (!f1.landmarks || !f2.landmarks) {
-      return { currentFrame: f1, interpolatedLandmarks: f1.landmarks || f2.landmarks, isPastData: false };
-    }
-
-    const lerped: MediaPipeLandmark[] = f1.landmarks.map((lm1, i) => {
-      const lm2 = f2.landmarks[i] || lm1;
-      return {
-        x: lm1.x + (lm2.x - lm1.x) * alpha,
-        y: lm1.y + (lm2.y - lm1.y) * alpha,
-        z: (lm1.z || 0) + ((lm2.z || 0) - (lm1.z || 0)) * alpha,
-        visibility: Math.min(lm1.visibility || 0, lm2.visibility || 0),
-      };
-    });
-
-    return { 
-      currentFrame: alpha > 0.5 ? f2 : f1, 
-      interpolatedLandmarks: lerped,
-      isPastData: false
-    };
+  // Continuous High-Precision Pose Interpolation Engine (< 1ms drift)
+  const { currentFrame, interpolatedLandmarks, isPastData, driftMs } = useMemo(() => {
+    return interpolatePoseAtTime(sortedFrames, currentTime);
   }, [sortedFrames, currentTime]);
 
   const handleReadyForDisplay = (event: any) => {
@@ -414,9 +357,17 @@ export const KineticVideoPlayer: React.FC<KineticVideoPlayerProps> = ({
     }
 
     const isFsMode = isFs !== undefined ? isFs : isFullscreenModal;
-    const stageW = isFsMode ? fullscreenViewport.width : layout.width;
-    const stageH = isFsMode ? fullscreenViewport.height : layout.height;
-    const stageRect = isFsMode ? { x: 0, y: 0, width: stageW, height: stageH } : (renderedRect || { x: 0, y: 0, width: stageW, height: stageH });
+    const stageW = isFsMode ? (fullscreenViewport.width || Dimensions.get('window').width) : (layout.width || 360);
+    const stageH = isFsMode ? (fullscreenViewport.height || Dimensions.get('window').height) : (layout.height || 480);
+
+    // Compute exact video render rectangle matching <Video resizeMode={ResizeMode.CONTAIN}>
+    const computedRect = getVideoRenderRect(
+      stageW,
+      stageH,
+      videoDimensions.width > 0 ? videoDimensions.width : 9,
+      videoDimensions.height > 0 ? videoDimensions.height : 16
+    );
+    const stageRect = (!isFsMode && renderedRect) ? renderedRect : computedRect;
 
     return mapLandmarkToScreen(
       targetLm,
@@ -572,7 +523,7 @@ export const KineticVideoPlayer: React.FC<KineticVideoPlayerProps> = ({
         resizeMode={ResizeMode.CONTAIN}
         shouldPlay={isPlaying && !isFullscreenModal}
         isLooping={true}
-        progressUpdateIntervalMillis={33}
+        progressUpdateIntervalMillis={16}
         onPlaybackStatusUpdate={isFullscreenModal ? undefined : (s) => handlePlaybackStatusUpdate(s, false)}
         onReadyForDisplay={handleReadyForDisplay}
         style={styles.video}
