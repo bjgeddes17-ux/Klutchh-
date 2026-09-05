@@ -321,8 +321,8 @@ export const KineticVideoPlayer: React.FC<KineticVideoPlayerProps> = ({
 
   // Continuous High-Precision Pose Interpolation Engine (< 1ms drift)
   const { currentFrame, interpolatedLandmarks, isPastData, driftMs } = useMemo(() => {
-    return interpolatePoseAtTime(sortedFrames, currentTime);
-  }, [sortedFrames, currentTime]);
+    return interpolatePoseAtTime(sortedFrames, currentTime, duration || fallbackDuration);
+  }, [sortedFrames, currentTime, duration, fallbackDuration]);
 
   // Online Temporal Smoothing Filter (One-Euro / EMA):
   // Eliminates high-frequency frame extraction jitter while preserving instant dynamic reaction on fast swings/kicks
@@ -643,41 +643,12 @@ export const KineticVideoPlayer: React.FC<KineticVideoPlayerProps> = ({
         isMuted={true}
         resizeMode={ResizeMode.CONTAIN}
         shouldPlay={isPlaying && !isFullscreenModal}
-        isLooping={true}
+        isLooping={false}
         progressUpdateIntervalMillis={16}
         onPlaybackStatusUpdate={isFullscreenModal ? undefined : (s) => handlePlaybackStatusUpdate(s, false)}
         onReadyForDisplay={handleReadyForDisplay}
         style={styles.video}
       />
-
-      <View 
-        pointerEvents="none"
-        style={{
-          position: 'absolute',
-          top: 12,
-          left: 12,
-          zIndex: 99,
-          backgroundColor: 'rgba(9, 9, 11, 0.85)',
-          padding: 8,
-          borderRadius: 10,
-          borderWidth: 1,
-          borderColor: 'rgba(255, 255, 255, 0.1)',
-          minWidth: 120,
-          opacity: isPastData ? 0.5 : 1,
-        }}
-      >
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 4 }}>
-          <View style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: isPastData ? '#71717a' : '#10b981' }} />
-          <Text style={{ color: isPastData ? '#71717a' : '#10b981', fontSize: 8, fontWeight: '900' }}>
-            {isPastData ? 'DATA ENDED' : 'SYNC: ACTIVE'}
-          </Text>
-        </View>
-        <Text style={{ color: '#a1a1aa', fontSize: 8 }}>TIME: <Text style={{ color: '#fff', fontWeight: 'bold' }}>{currentTime.toFixed(4)}s</Text></Text>
-        <Text style={{ color: '#a1a1aa', fontSize: 8 }}>META: <Text style={{ color: '#fbbf24', fontWeight: 'bold' }}>{(currentFrame?.timestamp || 0).toFixed(4)}s</Text></Text>
-        <Text style={{ color: '#a1a1aa', fontSize: 8 }}>DRIFT: <Text style={{ color: Math.abs(currentTime - (currentFrame?.timestamp || 0)) > 0.05 ? '#ef4444' : '#10b981', fontWeight: 'bold' }}>
-          {((currentTime - (currentFrame?.timestamp || 0)) * 1000).toFixed(2)}ms
-        </Text></Text>
-      </View>
 
       {/* Svg Biomechanical Overlay */}
       {showSkeleton && landmarks && landmarks.length >= 17 && (
@@ -896,13 +867,30 @@ export const KineticVideoPlayer: React.FC<KineticVideoPlayerProps> = ({
         <View style={styles.hudBadgesGroup}>
           <View style={styles.comboBadge}>
             <Zap color="#f59e0b" size={13} />
-            <Text style={styles.comboText}>FLOW: x{Math.floor(currentTime * 2) + 1}</Text>
+            <Text style={styles.comboText}>
+              {sportRule?.name ? `${sportRule.name.toUpperCase()}` : 'AI BIOMETRICS'}
+            </Text>
           </View>
 
-          <View style={styles.armorBadge}>
-            <ShieldCheck color="#38bdf8" size={13} />
-            <Text style={styles.armorText}>ARMOR: 100%</Text>
-          </View>
+          <TouchableOpacity
+            onPress={() => setShowSkeleton(prev => !prev)}
+            style={[
+              styles.skeletonTogglePill,
+              showSkeleton ? styles.skeletonToggleActive : styles.skeletonToggleInactive,
+            ]}
+          >
+            <View
+              style={{
+                width: 6,
+                height: 6,
+                borderRadius: 3,
+                backgroundColor: showSkeleton ? '#22c55e' : '#71717a',
+              }}
+            />
+            <Text style={styles.skeletonToggleText}>
+              {showSkeleton ? 'SKELETON: ON' : 'SKELETON: OFF'}
+            </Text>
+          </TouchableOpacity>
         </View>
 
         {/* Fullscreen Button */}
@@ -912,15 +900,15 @@ export const KineticVideoPlayer: React.FC<KineticVideoPlayerProps> = ({
             hitSlop={{ top: 15, bottom: 15, left: 15, right: 15 }}
             style={styles.fullscreenOverlayBtn}
           >
-            <Maximize2 color="#eab308" size={14} />
-            <Text style={styles.fullscreenOverlayText}>FULLSCREEN</Text>
+            <Maximize2 color="#eab308" size={13} />
+            <Text style={styles.fullscreenOverlayText}>EXPAND</Text>
           </TouchableOpacity>
         </View>
       </View>
 
-      {/* Bottom Transport Controls */}
+      {/* Floating Semi-Transparent Glass Control Deck */}
       <View style={styles.bottomControlBar}>
-        {/* Scrubber Bar */}
+        {/* Scrubber Bar with Keyframe Ticks */}
         <View
           style={styles.scrubberTrack}
           onLayout={(e) => {
@@ -946,6 +934,28 @@ export const KineticVideoPlayer: React.FC<KineticVideoPlayerProps> = ({
             handleSeek(ratio, true, currentTime);
           }}
         >
+          {/* Keyframe Markers on Timeline */}
+          {movementKeyframes?.map((kf) => {
+            const tickLeft = Math.max(0, Math.min(100, (kf.timestamp / (duration || 1)) * 100));
+            return (
+              <View
+                key={`tick-${kf.id}`}
+                pointerEvents="none"
+                style={{
+                  position: 'absolute',
+                  left: `${tickLeft}%`,
+                  top: -2,
+                  marginLeft: -2,
+                  width: 4,
+                  height: 12,
+                  borderRadius: 2,
+                  backgroundColor: kf.status === 'error' ? '#ef4444' : kf.status === 'warning' ? '#eab308' : '#38bdf8',
+                  zIndex: 2,
+                }}
+              />
+            );
+          })}
+
           <View
             pointerEvents="none"
             style={[
@@ -965,28 +975,39 @@ export const KineticVideoPlayer: React.FC<KineticVideoPlayerProps> = ({
         {/* Primary Controls Row */}
         <View style={styles.primaryControlsRow}>
           <View style={styles.playbackGroup}>
-            <TouchableOpacity onPress={() => handleStep('back', currentTime)} hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }} style={styles.stepButton}>
-              <SkipBack color="#fff" size={18} />
+            <TouchableOpacity
+              onPress={() => handleStep('back', currentTime)}
+              hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+              style={styles.stepButton}
+              accessibilityLabel="Step back 1 frame"
+            >
+              <SkipBack color="#fff" size={16} />
             </TouchableOpacity>
 
-            <TouchableOpacity onPress={handleTogglePlay} hitSlop={{ top: 16, bottom: 16, left: 16, right: 16 }} style={styles.playButtonBig}>
-              {isPlaying ? <Pause color="#000" fill="#000" size={24} /> : <Play color="#000" fill="#000" size={24} />}
+            <TouchableOpacity
+              onPress={handleTogglePlay}
+              hitSlop={{ top: 16, bottom: 16, left: 16, right: 16 }}
+              style={styles.playButtonBig}
+              accessibilityLabel={isPlaying ? 'Pause' : 'Play'}
+            >
+              {isPlaying ? (
+                <Pause color="#000" fill="#000" size={20} />
+              ) : (
+                <Play color="#000" fill="#000" size={20} style={{ marginLeft: 2 }} />
+              )}
             </TouchableOpacity>
 
-            <TouchableOpacity onPress={() => handleStep('forward', currentTime)} hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }} style={styles.stepButton}>
-              <SkipForward color="#fff" size={18} />
+            <TouchableOpacity
+              onPress={() => handleStep('forward', currentTime)}
+              hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+              style={styles.stepButton}
+              accessibilityLabel="Step forward 1 frame"
+            >
+              <SkipForward color="#fff" size={16} />
             </TouchableOpacity>
           </View>
 
-          <View style={styles.timeInfoGroup}>
-            <Text style={styles.mainTimeText}>{currentTime.toFixed(2)}s</Text>
-            <Text style={styles.slashText}>/</Text>
-            <Text style={styles.durationTimeText}>{duration.toFixed(2)}s</Text>
-          </View>
-        </View>
-
-        {/* Secondary Controls Row (Speed) */}
-        <View style={styles.secondaryControlsRow}>
+          {/* Speed Selector Pills */}
           <View style={styles.speedSelectorGrid}>
             {[0.25, 0.5, 1].map((spd) => (
               <TouchableOpacity
@@ -1003,152 +1024,77 @@ export const KineticVideoPlayer: React.FC<KineticVideoPlayerProps> = ({
                     selectedSpeed === spd && styles.speedTextActive,
                   ]}
                 >
-                  {spd === 1 ? 'NORMAL (1x)' : `${spd}x SLOW`}
+                  {spd === 1 ? '1x' : `${spd}x`}
                 </Text>
               </TouchableOpacity>
             ))}
           </View>
+
+          {/* Digital Clock */}
+          <View style={styles.timeInfoGroup}>
+            <Text style={styles.mainTimeText}>{currentTime.toFixed(2)}s</Text>
+            <Text style={styles.slashText}>/</Text>
+            <Text style={styles.durationTimeText}>{duration.toFixed(2)}s</Text>
+          </View>
         </View>
 
-        {/* Skeleton Scale & Calibration Bar */}
-        <View style={{
-          marginTop: 8,
-          paddingTop: 8,
-          borderTopWidth: 1,
-          borderTopColor: '#27272a',
-        }}>
-          <View style={{
-            flexDirection: 'row',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-          }}>
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-              <TouchableOpacity
-                onPress={() => setShowSkeleton(prev => !prev)}
-                style={{
-                  flexDirection: 'row',
-                  alignItems: 'center',
-                  gap: 5,
-                  backgroundColor: showSkeleton ? 'rgba(56, 189, 248, 0.15)' : '#27272a',
-                  paddingHorizontal: 8,
-                  paddingVertical: 5,
-                  borderRadius: 8,
-                  borderWidth: 1,
-                  borderColor: showSkeleton ? 'rgba(56, 189, 248, 0.4)' : '#3f3f46',
-                }}
-              >
-                <Text style={{ color: showSkeleton ? '#38bdf8' : '#a1a1aa', fontSize: 10, fontWeight: '800' }}>
-                  {showSkeleton ? '🦴 SKELETON: ON' : '🦴 SKELETON: OFF'}
-                </Text>
-              </TouchableOpacity>
-
-              {showSkeleton && (
-                <View
-                  style={{
-                    flexDirection: 'row',
-                    alignItems: 'center',
-                    gap: 4,
-                    backgroundColor: currentFrame?.isRealDetection ? 'rgba(34, 197, 94, 0.18)' : 'rgba(56, 189, 248, 0.18)',
-                    paddingHorizontal: 7,
-                    paddingVertical: 4,
-                    borderRadius: 6,
-                    borderWidth: 1,
-                    borderColor: currentFrame?.isRealDetection ? 'rgba(34, 197, 94, 0.45)' : 'rgba(56, 189, 248, 0.45)',
-                  }}
-                >
-                  <View
-                    style={{
-                      width: 5,
-                      height: 5,
-                      borderRadius: 2.5,
-                      backgroundColor: currentFrame?.isRealDetection ? '#22c55e' : '#38bdf8',
-                    }}
-                  />
-                  <Text
-                    style={{
-                      color: currentFrame?.isRealDetection ? '#22c55e' : '#38bdf8',
-                      fontSize: 9.5,
-                      fontWeight: '900',
-                    }}
+        {/* Movement-Specific Keyframes Jump Strip */}
+        {movementKeyframes && movementKeyframes.length > 0 && (
+          <View style={styles.keyframesSection}>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 6 }}>
+              {movementKeyframes.map((kf) => {
+                const isActive = Math.abs(currentTime - kf.timestamp) < 0.2;
+                return (
+                  <TouchableOpacity
+                    key={kf.id}
+                    onPress={() => handleSeekToTime(kf.timestamp)}
+                    style={[
+                      styles.keyframeChip,
+                      isActive ? styles.keyframeChipActive : styles.keyframeChipInactive,
+                    ]}
+                    activeOpacity={0.7}
                   >
-                    {currentFrame?.isRealDetection ? 'AI TRACKED' : 'KINEMATIC LOCK'}
-                  </Text>
-                </View>
-              )}
-            </View>
-          </View>
-
-          {/* Movement-Specific Keyframes Jump Strip */}
-          {movementKeyframes && movementKeyframes.length > 0 && (
-            <View style={{
-              marginTop: 10,
-              paddingTop: 10,
-              borderTopWidth: 1,
-              borderTopColor: 'rgba(255, 255, 255, 0.08)',
-            }}>
-              <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
-                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                  <Compass color="#eab308" size={12} />
-                  <Text style={{ color: '#ffffff', fontSize: 10, fontWeight: '900', letterSpacing: 0.5 }}>
-                    {sportRule.name.toUpperCase()} KEYFRAMES
-                  </Text>
-                </View>
-                <Text style={{ color: '#eab308', fontSize: 8.5, fontWeight: '900' }}>TAP CHIP TO JUMP</Text>
-              </View>
-
-              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8, paddingRight: 8 }}>
-                {movementKeyframes.map((kf) => {
-                  const isActive = Math.abs(currentTime - kf.timestamp) < 0.2;
-                  return (
-                    <TouchableOpacity
-                      key={kf.id}
-                      onPress={() => handleSeekToTime(kf.timestamp)}
-                      style={{
-                        backgroundColor: isActive ? '#eab308' : 'rgba(255, 255, 255, 0.06)',
-                        borderRadius: 10,
-                        borderWidth: 1,
-                        borderColor: isActive ? '#fef08a' : kf.importance === 'critical' ? 'rgba(234, 179, 8, 0.4)' : 'rgba(255, 255, 255, 0.12)',
-                        paddingHorizontal: 10,
-                        paddingVertical: 6,
-                        minWidth: 105,
-                      }}
-                      activeOpacity={0.7}
-                    >
-                      <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 2 }}>
-                        <View style={{
-                          width: 5,
-                          height: 5,
-                          borderRadius: 2.5,
-                          backgroundColor: isActive ? '#000000' : kf.status === 'error' ? '#ef4444' : kf.status === 'warning' ? '#eab308' : '#22c55e',
-                        }} />
-                        <Text style={{ color: isActive ? '#000000' : '#eab308', fontSize: 9, fontWeight: '900', fontFamily: 'monospace' }}>
-                          {kf.timestamp.toFixed(2)}s
-                        </Text>
-                      </View>
-
-                      <Text
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+                      <View
                         style={{
-                          color: isActive ? '#000000' : '#ffffff',
-                          fontSize: 10,
-                          fontWeight: '900',
+                          width: 4,
+                          height: 4,
+                          borderRadius: 2,
+                          backgroundColor: isActive
+                            ? '#000000'
+                            : kf.status === 'error'
+                            ? '#ef4444'
+                            : kf.status === 'warning'
+                            ? '#eab308'
+                            : '#22c55e',
                         }}
+                      />
+                      <Text
+                        style={[
+                          styles.keyframeChipText,
+                          { color: isActive ? '#000000' : '#ffffff' },
+                        ]}
                         numberOfLines={1}
                       >
                         {kf.name}
                       </Text>
-
-                      {kf.measuredValue !== undefined && (
-                        <Text style={{ color: isActive ? '#1c1917' : '#a1a1aa', fontSize: 8.5, marginTop: 1 }}>
-                          {kf.jointTrigger}: <Text style={{ color: isActive ? '#000' : '#fff', fontWeight: 'bold' }}>{kf.measuredValue}°</Text>
-                        </Text>
-                      )}
-                    </TouchableOpacity>
-                  );
-                })}
-              </ScrollView>
-            </View>
-          )}
-        </View>
+                      <Text
+                        style={{
+                          color: isActive ? '#1c1917' : '#eab308',
+                          fontSize: 8.5,
+                          fontWeight: '800',
+                          fontFamily: 'monospace',
+                        }}
+                      >
+                        {kf.timestamp.toFixed(2)}s
+                      </Text>
+                    </View>
+                  </TouchableOpacity>
+                );
+              })}
+            </ScrollView>
+          </View>
+        )}
       </View>
 
       {/* Fullscreen Player Modal */}
@@ -1181,8 +1127,8 @@ export const KineticVideoPlayer: React.FC<KineticVideoPlayerProps> = ({
               isMuted={true}
               resizeMode={ResizeMode.CONTAIN}
               shouldPlay={isPlaying && isFullscreenModal}
-              isLooping={true}
-              progressUpdateIntervalMillis={33}
+              isLooping={false}
+              progressUpdateIntervalMillis={16}
               onPlaybackStatusUpdate={isFullscreenModal ? (s) => handlePlaybackStatusUpdate(s, true) : undefined}
               onReadyForDisplay={handleReadyForDisplay}
               style={{ width: '100%', height: '100%' }}
@@ -1536,7 +1482,8 @@ const styles = StyleSheet.create({
   container: {
     width: '100%',
     alignSelf: 'stretch',
-    height: 540, // Expanded high-impact centerpiece height
+    minHeight: 560,
+    maxHeight: 720,
     backgroundColor: '#050508',
     borderRadius: 24,
     overflow: 'hidden',
@@ -1558,43 +1505,43 @@ const styles = StyleSheet.create({
   },
   topHudContainer: {
     position: 'absolute',
-    top: 10,
+    top: 12,
     left: 12,
     right: 12,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    zIndex: 20,
+    zIndex: 30,
   },
   hudBadgesGroup: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 6,
+    gap: 8,
   },
   fullscreenOverlayBtn: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 5,
-    backgroundColor: 'rgba(9, 9, 11, 0.9)',
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 10,
+    backgroundColor: 'rgba(10, 15, 29, 0.75)',
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 12,
     borderWidth: 1,
-    borderColor: 'rgba(234, 179, 8, 0.4)',
+    borderColor: 'rgba(234, 179, 8, 0.5)',
   },
   fullscreenOverlayText: {
     color: '#eab308',
-    fontSize: 9,
+    fontSize: 9.5,
     fontWeight: '900',
     letterSpacing: 0.5,
   },
   comboBadge: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 4,
-    backgroundColor: 'rgba(9, 9, 11, 0.85)',
-    paddingHorizontal: 8,
-    paddingVertical: 3,
+    gap: 5,
+    backgroundColor: 'rgba(10, 15, 29, 0.75)',
+    paddingHorizontal: 10,
+    paddingVertical: 5,
     borderRadius: 12,
     borderWidth: 1,
     borderColor: 'rgba(245, 158, 11, 0.4)',
@@ -1605,118 +1552,152 @@ const styles = StyleSheet.create({
     fontWeight: '900',
     letterSpacing: 0.5,
   },
-  armorBadge: {
+  skeletonTogglePill: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 4,
-    backgroundColor: 'rgba(9, 9, 11, 0.85)',
-    paddingHorizontal: 8,
-    paddingVertical: 3,
+    gap: 5,
+    paddingHorizontal: 9,
+    paddingVertical: 5,
     borderRadius: 12,
     borderWidth: 1,
-    borderColor: 'rgba(56, 189, 248, 0.4)',
   },
-  armorText: {
-    color: '#38bdf8',
+  skeletonToggleActive: {
+    backgroundColor: 'rgba(10, 15, 29, 0.75)',
+    borderColor: 'rgba(34, 197, 94, 0.5)',
+  },
+  skeletonToggleInactive: {
+    backgroundColor: 'rgba(10, 15, 29, 0.65)',
+    borderColor: 'rgba(255, 255, 255, 0.12)',
+  },
+  skeletonToggleText: {
+    color: '#ffffff',
     fontSize: 9.5,
-    fontWeight: '900',
+    fontWeight: '800',
+    letterSpacing: 0.3,
   },
   bottomControlBar: {
     position: 'absolute',
-    bottom: 0,
-    left: 0,
-    right: 0,
-    backgroundColor: 'rgba(9, 9, 11, 0.98)',
-    paddingHorizontal: 16,
-    paddingTop: 12,
-    paddingBottom: 16,
-    borderTopWidth: 1,
-    borderTopColor: 'rgba(255,255,255,0.08)',
+    bottom: 12,
+    left: 12,
+    right: 12,
+    backgroundColor: 'rgba(10, 15, 29, 0.78)',
+    borderRadius: 18,
+    paddingHorizontal: 12,
+    paddingTop: 10,
+    paddingBottom: 10,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.12)',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.4,
+    shadowRadius: 16,
+    zIndex: 30,
   },
   primaryControlsRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    marginBottom: 12,
+    gap: 8,
   },
   playbackGroup: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 12,
+    gap: 8,
   },
   playButtonBig: {
-    width: 56,
-    height: 56,
-    borderRadius: 28,
+    width: 44,
+    height: 44,
+    borderRadius: 22,
     backgroundColor: '#eab308',
     justifyContent: 'center',
     alignItems: 'center',
     elevation: 4,
   },
   stepButton: {
-    width: 42,
-    height: 42,
-    borderRadius: 21,
+    width: 34,
+    height: 34,
+    borderRadius: 17,
     backgroundColor: 'rgba(255,255,255,0.08)',
     justifyContent: 'center',
     alignItems: 'center',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.08)',
   },
   timeInfoGroup: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: 'rgba(255,255,255,0.05)',
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 12,
-    gap: 4,
+    backgroundColor: 'rgba(255,255,255,0.06)',
+    paddingHorizontal: 8,
+    paddingVertical: 5,
+    borderRadius: 8,
+    gap: 3,
   },
   mainTimeText: {
     color: '#ffffff',
-    fontSize: 16,
+    fontSize: 12,
     fontWeight: '800',
     fontVariant: ['tabular-nums'],
   },
   slashText: {
     color: 'rgba(255,255,255,0.3)',
-    fontSize: 14,
+    fontSize: 11,
   },
   durationTimeText: {
     color: 'rgba(255,255,255,0.5)',
-    fontSize: 14,
+    fontSize: 11,
     fontWeight: '600',
   },
-  secondaryControlsRow: {
+  speedSelectorGrid: {
     flexDirection: 'row',
+    gap: 4,
     alignItems: 'center',
   },
-  speedSelectorGrid: {
-    flex: 1,
-    flexDirection: 'row',
-    gap: 8,
-  },
   speedPillLarge: {
-    flex: 1,
-    height: 34,
+    paddingHorizontal: 8,
+    paddingVertical: 5,
     backgroundColor: 'rgba(255,255,255,0.05)',
-    borderRadius: 8,
+    borderRadius: 6,
     justifyContent: 'center',
     alignItems: 'center',
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.05)',
+    borderColor: 'rgba(255,255,255,0.08)',
   },
   speedPillActive: {
-    backgroundColor: 'rgba(234, 179, 8, 0.15)',
+    backgroundColor: 'rgba(234, 179, 8, 0.2)',
     borderColor: '#eab308',
-    borderWidth: 1,
   },
   speedTextLarge: {
     color: 'rgba(255,255,255,0.6)',
     fontSize: 10,
-    fontWeight: 'bold',
-    letterSpacing: 0.5,
+    fontWeight: '800',
+    letterSpacing: 0.3,
   },
   speedTextActive: {
     color: '#eab308',
+  },
+  keyframesSection: {
+    marginTop: 8,
+    paddingTop: 8,
+    borderTopWidth: 1,
+    borderTopColor: 'rgba(255, 255, 255, 0.08)',
+  },
+  keyframeChip: {
+    borderRadius: 8,
+    borderWidth: 1,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+  },
+  keyframeChipActive: {
+    backgroundColor: '#eab308',
+    borderColor: '#fef08a',
+  },
+  keyframeChipInactive: {
+    backgroundColor: 'rgba(255, 255, 255, 0.06)',
+    borderColor: 'rgba(255, 255, 255, 0.1)',
+  },
+  keyframeChipText: {
+    fontSize: 9.5,
+    fontWeight: '800',
   },
   fullscreenContainer: {
     flex: 1,
@@ -1739,12 +1720,12 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
-    backgroundColor: 'rgba(24, 24, 27, 0.9)',
+    backgroundColor: 'rgba(10, 15, 29, 0.85)',
     paddingHorizontal: 12,
     paddingVertical: 7,
     borderRadius: 12,
     borderWidth: 1,
-    borderColor: '#3f3f46',
+    borderColor: 'rgba(255, 255, 255, 0.15)',
   },
   exitFullscreenText: {
     color: '#ffffff',
@@ -1757,34 +1738,57 @@ const styles = StyleSheet.create({
     bottom: 24,
     left: 16,
     right: 16,
-    backgroundColor: 'rgba(9, 9, 11, 0.92)',
+    backgroundColor: 'rgba(10, 15, 29, 0.8)',
     padding: 14,
     borderRadius: 18,
     borderWidth: 1,
-    borderColor: '#27272a',
+    borderColor: 'rgba(255, 255, 255, 0.15)',
     zIndex: 50,
+  },
+  armorBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    backgroundColor: 'rgba(10, 15, 29, 0.75)',
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: 'rgba(56, 189, 248, 0.4)',
+  },
+  armorText: {
+    color: '#38bdf8',
+    fontSize: 9.5,
+    fontWeight: '900',
+    letterSpacing: 0.5,
+  },
+  secondaryControlsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 10,
   },
   scrubberTrack: {
     width: '100%',
-    height: 10,
-    backgroundColor: 'rgba(255,255,255,0.1)',
-    borderRadius: 5,
+    height: 8,
+    backgroundColor: 'rgba(255,255,255,0.12)',
+    borderRadius: 4,
     position: 'relative',
-    marginBottom: 16,
+    marginBottom: 8,
   },
   scrubberProgress: {
     height: '100%',
     backgroundColor: '#eab308',
-    borderRadius: 5,
+    borderRadius: 4,
   },
   scrubberThumb: {
     position: 'absolute',
     top: -4,
-    width: 18,
-    height: 18,
-    borderRadius: 9,
+    width: 16,
+    height: 16,
+    borderRadius: 8,
     backgroundColor: '#ffffff',
-    borderWidth: 3,
+    borderWidth: 2.5,
     borderColor: '#eab308',
     elevation: 3,
   },

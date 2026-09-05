@@ -288,23 +288,17 @@ export async function analyzeNativeVideoBiometrics({
           });
           isReal = false;
         } else if (prevKey) {
-          const gapSec = timestampSec - prevKey.timestampSec;
-          if (gapSec <= 0.25) {
-            landmarks = prevKey.landmarks.map(lm => ({ ...lm }));
-          } else {
-            // Evolve pose dynamically rather than holding a frozen static landmark in thin air
-            const dynamicPose = generateSyntheticSportsPose(timestampMs, timestampSec);
-            const anchorX = prevKey.root.x;
-            const anchorY = prevKey.root.y;
-            landmarks = dynamicPose.map(lm => ({
-              ...lm,
-              x: Math.max(0.05, Math.min(0.95, lm.x + (anchorX - 0.50) * Math.exp(-gapSec * 2))),
-              y: Math.max(0.05, Math.min(0.95, lm.y + (anchorY - 0.55) * Math.exp(-gapSec * 2))),
-            }));
-          }
+          // Hold and settle the athlete's real posture in place anchored to their root coordinates
+          landmarks = prevKey.landmarks.map(lm => ({
+            ...lm,
+            visibility: Math.max(0.4, (lm.visibility ?? 1) * 0.95),
+          }));
           isReal = false;
         } else if (nextKey) {
-          landmarks = nextKey.landmarks.map(lm => ({ ...lm }));
+          landmarks = nextKey.landmarks.map(lm => ({
+            ...lm,
+            visibility: Math.max(0.4, (lm.visibility ?? 1) * 0.95),
+          }));
           isReal = false;
         }
       }

@@ -89,14 +89,16 @@ export const useVideoPlayback = ({
         onDurationChange?.(durSec);
       }
 
-      // Handle video loop / completion cleanly so skeleton and playback remain in 100% lockstep
-      if (status.didJustFinish) {
-        if (!status.isLooping) {
-          if (onPause) onPause();
-        }
+      // Handle video completion cleanly so playback stops at the end and never loops infinitely
+      if (status.didJustFinish || (status.durationMillis && status.positionMillis >= status.durationMillis - 45)) {
+        if (onPause) onPause();
       }
     }
   }, [isFullscreenModal, onTimeUpdate, onDurationChange, onPause]);
+
+  const lastNativeSeekTimestamp = useRef<number>(0);
+  const pendingNativeSeekTime = useRef<number | null>(null);
+  const nativeSeekTimeout = useRef<NodeJS.Timeout | null>(null);
 
   const handleSeek = useCallback((ratio: number, finished: boolean = false, currentTime: number) => {
     isScrubbing.current = true;
@@ -109,35 +111,83 @@ export const useVideoPlayback = ({
     const targetSec = Math.max(0, Math.min(duration, ratio * duration));
     const seekTime = Math.round(targetSec * 1000);
 
-    // Prevent redundant seeks to the same millisecond
-    if (seekTime === lastSeekTime.current && !finished) return;
-    lastSeekTime.current = seekTime;
-    
-    // UI update is INSTANT
+    // Instant UI + Skeleton update at 60 FPS
     onTimeUpdate(targetSec);
     
-    // Seek both refs: fast tolerance during drag for 60fps responsive scrubbing, exact zero tolerance on release
-    const tolerance = finished ? 0 : 40;
-    if (videoRef.current) {
-      videoRef.current.setPositionAsync(seekTime, {
-        toleranceMillisBefore: tolerance,
-        toleranceMillisAfter: tolerance,
-      }).catch(() => {});
-    }
-    if (fullscreenVideoRef.current) {
-      fullscreenVideoRef.current.setPositionAsync(seekTime, {
-        toleranceMillisBefore: tolerance,
-        toleranceMillisAfter: tolerance,
-      }).catch(() => {});
-    }
-
     if (finished) {
-      seekLockoutTimer.current = setTimeout(() => {
-        isScrubbing.current = false;
-        lastSeekTime.current = -1;
-      }, 80);
+      if (nativeSeekTimeout.current) {
+        clearTimeout(nativeSeekTimeout.current);
+        nativeSeekTimeout.current = null;
+      }
+      pendingNativeSeekTime.current = null;
+      lastSeekTime.current = seekTime;
+
+      // Final precise seek on release
+      const doExactSeek = async () => {
+        try {
+          if (videoRef.current) {
+            await videoRef.current.setPositionAsync(seekTime, {
+              toleranceMillisBefore: 0,
+              toleranceMillisAfter: 0,
+            });
+          }
+          if (fullscreenVideoRef.current) {
+            await fullscreenVideoRef.current.setPositionAsync(seekTime, {
+              toleranceMillisBefore: 0,
+              toleranceMillisAfter: 0,
+            });
+          }
+        } catch (e) {
+          // ignore seek cancel
+        } finally {
+          seekLockoutTimer.current = setTimeout(() => {
+            isScrubbing.current = false;
+            lastSeekTime.current = -1;
+          }, 80);
+        }
+      };
+      doExactSeek();
+    } else {
+      // Fast throttled seek during continuous drag
+      pendingNativeSeekTime.current = seekTime;
+      const now = Date.now();
+      if (now - lastNativeSeekTimestamp.current > 50) {
+        lastNativeSeekTimestamp.current = now;
+        if (videoRef.current) {
+          videoRef.current.setPositionAsync(seekTime, {
+            toleranceMillisBefore: 80,
+            toleranceMillisAfter: 80,
+          }).catch(() => {});
+        }
+        if (fullscreenVideoRef.current) {
+          fullscreenVideoRef.current.setPositionAsync(seekTime, {
+            toleranceMillisBefore: 80,
+            toleranceMillisAfter: 80,
+          }).catch(() => {});
+        }
+      } else if (!nativeSeekTimeout.current) {
+        nativeSeekTimeout.current = setTimeout(() => {
+          nativeSeekTimeout.current = null;
+          if (pendingNativeSeekTime.current != null) {
+            const st = pendingNativeSeekTime.current;
+            lastNativeSeekTimestamp.current = Date.now();
+            if (videoRef.current) {
+              videoRef.current.setPositionAsync(st, {
+                toleranceMillisBefore: 80,
+                toleranceMillisAfter: 80,
+              }).catch(() => {});
+            }
+            if (fullscreenVideoRef.current) {
+              fullscreenVideoRef.current.setPositionAsync(st, {
+                toleranceMillisBefore: 80,
+                toleranceMillisAfter: 80,
+              }).catch(() => {});
+            }
+          }
+        }, 50);
+      }
     }
-  }, [duration, isFullscreenModal, onTimeUpdate, onPause]);
+  }, [duration, onTimeUpdate, onPause]);
 
   const handleSeekToTime = useCallback((targetSec: number, resumePlay: boolean = false) => {
     isScrubbing.current = true;

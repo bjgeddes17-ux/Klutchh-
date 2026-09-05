@@ -210,7 +210,7 @@ export default function App() {
           setCustomVideoSize('High-Res Video');
         }
         if (asset.duration) {
-          setCustomVideoDuration(Math.round(asset.duration / 1000));
+          setCustomVideoDuration(asset.duration / 1000);
         }
       }
     } catch (e) {
@@ -251,7 +251,7 @@ export default function App() {
           setCustomVideoSize(`${(asset.fileSize / (1024 * 1024)).toFixed(1)} MB`);
         }
         if (asset.duration) {
-          setCustomVideoDuration(Math.round(asset.duration / 1000));
+          setCustomVideoDuration(asset.duration / 1000);
         }
       }
     } catch (e) {
