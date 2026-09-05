@@ -270,9 +270,14 @@ export const KineticVideoPlayer: React.FC<KineticVideoPlayerProps> = ({
     if (isPlaying) {
       if (onPause) onPause();
     } else {
-      if (onTogglePlay) onTogglePlay();
+      const maxDur = duration || fallbackDuration || 3.5;
+      if (currentTime >= maxDur - 0.12) {
+        handleSeekToTime(0, true);
+      } else {
+        if (onTogglePlay) onTogglePlay();
+      }
     }
-  }, [isPlaying, onPause, onTogglePlay]);
+  }, [isPlaying, onPause, onTogglePlay, currentTime, duration, fallbackDuration, handleSeekToTime]);
 
   const movementKeyframes = useMemo(() => {
     return detectMovementKeyframes(sortedFrames, sportRule, duration || fallbackDuration);
@@ -427,6 +432,8 @@ export const KineticVideoPlayer: React.FC<KineticVideoPlayerProps> = ({
   const getScreenCoords = (lm?: MediaPipeLandmark, isFs?: boolean) => {
     if (!lm) return { x: 0, y: 0, visible: false };
     if ((lm.visibility ?? 1) < 0.35) return { x: 0, y: 0, visible: false };
+    // Filter out zero / corner-clamped uninitialized points
+    if (lm.x <= 0.015 && lm.y <= 0.015) return { x: 0, y: 0, visible: false };
 
     let targetLm = lm;
     if (skeletonScale !== 1.0 || skeletonOffsetY !== 0 || skeletonOffsetX !== 0) {
@@ -697,8 +704,18 @@ export const KineticVideoPlayer: React.FC<KineticVideoPlayerProps> = ({
             [23, 25], [25, 27], [27, 31], [27, 29],
             [11, 23],
           ].map(([i1, i2], idx) => {
-            const p1 = getScreenCoords(landmarks[i1]);
-            const p2 = getScreenCoords(landmarks[i2]);
+            const lm1 = landmarks[i1];
+            const lm2 = landmarks[i2];
+            if (!lm1 || !lm2) return null;
+            if ((lm1.visibility ?? 1) < 0.35 || (lm2.visibility ?? 1) < 0.35) return null;
+            if ((lm1.x <= 0.02 && lm1.y <= 0.02) || (lm2.x <= 0.02 && lm2.y <= 0.02)) return null;
+
+            // Reject anatomically impossible stretched limbs (spiderweb lines across screen)
+            const distNorm = Math.hypot(lm1.x - lm2.x, lm1.y - lm2.y);
+            if (distNorm > 0.45) return null;
+
+            const p1 = getScreenCoords(lm1);
+            const p2 = getScreenCoords(lm2);
             if (!p1.visible || !p2.visible) return null;
 
             const activePhase = currentFrame?.detectedPhase || activeTechnique?.phases?.[0] || sportRule.phases?.[0];
@@ -724,8 +741,18 @@ export const KineticVideoPlayer: React.FC<KineticVideoPlayerProps> = ({
             [24, 26], [26, 28], [28, 32], [28, 30],
             [12, 24],
           ].map(([i1, i2], idx) => {
-            const p1 = getScreenCoords(landmarks[i1]);
-            const p2 = getScreenCoords(landmarks[i2]);
+            const lm1 = landmarks[i1];
+            const lm2 = landmarks[i2];
+            if (!lm1 || !lm2) return null;
+            if ((lm1.visibility ?? 1) < 0.35 || (lm2.visibility ?? 1) < 0.35) return null;
+            if ((lm1.x <= 0.02 && lm1.y <= 0.02) || (lm2.x <= 0.02 && lm2.y <= 0.02)) return null;
+
+            // Reject anatomically impossible stretched limbs (spiderweb lines across screen)
+            const distNorm = Math.hypot(lm1.x - lm2.x, lm1.y - lm2.y);
+            if (distNorm > 0.45) return null;
+
+            const p1 = getScreenCoords(lm1);
+            const p2 = getScreenCoords(lm2);
             if (!p1.visible || !p2.visible) return null;
 
             const activePhase = currentFrame?.detectedPhase || activeTechnique?.phases?.[0] || sportRule.phases?.[0];
@@ -1171,8 +1198,18 @@ export const KineticVideoPlayer: React.FC<KineticVideoPlayerProps> = ({
                 [23, 25], [25, 27], [27, 31], [27, 29],
                 [11, 23],
               ].map(([i1, i2], idx) => {
-                const p1 = getScreenCoords(landmarks[i1]);
-                const p2 = getScreenCoords(landmarks[i2]);
+                const lm1 = landmarks[i1];
+                const lm2 = landmarks[i2];
+                if (!lm1 || !lm2) return null;
+                if ((lm1.visibility ?? 1) < 0.35 || (lm2.visibility ?? 1) < 0.35) return null;
+                if ((lm1.x <= 0.02 && lm1.y <= 0.02) || (lm2.x <= 0.02 && lm2.y <= 0.02)) return null;
+
+                // Reject anatomically impossible stretched limbs (spiderweb lines across screen)
+                const distNorm = Math.hypot(lm1.x - lm2.x, lm1.y - lm2.y);
+                if (distNorm > 0.45) return null;
+
+                const p1 = getScreenCoords(lm1);
+                const p2 = getScreenCoords(lm2);
                 if (!p1.visible || !p2.visible) return null;
 
                 const activePhase = currentFrame?.detectedPhase || sportRule.phases?.[0];
@@ -1198,8 +1235,18 @@ export const KineticVideoPlayer: React.FC<KineticVideoPlayerProps> = ({
                 [24, 26], [26, 28], [28, 32], [28, 30],
                 [12, 24],
               ].map(([i1, i2], idx) => {
-                const p1 = getScreenCoords(landmarks[i1]);
-                const p2 = getScreenCoords(landmarks[i2]);
+                const lm1 = landmarks[i1];
+                const lm2 = landmarks[i2];
+                if (!lm1 || !lm2) return null;
+                if ((lm1.visibility ?? 1) < 0.35 || (lm2.visibility ?? 1) < 0.35) return null;
+                if ((lm1.x <= 0.02 && lm1.y <= 0.02) || (lm2.x <= 0.02 && lm2.y <= 0.02)) return null;
+
+                // Reject anatomically impossible stretched limbs (spiderweb lines across screen)
+                const distNorm = Math.hypot(lm1.x - lm2.x, lm1.y - lm2.y);
+                if (distNorm > 0.45) return null;
+
+                const p1 = getScreenCoords(lm1);
+                const p2 = getScreenCoords(lm2);
                 if (!p1.visible || !p2.visible) return null;
 
                 const activePhase = currentFrame?.detectedPhase || sportRule.phases?.[0];

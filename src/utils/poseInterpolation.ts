@@ -57,7 +57,7 @@ export function interpolatePoseAtTime(
     return {
       currentFrame: sorted[lastIdx],
       interpolatedLandmarks: sorted[lastIdx].landmarks || null,
-      isPastData: false,
+      isPastData: targetTime > tLast + 0.05,
       driftMs: 0,
     };
   }
