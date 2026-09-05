@@ -125,25 +125,33 @@ export function interpolatePoseAtTime(
       const lm0 = f0.landmarks?.[i] || lm1;
       const lm3 = f3.landmarks?.[i] || lm2;
 
-      // Catmull-Rom Cubic Spline Interpolation for high-velocity smoothness
+      // Catmull-Rom Cubic Spline Interpolation with Monotonic Boundary Damping
+      // Prevents Runge's phenomenon / overshoot during high angular accelerations (e.g. downswing, whip)
       const t2 = alpha * alpha;
       const t3 = t2 * alpha;
 
       const interpAxis = (p0: number, p1: number, p2: number, p3: number) => {
-        return (
+        const rawSpline =
           0.5 *
           (2 * p1 +
             (-p0 + p2) * alpha +
             (2 * p0 - 5 * p1 + 4 * p2 - p3) * t2 +
-            (-p0 + 3 * p1 - 3 * p2 + p3) * t3)
-        );
+            (-p0 + 3 * p1 - 3 * p2 + p3) * t3);
+
+        // Clamping margin proportional to step velocity, strictly preventing wild overshoot
+        const step = Math.abs(p2 - p1);
+        const margin = Math.max(0.015, step * 0.25);
+        const lowerBound = Math.min(p1, p2) - margin;
+        const upperBound = Math.max(p1, p2) + margin;
+
+        return Math.max(0, Math.min(1, Math.max(lowerBound, Math.min(upperBound, rawSpline))));
       };
 
       return {
         x: interpAxis(lm0.x, lm1.x, lm2.x, lm3.x),
         y: interpAxis(lm0.y, lm1.y, lm2.y, lm3.y),
         z: interpAxis(lm0.z || 0, lm1.z || 0, lm2.z || 0, lm3.z || 0),
-        visibility: lm1.visibility * (1 - alpha) + lm2.visibility * alpha,
+        visibility: (lm1.visibility ?? 1) * (1 - alpha) + (lm2.visibility ?? 1) * alpha,
       };
     }
 

@@ -39,6 +39,7 @@ import {
 interface AnalysisOptions {
   videoUri: string;
   sportRule: SportRule;
+  techniqueId?: string;
   skillLevel: SkillLevel;
   athleteCategory: AthleteCategory;
   durationSec?: number;
@@ -48,6 +49,7 @@ interface AnalysisOptions {
 export async function analyzeNativeVideoBiometrics({
   videoUri,
   sportRule,
+  techniqueId,
   skillLevel,
   athleteCategory,
   durationSec,
@@ -86,9 +88,12 @@ export async function analyzeNativeVideoBiometrics({
   // Ensure reasonable bounds (1.0s to 60.0s)
   const validDuration = Math.max(1.0, Math.min(60, resolvedDuration));
   
-  const sportPhases = sportRule?.phases && sportRule.phases.length > 0
-    ? sportRule.phases
-    : ['Base Setup & Stance', 'Kinetic Drive', 'Force Impact / Release', 'Follow-Through'];
+  const activeTechnique = sportRule?.techniques?.find(t => t.id === techniqueId) || sportRule?.techniques?.[0];
+  const sportPhases = activeTechnique?.phases && activeTechnique.phases.length > 0
+    ? activeTechnique.phases
+    : (sportRule?.phases && sportRule.phases.length > 0
+        ? sportRule.phases
+        : ['Base Setup & Stance', 'Kinetic Drive', 'Force Impact / Release', 'Follow-Through']);
 
   // Native High-Performance Burst Sampling Configuration
   // Fast action phases (Impact, Strike, Release, Downswing) capture at up to 45 FPS with a strict max of 110 total frames
@@ -437,10 +442,6 @@ export async function analyzeNativeVideoBiometrics({
     const kneeSafety = kneeAngle < 85 || kneeAngle > 175 ? 78 : 94;
 
     // Kinetic phase calculation mapped to sport phases
-    const sportPhases = sportRule.phases && sportRule.phases.length > 0
-      ? sportRule.phases
-      : ['Base Setup & Stance', 'Kinetic Drive', 'Force Impact / Release', 'Follow-Through'];
-    
     const phaseRatio = validDuration > 0 ? Math.min(0.999, timestampSec / validDuration) : i / Math.max(1, totalFrames - 1);
     const phaseIdx = Math.min(sportPhases.length - 1, Math.floor(phaseRatio * sportPhases.length));
     const detectedPhase = sportPhases[phaseIdx];
@@ -648,6 +649,8 @@ export async function analyzeNativeVideoBiometrics({
 
   const result: AnalysisResult = {
     keyframes,
+    techniqueId: activeTechnique?.id,
+    techniqueName: activeTechnique?.name,
     allFrames: frames,
     preRenderedFrames,
     aiReport: coachingReport,

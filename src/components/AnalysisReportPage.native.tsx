@@ -60,6 +60,8 @@ import { exportToKlutchhLocal, persistSessionVideo } from '../utils/klutchhStora
 
 interface AnalysisReportPageProps {
   sportRule: SportRule;
+  techniqueId?: string;
+  techniqueName?: string;
   videoUrl?: string;
   keyframeList?: FrameAnalysis[];
   allFrames?: FrameAnalysis[];
@@ -72,12 +74,15 @@ interface AnalysisReportPageProps {
   isLowConfidence?: boolean;
   isFallback?: boolean;
   preRenderedFrames?: { timestamp: number; dataUrl: string }[];
+  sourceDimensions?: { width: number; height: number };
   onBack: () => void;
   onSaveReport?: (reportData: any) => void;
 }
 
 export const AnalysisReportPage: React.FC<AnalysisReportPageProps> = ({
   sportRule,
+  techniqueId,
+  techniqueName,
   videoUrl = '',
   keyframeList = [],
   allFrames = [],
@@ -90,6 +95,7 @@ export const AnalysisReportPage: React.FC<AnalysisReportPageProps> = ({
   isLowConfidence: propIsLowConfidence,
   isFallback: propIsFallback,
   preRenderedFrames = [],
+  sourceDimensions,
   onBack,
   onSaveReport,
 }) => {
@@ -436,9 +442,14 @@ export const AnalysisReportPage: React.FC<AnalysisReportPageProps> = ({
         <View style={styles.headerTitleGroup}>
           <View style={styles.sportBadgeRow}>
             <Text style={styles.sportTag}>{sportRule.name.toUpperCase()}</Text>
+            {techniqueName ? (
+              <View style={{ backgroundColor: 'rgba(234, 179, 8, 0.15)', paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4, borderWidth: 1, borderColor: '#eab308' }}>
+                <Text style={{ color: '#eab308', fontSize: 10, fontWeight: '800' }}>{techniqueName.toUpperCase()}</Text>
+              </View>
+            ) : null}
             <Text style={styles.headerSubtitle}>• BIOMETRIC AUDIT</Text>
           </View>
-          <Text style={styles.headerMainTitle}>{sportRule.name} Form Analysis</Text>
+          <Text style={styles.headerMainTitle}>{techniqueName ? `${sportRule.name} • ${techniqueName}` : `${sportRule.name} Form Analysis`}</Text>
         </View>
         <TouchableOpacity onPress={() => setSaveModalOpen(true)} style={styles.saveHeaderBtn}>
           <Bookmark color="#eab308" size={16} />
@@ -463,6 +474,7 @@ export const AnalysisReportPage: React.FC<AnalysisReportPageProps> = ({
           <KineticVideoPlayer
             videoUrl={videoUrl}
             sportRule={sportRule}
+            techniqueId={techniqueId}
             sortedFrames={sortedFrames}
             isPlaying={isPlaying}
             currentTime={currentTime}
@@ -472,6 +484,7 @@ export const AnalysisReportPage: React.FC<AnalysisReportPageProps> = ({
             onPause={() => setIsPlaying(false)}
             initialSkeletonScale={1.0}
             filmstripFrames={preRenderedFrames}
+            sourceDimensions={sourceDimensions}
           />
         </View>
 

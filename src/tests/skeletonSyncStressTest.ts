@@ -37,10 +37,15 @@ export function generateSampleFrames(
     }
 
     frames.push({
-      frameIndex: i,
+      frameNumber: i,
       timestamp,
       detectedPhase: i < 15 ? 'Setup' : i < 35 ? 'Backswing' : 'Impact',
       landmarks,
+      angles: {},
+      ruleResults: {},
+      symmetryScore: 90,
+      kneeSafetyScore: 95,
+      activeLevel: 'grassroots',
       validationStatus: 'approved',
       validationIssues: [],
     });
@@ -156,7 +161,7 @@ export function run20LevelSkeletonSyncTest(): {
   // Level 7: Pre-Start Boundary (t < t_first)
   {
     const res = interpolatePoseAtTime(frames30fps, -0.500);
-    const pass = res.currentFrame?.frameIndex === 0 && !res.isPastData;
+    const pass = res.currentFrame?.frameNumber === 0 && !res.isPastData;
     results.push({
       level: 7,
       name: 'Pre-Start Clamp (t < t_first)',
@@ -170,7 +175,7 @@ export function run20LevelSkeletonSyncTest(): {
   // Level 8: Post-End Boundary (t > t_last)
   {
     const res = interpolatePoseAtTime(frames30fps, 5.000);
-    const pass = res.currentFrame?.frameIndex === 59 && res.isPastData;
+    const pass = res.currentFrame?.frameNumber === 59 && res.isPastData;
     results.push({
       level: 8,
       name: 'Post-End Clamp (t > t_last)',

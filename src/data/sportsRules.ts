@@ -796,16 +796,44 @@ const BASE_SPORTS_RULES: SportRule[] = [
       },
       {
         id: 'scrum',
-        name: 'Scrums, Rucks & Lineouts',
+        name: 'Scrum Engagement',
         description: 'Spine flatness, bind engagement & core anti-extension.',
-        phases: ['Scrum Setup', 'Scrum Engagement', 'Cleanout', 'Lift Moment'],
-        sequence: ['Scrum Setup', 'Scrum Engagement', 'Cleanout', 'Lift Moment'],
-        jointRules: rugbyRules.slice(30, 40),
+        phases: ['Scrum Setup', 'Scrum Engagement', 'Drive Phase', 'Lock Out'],
+        sequence: ['Scrum Setup', 'Scrum Engagement', 'Drive Phase', 'Lock Out'],
+        jointRules: rugbyRules.slice(30, 35),
         triggers: [
           { phase: 'Scrum Setup', condition: 'angle_lt', ruleId: 'rugby_scrum_hip_knee_90', threshold: 110 },
           { phase: 'Scrum Engagement', condition: 'angle_lt', ruleId: 'rugby_bind_arm_flex', threshold: 120 },
-          { phase: 'Cleanout', condition: 'angle_gt', ruleId: 'rugby_scrum_spine_flat', threshold: 160 },
-          { phase: 'Lift Moment', condition: 'angle_gt', ruleId: 'rugby_scrum_neck_neutral', threshold: 150 }
+          { phase: 'Drive Phase', condition: 'angle_gt', ruleId: 'rugby_scrum_spine_flat', threshold: 160 },
+          { phase: 'Lock Out', condition: 'angle_gt', ruleId: 'rugby_scrum_neck_neutral', threshold: 150 }
+        ]
+      },
+      {
+        id: 'ruck',
+        name: 'Ruck Cleanout & Breakdown',
+        description: 'Low shoulder entry, legal bind and dynamic drive through breakdown.',
+        phases: ['Entry Stride', 'Cleanout Impact', 'Drive Over', 'Seal Phase'],
+        sequence: ['Entry Stride', 'Cleanout Impact', 'Drive Over', 'Seal Phase'],
+        jointRules: [rugbyRules[1], rugbyRules[5], rugbyRules[6], rugbyRules[7], rugbyRules[8]],
+        triggers: [
+          { phase: 'Entry Stride', condition: 'angle_lt', ruleId: 'rugby_low_shoulder_entry', threshold: 115 },
+          { phase: 'Cleanout Impact', condition: 'angle_lt', ruleId: 'rugby_tackle_knee_flex', threshold: 125 },
+          { phase: 'Drive Over', condition: 'angle_gt', ruleId: 'rugby_drive_leg_extension', threshold: 160 },
+          { phase: 'Seal Phase', condition: 'angle_gt', ruleId: 'rugby_core_bracing_tilt', threshold: 165 }
+        ]
+      },
+      {
+        id: 'lineout',
+        name: 'Lineout Jump & Overhead Take',
+        description: 'Vertical jumper extension, support pod lift and clean aerial catch.',
+        phases: ['Crouch Prep', 'Jump Drive', 'Apex Extension', 'Landing Cushion'],
+        sequence: ['Crouch Prep', 'Jump Drive', 'Apex Extension', 'Landing Cushion'],
+        jointRules: [rugbyRules[0], rugbyRules[6], rugbyRules[8], rugbyRules[14], rugbyRules[2]],
+        triggers: [
+          { phase: 'Crouch Prep', condition: 'angle_lt', ruleId: 'rugby_bilateral_quad_flex', threshold: 125 },
+          { phase: 'Jump Drive', condition: 'angle_gt', ruleId: 'rugby_drive_leg_extension', threshold: 165 },
+          { phase: 'Apex Extension', condition: 'angle_gt', ruleId: 'rugby_catch_hand_funnel', threshold: 150 },
+          { phase: 'Landing Cushion', condition: 'angle_lt', ruleId: 'rugby_tackle_knee_flex', threshold: 135 }
         ]
       }
     ],
@@ -935,6 +963,34 @@ const BASE_SPORTS_RULES: SportRule[] = [
           { phase: 'Cross Catch', condition: 'angle_gt', ruleId: 'soccer_gk_high_claim_reach', threshold: 165 },
           { phase: '1v1 Block', condition: 'angle_gt', ruleId: 'soccer_gk_1v1_block_spread', threshold: 160 }
         ]
+      },
+      {
+        id: 'first_touch',
+        name: 'First Touch & Control',
+        description: 'Directional cushion, soft knee absorption and body orientation.',
+        phases: ['Approach Scan', 'Cushion Impact', 'Turn Pivot', 'Exit Touch'],
+        sequence: ['Approach Scan', 'Cushion Impact', 'Turn Pivot', 'Exit Touch'],
+        jointRules: [soccerRules[11], soccerRules[10], soccerRules[13], soccerRules[20]],
+        triggers: [
+          { phase: 'Approach Scan', condition: 'angle_lt', ruleId: 'soccer_dribble_low_cg_knee', threshold: 145 },
+          { phase: 'Cushion Impact', condition: 'angle_lt', ruleId: 'soccer_cushion_knee_soft', threshold: 135 },
+          { phase: 'Turn Pivot', condition: 'angle_gt', ruleId: 'soccer_inside_pass_ankle_open', threshold: 140 },
+          { phase: 'Exit Touch', condition: 'angle_gt', ruleId: 'soccer_wall_pass_pivot', threshold: 150 }
+        ]
+      },
+      {
+        id: 'heading',
+        name: 'Heading & Aerial Duels',
+        description: 'Takeoff drive, neck rigidity, core arch and clean forehead contact.',
+        phases: ['Jump Takeoff', 'Aerial Arch', 'Forehead Contact', 'Landing Cushion'],
+        sequence: ['Jump Takeoff', 'Aerial Arch', 'Forehead Contact', 'Landing Cushion'],
+        jointRules: [soccerRules[0], soccerRules[1], soccerRules[22], soccerRules[27]],
+        triggers: [
+          { phase: 'Jump Takeoff', condition: 'angle_lt', ruleId: 'soccer_plant_foot_knee_flex', threshold: 130 },
+          { phase: 'Aerial Arch', condition: 'angle_gt', ruleId: 'soccer_chest_over_ball_alignment', threshold: 160 },
+          { phase: 'Forehead Contact', condition: 'angle_lt', ruleId: 'soccer_sprint_stride_knee_drive', threshold: 110 },
+          { phase: 'Landing Cushion', condition: 'angle_lt', ruleId: 'soccer_plant_foot_knee_flex', threshold: 140 }
+        ]
       }
     ],
     phases: ['Plant Phase', 'Backswing', 'Impact Moment', 'Follow Through'],
@@ -1032,6 +1088,34 @@ const BASE_SPORTS_RULES: SportRule[] = [
           { phase: 'Marking Shot', condition: 'angle_gt', ruleId: 'netball_balance_base_width', threshold: 140 },
           { phase: 'Interception', condition: 'angle_gt', ruleId: 'netball_jump_shot_takeoff_knee', threshold: 160 },
           { phase: 'Pass Distraction', condition: 'angle_lt', ruleId: 'netball_soft_landing_cushion', threshold: 140 }
+        ]
+      },
+      {
+        id: 'dodging',
+        name: 'Change of Direction Dodge',
+        description: 'Sharp drop of center of gravity, outside foot plant and sprint separation.',
+        phases: ['Approach Stride', 'Decel Plant', 'Pivot Push', 'Breakaway'],
+        sequence: ['Approach Stride', 'Decel Plant', 'Pivot Push', 'Breakaway'],
+        jointRules: [netballRules[13], netballRules[12], netballRules[11], netballRules[23]],
+        triggers: [
+          { phase: 'Approach Stride', condition: 'angle_lt', ruleId: 'netball_change_direction_cut', threshold: 135 },
+          { phase: 'Decel Plant', condition: 'angle_lt', ruleId: 'netball_knee_valgus_decel', threshold: 130 },
+          { phase: 'Pivot Push', condition: 'angle_gt', ruleId: 'netball_pivot_hip_rotation', threshold: 140 },
+          { phase: 'Breakaway', condition: 'angle_gt', ruleId: 'netball_stepping_rule_footwork', threshold: 155 }
+        ]
+      },
+      {
+        id: 'rebounding',
+        name: 'Aerial Rebound & High Take',
+        description: 'Explosive vertical leap, high two-hand take and balanced landing cushion.',
+        phases: ['Box-Out Stance', 'Vertical Leap', 'High Catch Hold', 'Two-Foot Landing'],
+        sequence: ['Box-Out Stance', 'Vertical Leap', 'High Catch Hold', 'Two-Foot Landing'],
+        jointRules: [netballRules[32], netballRules[10], netballRules[21], netballRules[3]],
+        triggers: [
+          { phase: 'Box-Out Stance', condition: 'angle_lt', ruleId: 'netball_balance_base_width', threshold: 120 },
+          { phase: 'Vertical Leap', condition: 'angle_gt', ruleId: 'netball_jump_shot_takeoff_knee', threshold: 165 },
+          { phase: 'High Catch Hold', condition: 'angle_gt', ruleId: 'netball_torso_upright_shot', threshold: 160 },
+          { phase: 'Two-Foot Landing', condition: 'angle_lt', ruleId: 'netball_soft_landing_cushion', threshold: 135 }
         ]
       }
     ],
@@ -1145,6 +1229,34 @@ const BASE_SPORTS_RULES: SportRule[] = [
           { phase: 'Kick Save', condition: 'angle_gt', ruleId: 'hockey_gk_kick_save_leg_extension', threshold: 160 },
           { phase: 'Glove Save', condition: 'angle_gt', ruleId: 'hockey_gk_glove_save_arm_reach', threshold: 155 }
         ]
+      },
+      {
+        id: 'drag_flick',
+        name: 'Penalty Corner Drag Flick',
+        description: 'Low drag stance, whipping torso rotation and explosive top-corner flick.',
+        phases: ['Approach Stride', 'Drag Phase', 'Torso Whip', 'High Release'],
+        sequence: ['Approach Stride', 'Drag Phase', 'Torso Whip', 'High Release'],
+        jointRules: [hockeyRules[12], hockeyRules[11], hockeyRules[2], hockeyRules[13]],
+        triggers: [
+          { phase: 'Approach Stride', condition: 'angle_lt', ruleId: 'hockey_push_pass_knee_lunge', threshold: 120 },
+          { phase: 'Drag Phase', condition: 'angle_lt', ruleId: 'hockey_drag_flick_hip_drag', threshold: 135 },
+          { phase: 'Torso Whip', condition: 'angle_gt', ruleId: 'hockey_hit_hip_rotation_strike', threshold: 150 },
+          { phase: 'High Release', condition: 'angle_gt', ruleId: 'hockey_aerial_flick_elbow_lift', threshold: 155 }
+        ]
+      },
+      {
+        id: 'aerial',
+        name: '3D Lift & Aerial Scoop',
+        description: 'Stick blade angle beneath ball, wrist ramp and controlled overhead scoop.',
+        phases: ['Blade Placement', 'Wrist Angle Set', 'Scoop Lift', 'Follow Arc'],
+        sequence: ['Blade Placement', 'Wrist Angle Set', 'Scoop Lift', 'Follow Arc'],
+        jointRules: [hockeyRules[13], hockeyRules[10], hockeyRules[1], hockeyRules[22]],
+        triggers: [
+          { phase: 'Blade Placement', condition: 'angle_lt', ruleId: 'hockey_hit_knee_bend_low', threshold: 125 },
+          { phase: 'Wrist Angle Set', condition: 'angle_lt', ruleId: 'hockey_indian_dribble_wrist_turn', threshold: 115 },
+          { phase: 'Scoop Lift', condition: 'angle_gt', ruleId: 'hockey_aerial_flick_elbow_lift', threshold: 150 },
+          { phase: 'Follow Arc', condition: 'angle_gt', ruleId: 'hockey_upright_vision_neck', threshold: 160 }
+        ]
       }
     ],
     phases: ['Wind-Up', 'Impact Moment', 'Push Release', 'Stick Turn'],
@@ -1218,16 +1330,44 @@ const BASE_SPORTS_RULES: SportRule[] = [
       },
       {
         id: 'fielding',
-        name: 'Fielding & Wicketkeeping',
-        description: 'Attacking ground balls, high catches and keeper stances.',
-        phases: ['Attacking Ball', 'Boundary Throw', 'High Catch', 'Keeper Stance'],
-        sequence: ['Attacking Ball', 'Boundary Throw', 'High Catch', 'Keeper Stance'],
-        jointRules: cricketRules.slice(30, 40),
+        name: 'Ground Fielding & Throwing',
+        description: 'Attacking ground balls, crow hop and boundary throwing velocity.',
+        phases: ['Attacking Ball', 'Gather Pickup', 'Crow Hop', 'Boundary Throw'],
+        sequence: ['Attacking Ball', 'Gather Pickup', 'Crow Hop', 'Boundary Throw'],
+        jointRules: cricketRules.slice(30, 35),
         triggers: [
           { phase: 'Attacking Ball', condition: 'angle_lt', ruleId: 'cricket_fielding_low_crouch_knee', threshold: 120 },
-          { phase: 'Boundary Throw', condition: 'angle_gt', ruleId: 'cricket_throw_crow_hop_extension', threshold: 160 },
-          { phase: 'High Catch', condition: 'angle_gt', ruleId: 'cricket_high_catch_hand_funnel', threshold: 150 },
-          { phase: 'Keeper Stance', condition: 'angle_gt', ruleId: 'cricket_keeper_stumping_reach', threshold: 145 }
+          { phase: 'Gather Pickup', condition: 'angle_lt', ruleId: 'cricket_fielding_low_crouch_knee', threshold: 110 },
+          { phase: 'Crow Hop', condition: 'angle_gt', ruleId: 'cricket_throw_crow_hop_extension', threshold: 150 },
+          { phase: 'Boundary Throw', condition: 'angle_gt', ruleId: 'cricket_throw_crow_hop_extension', threshold: 165 }
+        ]
+      },
+      {
+        id: 'wicketkeeping',
+        name: 'Wicketkeeping Stance & Stumping',
+        description: 'Low crouch balance, weight transfer to balls of feet and rapid glove reach.',
+        phases: ['Crouch Stance', 'Rise With Ball', 'Glove Gathering', 'Stumping Whipping'],
+        sequence: ['Crouch Stance', 'Rise With Ball', 'Glove Gathering', 'Stumping Whipping'],
+        jointRules: [cricketRules[33], cricketRules[30], cricketRules[1], cricketRules[32]],
+        triggers: [
+          { phase: 'Crouch Stance', condition: 'angle_lt', ruleId: 'cricket_fielding_low_crouch_knee', threshold: 110 },
+          { phase: 'Rise With Ball', condition: 'angle_gt', ruleId: 'cricket_back_foot_landing_knee', threshold: 135 },
+          { phase: 'Glove Gathering', condition: 'angle_gt', ruleId: 'cricket_high_catch_hand_funnel', threshold: 145 },
+          { phase: 'Stumping Whipping', condition: 'angle_gt', ruleId: 'cricket_keeper_stumping_reach', threshold: 155 }
+        ]
+      },
+      {
+        id: 'running',
+        name: 'Between-Wickets Sprint & Turn',
+        description: 'Bat ground plant, sharp 180° deceleration turn and acceleration stride.',
+        phases: ['Acceleration', 'Decel Slide', 'Bat Ground Plant', 'Exit Sprint'],
+        sequence: ['Acceleration', 'Decel Slide', 'Bat Ground Plant', 'Exit Sprint'],
+        jointRules: [cricketRules[0], cricketRules[10], cricketRules[22], cricketRules[31]],
+        triggers: [
+          { phase: 'Acceleration', condition: 'angle_gt', ruleId: 'cricket_bowling_front_knee_block', threshold: 145 },
+          { phase: 'Decel Slide', condition: 'angle_lt', ruleId: 'cricket_front_drive_knee_lunge', threshold: 120 },
+          { phase: 'Bat Ground Plant', condition: 'angle_gt', ruleId: 'cricket_straight_bat_follow_through', threshold: 150 },
+          { phase: 'Exit Sprint', condition: 'angle_gt', ruleId: 'cricket_throw_crow_hop_extension', threshold: 155 }
         ]
       }
     ],
@@ -1309,10 +1449,38 @@ const BASE_SPORTS_RULES: SportRule[] = [
         sequence: ['Split Step', 'Recovery', 'Slide Hit', 'Wide Stretch'],
         jointRules: tennisRules.slice(30, 40),
         triggers: [
-          { phase: 'Split Step', condition: 'angle_lt', ruleId: 'tn_forehand_knee_loading', threshold: 135 },
-          { phase: 'Recovery', condition: 'angle_lt', ruleId: 'tn_forehand_unit_turn', threshold: 145 },
-          { phase: 'Slide Hit', condition: 'angle_gt', ruleId: 'tn_forehand_contact_lead', threshold: 140 },
-          { phase: 'Wide Stretch', condition: 'angle_gt', ruleId: 'tn_forehand_follow_through_wrap', threshold: 130 }
+          { phase: 'Split Step', condition: 'angle_lt', ruleId: 'tn_split_step_time_knee_dip', threshold: 135 },
+          { phase: 'Recovery', condition: 'angle_gt', ruleId: 'tn_crossover_recovery_step', threshold: 155 },
+          { phase: 'Slide Hit', condition: 'angle_lt', ruleId: 'tn_hardcourt_slide_ankle_lock', threshold: 100 },
+          { phase: 'Wide Stretch', condition: 'angle_lt', ruleId: 'tn_defensive_stretch_lunge', threshold: 120 }
+        ]
+      },
+      {
+        id: 'overhead',
+        name: 'Overhead Smash & Jump',
+        description: 'Trophy shoulder turn, scissor-kick swap and downward angle smash.',
+        phases: ['Lob Tracking', 'Trophy Pose', 'Scissor Jump', 'Pronation Strike'],
+        sequence: ['Lob Tracking', 'Trophy Pose', 'Scissor Jump', 'Pronation Strike'],
+        jointRules: [tennisRules[10], tennisRules[23], tennisRules[12], tennisRules[34]],
+        triggers: [
+          { phase: 'Lob Tracking', condition: 'angle_lt', ruleId: 'tn_backward_overhead_tracking', threshold: 140 },
+          { phase: 'Trophy Pose', condition: 'angle_lt', ruleId: 'tn_serve_trophy_pose_elbow', threshold: 110 },
+          { phase: 'Scissor Jump', condition: 'angle_gt', ruleId: 'tn_overhead_scissor_kick', threshold: 135 },
+          { phase: 'Pronation Strike', condition: 'angle_gt', ruleId: 'tn_serve_contact_peak_reach', threshold: 165 }
+        ]
+      },
+      {
+        id: 'return',
+        name: 'Serve Return & Block',
+        description: 'Split-step forward hop, compact unit takeback and firm punch return.',
+        phases: ['Ready Hop', 'Split Base', 'Shoulder Turn', 'Punch Return'],
+        sequence: ['Ready Hop', 'Split Base', 'Shoulder Turn', 'Punch Return'],
+        jointRules: [tennisRules[30], tennisRules[35], tennisRules[0], tennisRules[20]],
+        triggers: [
+          { phase: 'Ready Hop', condition: 'angle_lt', ruleId: 'tn_split_step_time_knee_dip', threshold: 135 },
+          { phase: 'Split Base', condition: 'angle_gt', ruleId: 'tn_baseline_rally_stance_width', threshold: 90 },
+          { phase: 'Shoulder Turn', condition: 'angle_lt', ruleId: 'tn_forehand_unit_turn', threshold: 135 },
+          { phase: 'Punch Return', condition: 'angle_gt', ruleId: 'tn_forehand_contact_lead', threshold: 150 }
         ]
       }
     ],
@@ -1374,16 +1542,44 @@ const BASE_SPORTS_RULES: SportRule[] = [
       },
       {
         id: 'pitching',
-        name: 'Wedge & Short Game Pitching',
-        description: 'Narrow stance, controlled wedge tempo and crisp strike.',
+        name: 'Wedge & Pitching Motion',
+        description: 'Narrow stance, 60/40 lead weight bias, hinge-and-hold and low sawed finish.',
         phases: ['Address Stance', 'Backswing Coiling', 'Downswing Impact', 'Follow-Through Finish'],
         sequence: ['Address Stance', 'Backswing Coiling', 'Downswing Impact', 'Follow-Through Finish'],
-        jointRules: golfRules.slice(10, 20),
+        jointRules: [golfRules[14], golfRules[15], golfRules[19], golfRules[21], golfRules[13]],
         triggers: [
           { phase: 'Address Stance', condition: 'angle_lt', ruleId: 'gf_pitch_narrow_stance_width', threshold: 85 },
-          { phase: 'Backswing Coiling', condition: 'angle_lt', ruleId: 'gf_wrist_hinge_backswing', threshold: 105 },
-          { phase: 'Downswing Impact', condition: 'angle_gt', ruleId: 'gf_downswing_hip_transfer', threshold: 120 },
+          { phase: 'Backswing Coiling', condition: 'angle_lt', ruleId: 'gf_pitch_lead_weight_address', threshold: 135 },
+          { phase: 'Downswing Impact', condition: 'angle_gt', ruleId: 'gf_pitch_hinge_and_hold', threshold: 155 },
+          { phase: 'Follow-Through Finish', condition: 'angle_lt', ruleId: 'gf_wedge_low_launch_follow', threshold: 145 }
+        ]
+      },
+      {
+        id: 'chipping',
+        name: 'Green-Side Bump & Run Chip',
+        description: 'Firm locked wrists, forward shaft lean and pendulum shoulder rock.',
+        phases: ['Address Stance', 'Backswing Coiling', 'Downswing Impact', 'Follow-Through Finish'],
+        sequence: ['Address Stance', 'Backswing Coiling', 'Downswing Impact', 'Follow-Through Finish'],
+        jointRules: [golfRules[18], golfRules[14], golfRules[15], golfRules[0], golfRules[7]],
+        triggers: [
+          { phase: 'Address Stance', condition: 'angle_lt', ruleId: 'gf_pitch_narrow_stance_width', threshold: 85 },
+          { phase: 'Backswing Coiling', condition: 'angle_gt', ruleId: 'gf_head_stability_swing', threshold: 155 },
+          { phase: 'Downswing Impact', condition: 'angle_gt', ruleId: 'gf_chip_shot_no_wrist_break', threshold: 155 },
           { phase: 'Follow-Through Finish', condition: 'angle_gt', ruleId: 'gf_follow_through_chest_target', threshold: 160 }
+        ]
+      },
+      {
+        id: 'bunker_shot',
+        name: 'Bunker Sand Splash Explosion',
+        description: 'Lowered knee flex, open blade splash 2 inches behind ball and high acceleration follow-through.',
+        phases: ['Sand Setup', 'Open Coiling', 'Sand Impact', 'High Acceleration'],
+        sequence: ['Sand Setup', 'Open Coiling', 'Sand Impact', 'High Acceleration'],
+        jointRules: [golfRules[11], golfRules[17], golfRules[16], golfRules[20], golfRules[1]],
+        triggers: [
+          { phase: 'Sand Setup', condition: 'angle_lt', ruleId: 'gf_bunker_sand_entry_knee', threshold: 138 },
+          { phase: 'Open Coiling', condition: 'angle_gt', ruleId: 'gf_flop_shot_open_face_elbow', threshold: 140 },
+          { phase: 'Sand Impact', condition: 'angle_gt', ruleId: 'gf_bunker_splash_entry_angle', threshold: 130 },
+          { phase: 'High Acceleration', condition: 'angle_gt', ruleId: 'gf_bunker_splash_follow', threshold: 155 }
         ]
       },
       {
@@ -1402,8 +1598,8 @@ const BASE_SPORTS_RULES: SportRule[] = [
       },
       {
         id: 'specialty',
-        name: 'Swing Dynamics & Specialty Shots',
-        description: 'Driver tilt away, uphill/downhill lies and swing speed.',
+        name: 'Stinger, Draw & Specialty Shots',
+        description: 'Low stinger punch, inside-out draw path and uneven lie compensations.',
         phases: ['Address Stance', 'Backswing Coiling', 'Downswing Impact', 'Follow-Through Finish'],
         sequence: ['Address Stance', 'Backswing Coiling', 'Downswing Impact', 'Follow-Through Finish'],
         jointRules: golfRules.slice(30, 40),

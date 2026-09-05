@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import {
   StyleSheet,
   Text,
@@ -65,6 +65,36 @@ export default function App() {
   const [skillLevel, setSkillLevel] = useState<SkillLevel>('grassroots');
   const [activeTab, setActiveTab] = useState<'analyze' | 'drills' | 'saved'>('analyze');
 
+  const currentSportRule: SportRule = SPORTS_RULES.find((s) => s.id === selectedSportId) || SPORTS_RULES[0];
+  const [selectedTechniqueId, setSelectedTechniqueId] = useState<string>(
+    currentSportRule.techniques?.[0]?.id || 'tackle'
+  );
+
+  // Sync selected movement technique whenever sport changes
+  useEffect(() => {
+    const sport = SPORTS_RULES.find((s) => s.id === selectedSportId) || SPORTS_RULES[0];
+    if (sport?.techniques && sport.techniques.length > 0) {
+      const exists = sport.techniques.some((t) => t.id === selectedTechniqueId);
+      if (!exists) {
+        setSelectedTechniqueId(sport.techniques[0].id);
+      }
+    }
+  }, [selectedSportId]);
+
+  const currentTechnique = useMemo(() => {
+    return (
+      currentSportRule.techniques?.find((t) => t.id === selectedTechniqueId) ||
+      currentSportRule.techniques?.[0]
+    );
+  }, [currentSportRule, selectedTechniqueId]);
+
+  const activeRulesToDisplay = useMemo(() => {
+    if (currentTechnique?.jointRules && currentTechnique.jointRules.length > 0) {
+      return currentTechnique.jointRules;
+    }
+    return currentSportRule.jointRules || [];
+  }, [currentTechnique, currentSportRule]);
+
   // Video upload & selection state
   const [customVideoUri, setCustomVideoUri] = useState<string | null>(null);
   const [customVideoName, setCustomVideoName] = useState<string | null>(null);
@@ -77,7 +107,7 @@ export default function App() {
   const [processingProgress, setProcessingProgress] = useState(0);
   const [analysisResult, setAnalysisResult] = useState<AnalysisResult | null>(null);
   const [savedReports, setSavedReports] = useState<
-    { id: string; athleteName?: string; sportName: string; grade: string; score: number; date: string; notes?: string }[]
+    { id: string; athleteName?: string; sportName: string; techniqueId?: string; techniqueName?: string; grade: string; score: number; date: string; notes?: string }[]
   >([]);
   const [selectedDrill, setSelectedDrill] = useState<DrillItem | null>(null);
 
@@ -115,10 +145,15 @@ export default function App() {
     if (item.sportId) {
       setSelectedSportId(item.sportId);
     }
+    if (item.techniqueId) {
+      setSelectedTechniqueId(item.techniqueId);
+    }
     if (item.videoUrl) {
       setCustomVideoUri(item.videoUrl);
     }
     setAnalysisResult({
+      techniqueId: item.techniqueId,
+      techniqueName: item.techniqueName,
       keyframes: item.keyframeList || [],
       allFrames: item.allFrames || [],
       aiReport: item.report || null,
@@ -141,8 +176,6 @@ export default function App() {
       dynamicMetrics: item.dynamicMetrics,
     });
   };
-
-  const currentSportRule: SportRule = SPORTS_RULES.find((s) => s.id === selectedSportId) || SPORTS_RULES[0];
 
   // Video Pickers (Limited to Upload and 30s Live Camera Record)
   const handlePickFromGallery = async () => {
@@ -265,6 +298,7 @@ export default function App() {
     analyzeNativeVideoBiometrics({
       videoUri: activeVideo,
       sportRule: currentSportRule,
+      techniqueId: selectedTechniqueId,
       skillLevel,
       athleteCategory,
       durationSec: customVideoDuration || undefined,
@@ -296,6 +330,7 @@ export default function App() {
     return (
       <MagicProcessingScreenNative
         sportRule={currentSportRule}
+        techniqueName={currentTechnique?.name}
         videoUrl={customVideoUri || ''}
         skillLevel={skillLevel}
         athleteCategory={athleteCategory}
@@ -313,6 +348,8 @@ export default function App() {
     return (
       <AnalysisReportPage
         sportRule={currentSportRule}
+        techniqueId={analysisResult.techniqueId || selectedTechniqueId}
+        techniqueName={analysisResult.techniqueName || currentTechnique?.name}
         videoUrl={customVideoUri || ''}
         keyframeList={analysisResult.keyframes || []}
         allFrames={analysisResult.allFrames || []}
@@ -325,6 +362,7 @@ export default function App() {
         isLowConfidence={analysisResult.isLowConfidence}
         isFallback={analysisResult.isFallback}
         preRenderedFrames={analysisResult.preRenderedFrames}
+        sourceDimensions={analysisResult.sourceDimensions}
         onBack={() => {
           setAnalysisResult(null);
           handleClearSelectedVideo();
@@ -333,6 +371,8 @@ export default function App() {
           setSavedReports((prev) => [
             {
               id: Math.random().toString(36).substring(2, 9),
+              techniqueId: analysisResult.techniqueId || selectedTechniqueId,
+              techniqueName: analysisResult.techniqueName || currentTechnique?.name,
               ...reportData,
             },
             ...prev,
@@ -433,19 +473,89 @@ export default function App() {
               })}
             </ScrollView>
 
+            {/* Movement / Technique Selection (6 Movements per sport) */}
+            <View style={styles.techniqueSection}>
+              <View style={styles.sectionHeader}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                  <Text style={styles.sectionTitle}>CHOOSE MOVEMENT / TECHNIQUE</Text>
+                </View>
+                <Text style={styles.sectionBadge}>
+                  {currentSportRule.techniques?.length || 6} MOVEMENTS
+                </Text>
+              </View>
+
+              <Text style={styles.techniqueSectionSubtitle}>
+                Select the specific athletic movement to calibrate precision joint corridors and phase triggers:
+              </Text>
+
+              <View style={styles.techniqueList}>
+                {currentSportRule.techniques?.map((tech, idx) => {
+                  const isSelected = (currentTechnique?.id || currentSportRule.techniques?.[0]?.id) === tech.id;
+                  return (
+                    <TouchableOpacity
+                      key={tech.id}
+                      style={[styles.techniqueCard, isSelected && styles.techniqueCardActive]}
+                      onPress={() => setSelectedTechniqueId(tech.id)}
+                      activeOpacity={0.8}
+                    >
+                      <View style={styles.techniqueCardHeader}>
+                        <View style={styles.techniqueBadgeRow}>
+                          <View style={[styles.techniqueIndexCircle, isSelected && styles.techniqueIndexCircleActive]}>
+                            <Text style={[styles.techniqueIndexText, isSelected && styles.techniqueIndexTextActive]}>
+                              0{idx + 1}
+                            </Text>
+                          </View>
+                          <Text style={[styles.techniqueTitle, isSelected && styles.techniqueTitleActive]}>
+                            {tech.name}
+                          </Text>
+                        </View>
+                        {isSelected ? (
+                          <View style={styles.techniqueSelectedPill}>
+                            <CheckCircle2 color="#eab308" size={12} />
+                            <Text style={styles.techniqueSelectedPillText}>ACTIVE</Text>
+                          </View>
+                        ) : (
+                          <View style={styles.techniqueCorridorCountPill}>
+                            <Text style={styles.techniqueCorridorCountText}>
+                              {tech.jointRules?.length || 5} RULES
+                            </Text>
+                          </View>
+                        )}
+                      </View>
+
+                      <Text style={styles.techniqueDescText} numberOfLines={2}>
+                        {tech.description}
+                      </Text>
+
+                      {tech.phases && tech.phases.length > 0 && (
+                        <View style={styles.techniquePhasesContainer}>
+                          <Text style={styles.techniquePhasesLabel}>KINETIC SEQUENCE:</Text>
+                          <Text style={styles.techniquePhasesSequence} numberOfLines={1}>
+                            {tech.phases.join('  ➔  ')}
+                          </Text>
+                        </View>
+                      )}
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
+            </View>
+
             {/* Sport Rules & Target Parameters Overview */}
             <View style={styles.ruleCard}>
               <View style={styles.ruleCardHeader}>
                 <View style={styles.ruleHeaderLeft}>
-                  <Text style={styles.ruleSportName}>{currentSportRule.name.toUpperCase()}</Text>
+                  <Text style={styles.ruleSportName}>
+                    {currentSportRule.name.toUpperCase()} • {currentTechnique?.name.toUpperCase() || 'GENERAL'}
+                  </Text>
                   <Text style={styles.ruleSportCategory}>CATEGORY: {currentSportRule.category.toUpperCase()}</Text>
                 </View>
                 <View style={styles.rulesCountBadge}>
-                  <Text style={styles.rulesCountText}>{currentSportRule.jointRules.length} JOINT CORRIDORS</Text>
+                  <Text style={styles.rulesCountText}>{activeRulesToDisplay.length} TARGET CORRIDORS</Text>
                 </View>
               </View>
 
-              <Text style={styles.ruleDescription}>{currentSportRule.description}</Text>
+              <Text style={styles.ruleDescription}>{currentTechnique?.description || currentSportRule.description}</Text>
 
               {/* Tiers & Level Selector */}
               <View style={styles.optionsGrid}>
@@ -549,7 +659,9 @@ export default function App() {
               >
                 <Play color="#000" size={18} />
                 <Text style={styles.primaryActionText}>
-                  {customVideoUri ? `ANALYZE UPLOADED VIDEO` : `SCAN ${currentSportRule.name.toUpperCase()} DEMO`}
+                  {customVideoUri
+                    ? `ANALYZE ${currentTechnique?.name.toUpperCase() || currentSportRule.name.toUpperCase()}`
+                    : `SCAN ${currentTechnique?.name.toUpperCase() || currentSportRule.name.toUpperCase()} DEMO`}
                 </Text>
                 <ArrowRight color="#000" size={16} />
               </TouchableOpacity>
@@ -558,10 +670,17 @@ export default function App() {
             {/* Active Biomechanical Corridors Section */}
             <View style={styles.featuresSection}>
               <View style={styles.sectionHeader}>
-                <Text style={styles.sectionTitle}>ACTIVE BIOMECHANICAL AUDIT CORRIDORS</Text>
-                <Text style={styles.sectionBadge}>STANDARDS</Text>
+                <View>
+                  <Text style={styles.sectionTitle}>
+                    {currentTechnique ? `${currentTechnique.name.toUpperCase()} AUDIT CORRIDORS` : 'ACTIVE BIOMECHANICAL AUDIT CORRIDORS'}
+                  </Text>
+                  <Text style={{ color: '#a1a1aa', fontSize: 11, marginTop: 2 }}>
+                    Tailored corridors for {athleteCategory.replace('_', ' ')} • {skillLevel.replace('_', ' ')}
+                  </Text>
+                </View>
+                <Text style={styles.sectionBadge}>{activeRulesToDisplay.length} TARGETS</Text>
               </View>
-              {currentSportRule.jointRules.slice(0, 4).map((rule, idx) => {
+              {activeRulesToDisplay.slice(0, 5).map((rule, idx) => {
                 const minOpt = rule.idealMin;
                 const maxOpt = rule.idealMax;
                 return (
@@ -641,8 +760,15 @@ export default function App() {
                   onPress={() => handleOpenSavedReport(item)}
                 >
                   <View style={styles.savedTopRow}>
-                    <View style={styles.savedSportPill}>
-                      <Text style={styles.savedSportText}>{item.sportName.toUpperCase()}</Text>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                      <View style={styles.savedSportPill}>
+                        <Text style={styles.savedSportText}>{item.sportName.toUpperCase()}</Text>
+                      </View>
+                      {item.techniqueName ? (
+                        <View style={[styles.savedSportPill, { backgroundColor: 'rgba(255, 255, 255, 0.08)' }]}>
+                          <Text style={[styles.savedSportText, { color: '#e4e4e7' }]}>{item.techniqueName.toUpperCase()}</Text>
+                        </View>
+                      ) : null}
                     </View>
                     <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
                       <Text style={styles.savedDate}>{item.date}</Text>
@@ -990,6 +1116,124 @@ const styles = StyleSheet.create({
     height: 4,
     borderRadius: 2,
     backgroundColor: '#eab308',
+  },
+  techniqueSection: {
+    gap: 10,
+    marginTop: 4,
+  },
+  techniqueSectionSubtitle: {
+    color: '#a1a1aa',
+    fontSize: 11,
+    lineHeight: 16,
+    marginTop: -4,
+  },
+  techniqueList: {
+    gap: 8,
+  },
+  techniqueCard: {
+    backgroundColor: '#141418',
+    borderRadius: 16,
+    padding: 14,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.08)',
+    gap: 8,
+  },
+  techniqueCardActive: {
+    borderColor: '#eab308',
+    backgroundColor: 'rgba(234, 179, 8, 0.08)',
+  },
+  techniqueCardHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  techniqueBadgeRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    flex: 1,
+  },
+  techniqueIndexCircle: {
+    width: 26,
+    height: 26,
+    borderRadius: 13,
+    backgroundColor: 'rgba(255, 255, 255, 0.06)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  techniqueIndexCircleActive: {
+    backgroundColor: '#eab308',
+  },
+  techniqueIndexText: {
+    color: '#71717a',
+    fontSize: 10,
+    fontWeight: '900',
+  },
+  techniqueIndexTextActive: {
+    color: '#000',
+  },
+  techniqueTitle: {
+    color: '#e4e4e7',
+    fontSize: 13,
+    fontWeight: '800',
+    flex: 1,
+  },
+  techniqueTitleActive: {
+    color: '#fff',
+    fontWeight: '900',
+  },
+  techniqueSelectedPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: 'rgba(234, 179, 8, 0.18)',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: 'rgba(234, 179, 8, 0.4)',
+  },
+  techniqueSelectedPillText: {
+    color: '#eab308',
+    fontSize: 9,
+    fontWeight: '900',
+    letterSpacing: 0.5,
+  },
+  techniqueCorridorCountPill: {
+    backgroundColor: 'rgba(255, 255, 255, 0.04)',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 8,
+  },
+  techniqueCorridorCountText: {
+    color: '#71717a',
+    fontSize: 9,
+    fontWeight: '800',
+  },
+  techniqueDescText: {
+    color: '#a1a1aa',
+    fontSize: 11,
+    lineHeight: 16,
+  },
+  techniquePhasesContainer: {
+    backgroundColor: 'rgba(0, 0, 0, 0.3)',
+    borderRadius: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    gap: 2,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.04)',
+  },
+  techniquePhasesLabel: {
+    color: '#eab308',
+    fontSize: 8,
+    fontWeight: '900',
+    letterSpacing: 0.5,
+  },
+  techniquePhasesSequence: {
+    color: '#d4d4d8',
+    fontSize: 10,
+    fontWeight: '600',
   },
   ruleCard: {
     backgroundColor: '#121216',

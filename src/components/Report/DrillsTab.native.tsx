@@ -8,6 +8,7 @@ import {
   Image,
   Modal,
   StatusBar,
+  SafeAreaView,
 } from 'react-native';
 import {
   Flame,

@@ -26,6 +26,7 @@ const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
 interface MagicProcessingScreenNativeProps {
   sportRule: SportRule;
+  techniqueName?: string;
   videoUrl: string | null;
   skillLevel: SkillLevel;
   athleteCategory: AthleteCategory;
@@ -35,6 +36,7 @@ interface MagicProcessingScreenNativeProps {
 
 export const MagicProcessingScreenNative: React.FC<MagicProcessingScreenNativeProps> = ({
   sportRule,
+  techniqueName,
   videoUrl,
   skillLevel,
   athleteCategory,
@@ -42,10 +44,10 @@ export const MagicProcessingScreenNative: React.FC<MagicProcessingScreenNativePr
   onCancel,
 }) => {
   const STEPS = [
-    { id: 0, label: 'Initializing Biomechanical Core', sub: 'Calibrating camera buffers & 3D pose anchors...' },
+    { id: 0, label: 'Initializing Biomechanical Core', sub: `Calibrating ${techniqueName || sportRule.name} buffers & 3D pose anchors...` },
     { id: 1, label: 'Anti-Troll Content Shield', sub: 'Scanning video for non-sporting or inappropriate content...' },
     { id: 2, label: 'High-Precision Joint Extraction', sub: 'MediaPipe 33-Keypoint skeleton stabilization' },
-    { id: 3, label: 'Kinetic Chain Sequencing', sub: `Evaluating ${sportRule.name} velocity & power corridors` },
+    { id: 3, label: 'Kinetic Chain Sequencing', sub: `Evaluating ${techniqueName ? `${sportRule.name} • ${techniqueName}` : sportRule.name} corridors` },
     { id: 4, label: 'Symmetry & Valgus Risk Audit', sub: 'Scanning joint load stress & angular deviation' },
     { id: 5, label: 'Synthesizing Executive Report', sub: 'Generating prescription drills & Titan Score' },
   ];
@@ -67,8 +69,15 @@ export const MagicProcessingScreenNative: React.FC<MagicProcessingScreenNativePr
           <View style={styles.scannerCircle}>
             <Scan color="#eab308" size={42} />
           </View>
-          <View style={styles.sportBadge}>
-            <Text style={styles.sportBadgeText}>{sportRule.name.toUpperCase()}</Text>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 12 }}>
+            <View style={styles.sportBadge}>
+              <Text style={styles.sportBadgeText}>{sportRule.name.toUpperCase()}</Text>
+            </View>
+            {techniqueName ? (
+              <View style={[styles.sportBadge, { backgroundColor: 'rgba(234, 179, 8, 0.2)', borderColor: '#eab308' }]}>
+                <Text style={[styles.sportBadgeText, { color: '#eab308' }]}>{techniqueName.toUpperCase()}</Text>
+              </View>
+            ) : null}
           </View>
         </View>
 

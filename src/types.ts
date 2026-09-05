@@ -54,7 +54,7 @@ export type CorrectiveDrill = Drill;
 export interface MediaPipeLandmark {
   x: number;
   y: number;
-  z: number;
+  z?: number;
   visibility?: number;
 }
 
@@ -75,7 +75,7 @@ export interface FrameAnalysis {
   jointVelocities?: Record<string, number>; // Linear velocity for heatmap
   torque?: Record<string, number>; // Estimated relative torque
   matchScore?: number; // 0-100% archetype match
-  validationStatus?: 'valid' | 'flagged_review' | 'discarded_outlier';
+  validationStatus?: 'valid' | 'flagged_review' | 'discarded_outlier' | 'approved';
   validationIssues?: string[];
   isFlaggedForManualReview?: boolean;
   isDiscardedOutlier?: boolean;
@@ -302,6 +302,8 @@ export interface SavedReport {
 
 export interface AnalysisResult {
   keyframes: FrameAnalysis[];
+  techniqueId?: string;
+  techniqueName?: string;
   startTime?: number;
   endTime?: number;
   cropBox?: { x: number; y: number; width: number; height: number };

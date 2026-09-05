@@ -91,10 +91,15 @@ export function createUploadedThrowingVideoFrames(): FrameAnalysis[] {
     landmarks[28] = { x: 0.40, y: ankleY, z: 0, visibility: 0.95 };
 
     frames.push({
-      frameIndex: i,
+      frameNumber: i,
       timestamp: t,
       detectedPhase: phase,
       landmarks,
+      angles: {},
+      ruleResults: {},
+      symmetryScore: 90,
+      kneeSafetyScore: 95,
+      activeLevel: 'grassroots',
       validationStatus: 'approved',
       validationIssues: [],
     });

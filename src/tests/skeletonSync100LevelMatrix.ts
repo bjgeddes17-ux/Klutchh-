@@ -1,4 +1,4 @@
-import { FrameAnalysis, MediaPipeLandmark, SportRule } from '../types';
+import { FrameAnalysis, MediaPipeLandmark, SportRule, JointRule } from '../types';
 import { interpolatePoseAtTime } from '../utils/poseInterpolation';
 import { mapLandmarkToScreen, getVideoRenderRect, calculateAngle, normalizeLandmarks } from '../utils/geometry';
 
@@ -34,10 +34,15 @@ export function run100LevelSyncMatrix(): {
         });
       }
       frames.push({
-        frameIndex: i,
+        frameNumber: i,
         timestamp: Math.max(0, timestamp),
         detectedPhase: i < count / 3 ? 'Setup' : i < (2 * count) / 3 ? 'Action' : 'FollowThrough',
         landmarks,
+        angles: {},
+        ruleResults: {},
+        symmetryScore: 90,
+        kneeSafetyScore: 95,
+        activeLevel: 'grassroots',
         validationStatus: 'approved',
         validationIssues: [],
       });
@@ -46,22 +51,35 @@ export function run100LevelSyncMatrix(): {
   };
 
   const dummySportRule: SportRule = {
-    id: 'test-rule',
-    sport: 'Golf',
-    title: 'Test Rule Set',
+    id: 'golf',
+    name: 'Golf',
+    iconName: 'Target',
+    category: 'Precision',
     description: 'Rule set for 100 level matrix test',
+    kidFocus: 'Balance',
+    techniques: [],
     phases: ['Setup', 'Action', 'FollowThrough'],
+    sequence: ['Setup', 'Action', 'FollowThrough'],
     jointRules: [
       {
         id: 'elbow_flex',
         name: 'Lead Elbow Flexion',
+        description: 'Test elbow flex',
+        sportId: 'golf',
         phase: 'Action',
         keypoints: [11, 13, 15],
         idealMin: 150,
         idealMax: 180,
-        weight: 1.0,
-        guidance: 'Keep arm extended',
-        faultCorrectionDrills: [0],
+        unit: '°',
+        importance: 'performance',
+        difficultyTier: 'grassroots',
+        tolerancesByLevel: {
+          grassroots: { idealMin: 140, idealMax: 180, toleranceMargin: 10 },
+          academy: { idealMin: 150, idealMax: 180, toleranceMargin: 5 },
+          elite_pro: { idealMin: 160, idealMax: 180, toleranceMargin: 2 },
+        },
+        impactOnPerformance: 'Optimal arm extension',
+        injuryRiskFactor: 'Low',
       },
     ],
   };
@@ -175,7 +193,7 @@ export function run100LevelSyncMatrix(): {
       });
     } else if (l === 96) {
       // Landmark Normalizer
-      const norm = normalizeLandmarks([{ x: 960, y: 540 }, { x: 1920, y: 1080 }]);
+      const norm = normalizeLandmarks([{ x: 960, y: 540, z: 0 }, { x: 1920, y: 1080, z: 0 }]);
       const pass = norm[0].x === 0.5 && norm[0].y === 0.5;
       results.push({
         level: 96,

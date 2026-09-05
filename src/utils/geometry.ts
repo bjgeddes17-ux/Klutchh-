@@ -260,6 +260,22 @@ export function drawPoseSkeleton(
 
   if (sportRule && sportRule.jointRules) {
     sportRule.jointRules.forEach((rule) => {
+      // Exclude mismatched sub-discipline rules (putting rules vs full swing)
+      const isPuttingRule = rule.id.includes('putt') || rule.name.toLowerCase().includes('putting');
+      const isPuttingPhase = activePhase ? activePhase.toLowerCase().includes('putt') : false;
+      if (sportRule.id === 'golf') {
+        if (isPuttingRule && !isPuttingPhase) return;
+        if (!isPuttingRule && isPuttingPhase) return;
+      }
+
+      if (activePhase && activePhase !== 'Auto-Detect' && activePhase !== 'All' && rule.phase) {
+        const normRulePhase = rule.phase.toLowerCase();
+        const normActivePhase = activePhase.toLowerCase();
+        if (!normRulePhase.includes(normActivePhase) && !normActivePhase.includes(normRulePhase) && normRulePhase !== 'dynamic') {
+          return;
+        }
+      }
+
       const res = ruleResults[rule.id] || 'optimal';
       rule.keypoints.forEach((kp) => {
         const currentRes = issueKeypointMap[kp] || 'optimal';

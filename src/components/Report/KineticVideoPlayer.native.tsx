@@ -35,7 +35,7 @@ import {
   Compass,
 } from 'lucide-react-native';
 import { SportRule, FrameAnalysis, MediaPipeLandmark } from '../../types';
-import { calculateAngle, mapLandmarkToScreen, getVideoRenderRect } from '../../utils/geometry';
+import { calculateAngle, mapLandmarkToScreen, getVideoRenderRect, smoothLandmarkTimeSeries } from '../../utils/geometry';
 import { detectMovementKeyframes } from '../../services/movementKeyframeEngine';
 import { interpolatePoseAtTime } from '../../utils/poseInterpolation';
 
@@ -44,18 +44,37 @@ function getSegmentColor(
   kp1: number,
   kp2: number,
   landmarks: MediaPipeLandmark[] | null | undefined,
-  sportRule: SportRule
+  sportRule: SportRule,
+  activePhase?: string,
+  customRules?: typeof sportRule.jointRules
 ): { color: string; strokeWidth: number } {
-  if (!landmarks || landmarks.length < 17 || !sportRule?.jointRules) {
+  const rulesToUse = customRules && customRules.length > 0 ? customRules : sportRule?.jointRules;
+  if (!landmarks || landmarks.length < 17 || !rulesToUse) {
     return { color: '#3b82f6', strokeWidth: 2.0 };
   }
 
   let maxDelta = 0;
   let hasMatchingRule = false;
 
-  for (const rule of sportRule.jointRules) {
+  for (const rule of rulesToUse) {
     if (!rule.keypoints || rule.keypoints.length !== 3) continue;
     if (!rule.keypoints.includes(kp1) && !rule.keypoints.includes(kp2)) continue;
+
+    // Filter out rules that belong to a different sub-discipline or phase
+    const isPuttingRule = rule.id.includes('putt') || rule.name.toLowerCase().includes('putting');
+    const isPuttingPhase = activePhase ? activePhase.toLowerCase().includes('putt') : false;
+
+    if (sportRule.id === 'golf') {
+      if (isPuttingRule && !isPuttingPhase) continue;
+      if (!isPuttingRule && isPuttingPhase) continue;
+    }
+
+    if (activePhase && activePhase !== 'Auto-Detect' && activePhase !== 'All' && rule.phase) {
+      const normRulePhase = rule.phase.toLowerCase();
+      const normActivePhase = activePhase.toLowerCase();
+      const isPhaseMatch = normRulePhase.includes(normActivePhase) || normActivePhase.includes(normRulePhase) || normRulePhase === 'dynamic';
+      if (!isPhaseMatch) continue;
+    }
 
     const [k1, k2, k3] = rule.keypoints;
     const p1 = landmarks[k1];
@@ -67,11 +86,17 @@ function getSegmentColor(
     if (angle === undefined || isNaN(angle)) continue;
 
     hasMatchingRule = true;
-    if (angle < rule.idealMin) {
-      const delta = rule.idealMin - angle;
+
+    // Apply level-based tolerance margin (15 degrees natural corridor buffer)
+    const margin = 15;
+    const minBound = Math.max(0, rule.idealMin - margin);
+    const maxBound = Math.min(180, rule.idealMax + margin);
+
+    if (angle < minBound) {
+      const delta = minBound - angle;
       if (delta > maxDelta) maxDelta = delta;
-    } else if (angle > rule.idealMax) {
-      const delta = angle - rule.idealMax;
+    } else if (angle > maxBound) {
+      const delta = angle - maxBound;
       if (delta > maxDelta) maxDelta = delta;
     }
   }
@@ -80,8 +105,8 @@ function getSegmentColor(
     return { color: '#3b82f6', strokeWidth: 2.0 }; // Default Structural Bone: Electric Blue
   }
 
-  if (maxDelta <= 5) return { color: '#10b981', strokeWidth: 2.2 }; // Optimal Corridor: Emerald Green
-  if (maxDelta <= 14) return { color: '#3b82f6', strokeWidth: 2.2 }; // Slight Variance: Electric Blue
+  if (maxDelta === 0) return { color: '#10b981', strokeWidth: 2.2 }; // Optimal Corridor: Emerald Green
+  if (maxDelta <= 12) return { color: '#3b82f6', strokeWidth: 2.2 }; // Slight Variance: Electric Blue
   if (maxDelta <= 25) return { color: '#a855f7', strokeWidth: 2.5 }; // Moderate Variance: Neon Purple
   return { color: '#ef4444', strokeWidth: 3.0 }; // Severe Mechanical Fault: Crimson Red
 }
@@ -89,15 +114,34 @@ function getSegmentColor(
 function getJointColor(
   jointIdx: number,
   landmarks: MediaPipeLandmark[] | null | undefined,
-  sportRule: SportRule
+  sportRule: SportRule,
+  activePhase?: string,
+  customRules?: typeof sportRule.jointRules
 ): string {
-  if (!landmarks || landmarks.length < 17 || !sportRule?.jointRules) return '#3b82f6';
+  const rulesToUse = customRules && customRules.length > 0 ? customRules : sportRule?.jointRules;
+  if (!landmarks || landmarks.length < 17 || !rulesToUse) return '#3b82f6';
 
   let maxDelta = 0;
   let hasMatchingRule = false;
 
-  for (const rule of sportRule.jointRules) {
+  for (const rule of rulesToUse) {
     if (!rule.keypoints || !rule.keypoints.includes(jointIdx)) continue;
+
+    const isPuttingRule = rule.id.includes('putt') || rule.name.toLowerCase().includes('putting');
+    const isPuttingPhase = activePhase ? activePhase.toLowerCase().includes('putt') : false;
+
+    if (sportRule.id === 'golf') {
+      if (isPuttingRule && !isPuttingPhase) continue;
+      if (!isPuttingRule && isPuttingPhase) continue;
+    }
+
+    if (activePhase && activePhase !== 'Auto-Detect' && activePhase !== 'All' && rule.phase) {
+      const normRulePhase = rule.phase.toLowerCase();
+      const normActivePhase = activePhase.toLowerCase();
+      const isPhaseMatch = normRulePhase.includes(normActivePhase) || normActivePhase.includes(normRulePhase) || normRulePhase === 'dynamic';
+      if (!isPhaseMatch) continue;
+    }
+
     const [k1, k2, k3] = rule.keypoints;
     const p1 = landmarks[k1];
     const p2 = landmarks[k2];
@@ -108,19 +152,24 @@ function getJointColor(
     if (angle === undefined || isNaN(angle)) continue;
 
     hasMatchingRule = true;
-    if (angle < rule.idealMin) {
-      const delta = rule.idealMin - angle;
+
+    const margin = 15;
+    const minBound = Math.max(0, rule.idealMin - margin);
+    const maxBound = Math.min(180, rule.idealMax + margin);
+
+    if (angle < minBound) {
+      const delta = minBound - angle;
       if (delta > maxDelta) maxDelta = delta;
-    } else if (angle > rule.idealMax) {
-      const delta = angle - rule.idealMax;
+    } else if (angle > maxBound) {
+      const delta = angle - maxBound;
       if (delta > maxDelta) maxDelta = delta;
     }
   }
 
   if (!hasMatchingRule) return '#3b82f6'; // Neutral Joint Pivot
 
-  if (maxDelta <= 5) return '#10b981'; // Emerald Green (Optimal)
-  if (maxDelta <= 14) return '#3b82f6'; // Electric Blue (Good)
+  if (maxDelta === 0) return '#10b981'; // Emerald Green (Optimal)
+  if (maxDelta <= 12) return '#3b82f6'; // Electric Blue (Good)
   if (maxDelta <= 25) return '#a855f7'; // Neon Purple (Warning)
   return '#ef4444'; // Crimson Red (Error)
 }
@@ -128,6 +177,7 @@ function getJointColor(
 interface KineticVideoPlayerProps {
   videoUrl: string;
   sportRule: SportRule;
+  techniqueId?: string;
   sortedFrames: FrameAnalysis[];
   isPlaying: boolean;
   currentTime: number;
@@ -141,6 +191,7 @@ interface KineticVideoPlayerProps {
   hideSkeleton?: boolean;
   initialSkeletonScale?: number;
   filmstripFrames?: { timestamp: number; dataUrl: string }[];
+  sourceDimensions?: { width: number; height: number };
 }
 
 import { useVideoPlayback } from '../../hooks/useVideoPlayback.native';
@@ -148,6 +199,7 @@ import { useVideoPlayback } from '../../hooks/useVideoPlayback.native';
 export const KineticVideoPlayer: React.FC<KineticVideoPlayerProps> = ({
   videoUrl,
   sportRule,
+  techniqueId,
   sortedFrames,
   isPlaying,
   currentTime,
@@ -161,7 +213,18 @@ export const KineticVideoPlayer: React.FC<KineticVideoPlayerProps> = ({
   hideSkeleton = false,
   initialSkeletonScale = 1.0,
   filmstripFrames = [],
+  sourceDimensions,
 }) => {
+  const activeTechnique = useMemo(() => {
+    return sportRule.techniques?.find((t) => t.id === techniqueId) || sportRule.techniques?.[0];
+  }, [sportRule, techniqueId]);
+
+  const activeTechniqueRules = useMemo(() => {
+    return activeTechnique?.jointRules && activeTechnique.jointRules.length > 0
+      ? activeTechnique.jointRules
+      : sportRule.jointRules || [];
+  }, [activeTechnique, sportRule]);
+
   const [isFullscreenModal, setIsFullscreenModal] = useState<boolean>(false);
   const [showSkeleton, setShowSkeleton] = useState<boolean>(!hideSkeleton);
 
@@ -217,13 +280,30 @@ export const KineticVideoPlayer: React.FC<KineticVideoPlayerProps> = ({
 
   const [isMirrored, setIsMirrored] = useState(false);
   const [layout, setLayout] = useState({ width: 360, height: 480 });
-  const [videoDimensions, setVideoDimensions] = useState({ width: 9, height: 16 });
-  const [containerAspectRatio, setContainerAspectRatio] = useState<number | null>(null);
+  const [videoDimensions, setVideoDimensions] = useState(
+    sourceDimensions && sourceDimensions.width > 0 && sourceDimensions.height > 0
+      ? { width: sourceDimensions.width, height: sourceDimensions.height }
+      : { width: 9, height: 16 }
+  );
+  const [containerAspectRatio, setContainerAspectRatio] = useState<number | null>(
+    sourceDimensions && sourceDimensions.width > 0 && sourceDimensions.height > 0
+      ? sourceDimensions.width / sourceDimensions.height
+      : null
+  );
   const [renderedRect, setRenderedRect] = useState<{ x: number; y: number; width: number; height: number } | null>(null);
   const [fullscreenLayout, setFullscreenLayout] = useState({
     width: Dimensions.get('window').width,
     height: Dimensions.get('window').height,
   });
+
+  // Keep videoDimensions synchronized if sourceDimensions arrives or updates
+  useEffect(() => {
+    if (sourceDimensions && sourceDimensions.width > 0 && sourceDimensions.height > 0) {
+      setVideoDimensions({ width: sourceDimensions.width, height: sourceDimensions.height });
+      const aspect = sourceDimensions.width / sourceDimensions.height;
+      setContainerAspectRatio(aspect);
+    }
+  }, [sourceDimensions]);
 
   const handleLayout = (e: LayoutChangeEvent) => {
     const { width, height } = e.nativeEvent.layout;
@@ -243,6 +323,27 @@ export const KineticVideoPlayer: React.FC<KineticVideoPlayerProps> = ({
   const { currentFrame, interpolatedLandmarks, isPastData, driftMs } = useMemo(() => {
     return interpolatePoseAtTime(sortedFrames, currentTime);
   }, [sortedFrames, currentTime]);
+
+  // Online Temporal Smoothing Filter (One-Euro / EMA):
+  // Eliminates high-frequency frame extraction jitter while preserving instant dynamic reaction on fast swings/kicks
+  const lastRenderedLandmarksRef = useRef<MediaPipeLandmark[] | null>(null);
+  const smoothedLandmarks = useMemo(() => {
+    const raw = interpolatedLandmarks || currentFrame?.landmarks;
+    if (!raw || raw.length === 0) {
+      lastRenderedLandmarksRef.current = null;
+      return raw;
+    }
+
+    if (!lastRenderedLandmarksRef.current || !isPlaying) {
+      lastRenderedLandmarksRef.current = raw;
+      return raw;
+    }
+
+    // Adaptive alpha: fast movements (> 0.08 units) respond immediately, slow/static poses are stabilized
+    const smoothed = smoothLandmarkTimeSeries(raw, lastRenderedLandmarksRef.current, 0.72);
+    lastRenderedLandmarksRef.current = smoothed;
+    return smoothed;
+  }, [interpolatedLandmarks, currentFrame, isPlaying]);
 
   const handleReadyForDisplay = (event: any) => {
     if (event.naturalSize) {
@@ -319,7 +420,7 @@ export const KineticVideoPlayer: React.FC<KineticVideoPlayerProps> = ({
     }
   }, [layout, fullscreenLayout, videoDimensions, isFullscreenModal]);
 
-  const landmarks = interpolatedLandmarks || currentFrame?.landmarks;
+  const landmarks = smoothedLandmarks || interpolatedLandmarks || currentFrame?.landmarks;
   const curW = isFullscreenModal ? (fullscreenLayout.width || Dimensions.get('window').width) : layout.width;
   const curH = isFullscreenModal ? (fullscreenLayout.height || Dimensions.get('window').height) : layout.height;
 
@@ -408,16 +509,26 @@ export const KineticVideoPlayer: React.FC<KineticVideoPlayerProps> = ({
 
   // Render Real Biometric Rules Callouts (Computing real angles from landmarks)
   const visibleRuleCallouts = useMemo(() => {
-    if (!landmarks || landmarks.length < 17 || !sportRule?.jointRules) return [];
+    if (!landmarks || landmarks.length < 17 || !activeTechniqueRules || activeTechniqueRules.length === 0) return [];
 
-    const activePhase = currentFrame?.detectedPhase || sportRule.phases?.[0];
-    const rules = sportRule.jointRules.filter((r) => {
+    const activePhase = currentFrame?.detectedPhase || activeTechnique?.phases?.[0] || sportRule.phases?.[0];
+    const rules = activeTechniqueRules.filter((r) => {
+      // Filter out mismatched sub-discipline rules (e.g. putting rules during full swing)
+      const isPuttingRule = r.id.includes('putt') || r.name.toLowerCase().includes('putting');
+      const isPuttingPhase = activePhase ? activePhase.toLowerCase().includes('putt') : false;
+      if (sportRule.id === 'golf') {
+        if (isPuttingRule && !isPuttingPhase) return false;
+        if (!isPuttingRule && isPuttingPhase) return false;
+      }
+
       if (!activePhase || activePhase === 'Auto-Detect' || activePhase === 'All') return true;
       // STRICT PHASE GATING: Only display rules corresponding to the active kinetic movement phase
-      return r.phase === activePhase;
+      const normRulePhase = r.phase.toLowerCase();
+      const normActivePhase = activePhase.toLowerCase();
+      return normRulePhase.includes(normActivePhase) || normActivePhase.includes(normRulePhase) || normRulePhase === 'dynamic';
     });
 
-    const validRulesWithAngles: { rule: typeof sportRule.jointRules[0]; angleVal: number; vertexScreen: { x: number; y: number } }[] = [];
+    const validRulesWithAngles: { rule: typeof activeTechniqueRules[0]; angleVal: number; vertexScreen: { x: number; y: number } }[] = [];
 
     for (const rule of rules) {
       if (!rule.keypoints || rule.keypoints.length !== 3) continue;
@@ -458,11 +569,15 @@ export const KineticVideoPlayer: React.FC<KineticVideoPlayerProps> = ({
       const vx = vertexScreen.x;
       const vy = vertexScreen.y;
 
-      // Check against ideal corridor
+      // Check against ideal corridor with consistent 15-degree natural tolerance buffer
+      const margin = 15;
+      const minBound = Math.max(0, rule.idealMin - margin);
+      const maxBound = Math.min(180, rule.idealMax + margin);
+
       let status: 'optimal' | 'warning' | 'error' = 'optimal';
-      if (angleVal < rule.idealMin || angleVal > rule.idealMax) {
-        const delta = angleVal < rule.idealMin ? rule.idealMin - angleVal : angleVal - rule.idealMax;
-        status = delta > 12 ? 'error' : 'warning';
+      if (angleVal < minBound || angleVal > maxBound) {
+        const delta = angleVal < minBound ? minBound - angleVal : angleVal - maxBound;
+        status = delta > 25 ? 'error' : 'warning';
       }
 
       const cleanName = rule.name
@@ -615,7 +730,8 @@ export const KineticVideoPlayer: React.FC<KineticVideoPlayerProps> = ({
             const p2 = getScreenCoords(landmarks[i2]);
             if (!p1.visible || !p2.visible) return null;
 
-            const { color, strokeWidth } = getSegmentColor(i1, i2, landmarks, sportRule);
+            const activePhase = currentFrame?.detectedPhase || activeTechnique?.phases?.[0] || sportRule.phases?.[0];
+            const { color, strokeWidth } = getSegmentColor(i1, i2, landmarks, sportRule, activePhase, activeTechniqueRules);
 
             return (
               <Line
@@ -641,7 +757,8 @@ export const KineticVideoPlayer: React.FC<KineticVideoPlayerProps> = ({
             const p2 = getScreenCoords(landmarks[i2]);
             if (!p1.visible || !p2.visible) return null;
 
-            const { color, strokeWidth } = getSegmentColor(i1, i2, landmarks, sportRule);
+            const activePhase = currentFrame?.detectedPhase || activeTechnique?.phases?.[0] || sportRule.phases?.[0];
+            const { color, strokeWidth } = getSegmentColor(i1, i2, landmarks, sportRule, activePhase, activeTechniqueRules);
 
             return (
               <Line
@@ -662,7 +779,8 @@ export const KineticVideoPlayer: React.FC<KineticVideoPlayerProps> = ({
             const p1 = getScreenCoords(landmarks[11]);
             const p2 = getScreenCoords(landmarks[12]);
             if (!p1.visible || !p2.visible) return null;
-            const { color, strokeWidth } = getSegmentColor(11, 12, landmarks, sportRule);
+            const activePhase = currentFrame?.detectedPhase || activeTechnique?.phases?.[0] || sportRule.phases?.[0];
+            const { color, strokeWidth } = getSegmentColor(11, 12, landmarks, sportRule, activePhase, activeTechniqueRules);
             return (
               <Line
                 x1={p1.x}
@@ -678,7 +796,8 @@ export const KineticVideoPlayer: React.FC<KineticVideoPlayerProps> = ({
             const p1 = getScreenCoords(landmarks[23]);
             const p2 = getScreenCoords(landmarks[24]);
             if (!p1.visible || !p2.visible) return null;
-            const { color, strokeWidth } = getSegmentColor(23, 24, landmarks, sportRule);
+            const activePhase = currentFrame?.detectedPhase || activeTechnique?.phases?.[0] || sportRule.phases?.[0];
+            const { color, strokeWidth } = getSegmentColor(23, 24, landmarks, sportRule, activePhase, activeTechniqueRules);
             return (
               <Line
                 x1={p1.x}
@@ -698,7 +817,8 @@ export const KineticVideoPlayer: React.FC<KineticVideoPlayerProps> = ({
             const p = getScreenCoords(lm);
             if (!p.visible) return null;
 
-            const ringColor = getJointColor(i, landmarks, sportRule);
+            const activePhase = currentFrame?.detectedPhase || activeTechnique?.phases?.[0] || sportRule.phases?.[0];
+            const ringColor = getJointColor(i, landmarks, sportRule, activePhase, activeTechniqueRules);
 
             return (
               <G key={`joint-${i}`}>
@@ -1109,7 +1229,8 @@ export const KineticVideoPlayer: React.FC<KineticVideoPlayerProps> = ({
                 const p2 = getScreenCoords(landmarks[i2]);
                 if (!p1.visible || !p2.visible) return null;
 
-                const { color, strokeWidth } = getSegmentColor(i1, i2, landmarks, sportRule);
+                const activePhase = currentFrame?.detectedPhase || sportRule.phases?.[0];
+                const { color, strokeWidth } = getSegmentColor(i1, i2, landmarks, sportRule, activePhase);
 
                 return (
                   <Line
@@ -1135,7 +1256,8 @@ export const KineticVideoPlayer: React.FC<KineticVideoPlayerProps> = ({
                 const p2 = getScreenCoords(landmarks[i2]);
                 if (!p1.visible || !p2.visible) return null;
 
-                const { color, strokeWidth } = getSegmentColor(i1, i2, landmarks, sportRule);
+                const activePhase = currentFrame?.detectedPhase || sportRule.phases?.[0];
+                const { color, strokeWidth } = getSegmentColor(i1, i2, landmarks, sportRule, activePhase);
 
                 return (
                   <Line
@@ -1156,7 +1278,8 @@ export const KineticVideoPlayer: React.FC<KineticVideoPlayerProps> = ({
                 const p1 = getScreenCoords(landmarks[11]);
                 const p2 = getScreenCoords(landmarks[12]);
                 if (!p1.visible || !p2.visible) return null;
-                const { color, strokeWidth } = getSegmentColor(11, 12, landmarks, sportRule);
+                const activePhase = currentFrame?.detectedPhase || sportRule.phases?.[0];
+                const { color, strokeWidth } = getSegmentColor(11, 12, landmarks, sportRule, activePhase);
                 return (
                   <Line
                     x1={p1.x}
@@ -1172,7 +1295,8 @@ export const KineticVideoPlayer: React.FC<KineticVideoPlayerProps> = ({
                 const p1 = getScreenCoords(landmarks[23]);
                 const p2 = getScreenCoords(landmarks[24]);
                 if (!p1.visible || !p2.visible) return null;
-                const { color, strokeWidth } = getSegmentColor(23, 24, landmarks, sportRule);
+                const activePhase = currentFrame?.detectedPhase || sportRule.phases?.[0];
+                const { color, strokeWidth } = getSegmentColor(23, 24, landmarks, sportRule, activePhase);
                 return (
                   <Line
                     x1={p1.x}
@@ -1190,7 +1314,8 @@ export const KineticVideoPlayer: React.FC<KineticVideoPlayerProps> = ({
                 if (!lm || (i > 0 && i < 11)) return null;
                 const p = getScreenCoords(lm);
                 if (!p.visible) return null;
-                const ringColor = getJointColor(i, landmarks, sportRule);
+                const activePhase = currentFrame?.detectedPhase || sportRule.phases?.[0];
+                const ringColor = getJointColor(i, landmarks, sportRule, activePhase);
                 return (
                   <G key={`fs-joint-${i}`}>
                     <Circle
