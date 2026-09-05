@@ -39,7 +39,7 @@ export function calculateAngle(
  * Evaluates left-right symmetry (0 - 100%) across shoulders, elbows, hips, and knees.
  */
 export function calculateSymmetry(landmarks: MediaPipeLandmark[]): number {
-  if (!landmarks || landmarks.length < 29) return 90;
+  if (!landmarks || landmarks.length < 17) return 90;
 
   // Key pairs: Left Shoulder (11) vs Right Shoulder (12)
   // Left Elbow (13) vs Right Elbow (14)
@@ -80,7 +80,7 @@ export function calculateSymmetry(landmarks: MediaPipeLandmark[]): number {
  * Valgus occurs when knees buckle inward relative to the line connecting hip and ankle.
  */
 export function calculateKneeValgusScore(landmarks: MediaPipeLandmark[]): number {
-  if (!landmarks || landmarks.length < 29) return 92;
+  if (!landmarks || landmarks.length < 17) return 92;
 
   const leftHip = landmarks[23];
   const rightHip = landmarks[24];

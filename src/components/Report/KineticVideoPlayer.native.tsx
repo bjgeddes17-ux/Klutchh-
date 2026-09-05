@@ -46,7 +46,7 @@ function getSegmentColor(
   landmarks: MediaPipeLandmark[] | null | undefined,
   sportRule: SportRule
 ): { color: string; strokeWidth: number } {
-  if (!landmarks || landmarks.length < 29 || !sportRule?.jointRules) {
+  if (!landmarks || landmarks.length < 17 || !sportRule?.jointRules) {
     return { color: '#3b82f6', strokeWidth: 2.0 };
   }
 
@@ -91,7 +91,7 @@ function getJointColor(
   landmarks: MediaPipeLandmark[] | null | undefined,
   sportRule: SportRule
 ): string {
-  if (!landmarks || landmarks.length < 29 || !sportRule?.jointRules) return '#3b82f6';
+  if (!landmarks || landmarks.length < 17 || !sportRule?.jointRules) return '#3b82f6';
 
   let maxDelta = 0;
   let hasMatchingRule = false;
@@ -270,26 +270,16 @@ export const KineticVideoPlayer: React.FC<KineticVideoPlayerProps> = ({
     }
   };
 
-  // Determine effective visual aspect ratio of the video content
+  // Determine intrinsic aspect ratio of the video stream
   const effectiveAspect = useMemo(() => {
-    const isPortraitView = (isFullscreenModal ? fullscreenLayout.height : layout.height) > 
-                           (isFullscreenModal ? fullscreenLayout.width : layout.width);
     if (videoDimensions.width > 0 && videoDimensions.height > 0) {
-      if (isPortraitView) {
-        return videoDimensions.width > videoDimensions.height
-          ? videoDimensions.height / videoDimensions.width
-          : videoDimensions.width / videoDimensions.height;
-      } else {
-        return videoDimensions.width > videoDimensions.height
-          ? videoDimensions.width / videoDimensions.height
-          : videoDimensions.height / videoDimensions.width;
-      }
+      return videoDimensions.width / videoDimensions.height;
     }
     if (containerAspectRatio && containerAspectRatio > 0) {
       return containerAspectRatio;
     }
-    return isPortraitView ? 9 / 16 : 16 / 9;
-  }, [containerAspectRatio, videoDimensions, isFullscreenModal, fullscreenLayout, layout]);
+    return 16 / 9;
+  }, [containerAspectRatio, videoDimensions]);
 
   // Viewport for fullscreen mode: centered letterboxed/pillarboxed video surface
   const fullscreenViewport = useMemo(() => {
@@ -330,8 +320,8 @@ export const KineticVideoPlayer: React.FC<KineticVideoPlayerProps> = ({
   }, [layout, fullscreenLayout, videoDimensions, isFullscreenModal]);
 
   const landmarks = interpolatedLandmarks || currentFrame?.landmarks;
-  const curW = isFullscreenModal ? fullscreenViewport.width : layout.width;
-  const curH = isFullscreenModal ? fullscreenViewport.height : layout.height;
+  const curW = isFullscreenModal ? (fullscreenLayout.width || Dimensions.get('window').width) : layout.width;
+  const curH = isFullscreenModal ? (fullscreenLayout.height || Dimensions.get('window').height) : layout.height;
 
   const getScreenCoords = (lm?: MediaPipeLandmark, isFs?: boolean) => {
     if (!lm) return { x: 0, y: 0, visible: false };
@@ -357,32 +347,48 @@ export const KineticVideoPlayer: React.FC<KineticVideoPlayerProps> = ({
     }
 
     const isFsMode = isFs !== undefined ? isFs : isFullscreenModal;
-    const stageW = isFsMode ? (fullscreenViewport.width || Dimensions.get('window').width) : (layout.width || 360);
-    const stageH = isFsMode ? (fullscreenViewport.height || Dimensions.get('window').height) : (layout.height || 480);
-
-    // Compute exact video render rectangle matching <Video resizeMode={ResizeMode.CONTAIN}>
-    const computedRect = getVideoRenderRect(
-      stageW,
-      stageH,
-      videoDimensions.width > 0 ? videoDimensions.width : 9,
-      videoDimensions.height > 0 ? videoDimensions.height : 16
-    );
-    const stageRect = (!isFsMode && renderedRect) ? renderedRect : computedRect;
-
-    return mapLandmarkToScreen(
-      targetLm,
-      stageW,
-      stageH,
-      videoDimensions.width,
-      videoDimensions.height,
-      undefined,
-      0,
-      isMirrored,
-      false, // debugForceNativeRotation
-      true,  // isNative: TRUE
-      landmarks,
-      stageRect
-    );
+    
+    if (isFsMode) {
+      const stageW = fullscreenLayout.width || Dimensions.get('window').width;
+      const stageH = fullscreenLayout.height || Dimensions.get('window').height;
+      return mapLandmarkToScreen(
+        targetLm,
+        stageW,
+        stageH,
+        videoDimensions.width,
+        videoDimensions.height,
+        undefined,
+        0,
+        isMirrored,
+        false,
+        true,
+        landmarks,
+        fullscreenViewport
+      );
+    } else {
+      const stageW = layout.width || 360;
+      const stageH = layout.height || 480;
+      const stageRect = renderedRect || getVideoRenderRect(
+        stageW,
+        stageH,
+        videoDimensions.width > 0 ? videoDimensions.width : 9,
+        videoDimensions.height > 0 ? videoDimensions.height : 16
+      );
+      return mapLandmarkToScreen(
+        targetLm,
+        stageW,
+        stageH,
+        videoDimensions.width,
+        videoDimensions.height,
+        undefined,
+        0,
+        isMirrored,
+        false,
+        true,
+        landmarks,
+        stageRect
+      );
+    }
   };
 
   // Sync Video CurrentTime on Fullscreen Toggle
@@ -402,7 +408,7 @@ export const KineticVideoPlayer: React.FC<KineticVideoPlayerProps> = ({
 
   // Render Real Biometric Rules Callouts (Computing real angles from landmarks)
   const visibleRuleCallouts = useMemo(() => {
-    if (!landmarks || landmarks.length < 29 || !sportRule?.jointRules) return [];
+    if (!landmarks || landmarks.length < 17 || !sportRule?.jointRules) return [];
 
     const activePhase = currentFrame?.detectedPhase || sportRule.phases?.[0];
     const rules = sportRule.jointRules.filter((r) => {
@@ -559,8 +565,8 @@ export const KineticVideoPlayer: React.FC<KineticVideoPlayerProps> = ({
       </View>
 
       {/* Svg Biomechanical Overlay */}
-      {showSkeleton && landmarks && landmarks.length >= 29 && (
-        <Svg style={[styles.svgOverlay, { opacity: isPastData ? 0.35 : 1 }]} width={curW} height={curH}>
+      {showSkeleton && landmarks && landmarks.length >= 17 && (
+        <Svg pointerEvents="none" style={[styles.svgOverlay, { opacity: isPastData ? 0.35 : 1 }]} width={curW} height={curH}>
           {/* 1. Torso Volume Polygon */}
           {landmarks[11] && landmarks[12] && landmarks[24] && landmarks[23] && (() => {
             const p1 = getScreenCoords(landmarks[11]);
@@ -783,6 +789,7 @@ export const KineticVideoPlayer: React.FC<KineticVideoPlayerProps> = ({
         <View style={{ flexDirection: 'row', gap: 8, alignItems: 'center' }}>
           <TouchableOpacity
             onPress={() => setIsFullscreenModal(true)}
+            hitSlop={{ top: 15, bottom: 15, left: 15, right: 15 }}
             style={styles.fullscreenOverlayBtn}
           >
             <Maximize2 color="#eab308" size={14} />
@@ -838,15 +845,15 @@ export const KineticVideoPlayer: React.FC<KineticVideoPlayerProps> = ({
         {/* Primary Controls Row */}
         <View style={styles.primaryControlsRow}>
           <View style={styles.playbackGroup}>
-            <TouchableOpacity onPress={() => handleStep('back', currentTime)} style={styles.stepButton}>
+            <TouchableOpacity onPress={() => handleStep('back', currentTime)} hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }} style={styles.stepButton}>
               <SkipBack color="#fff" size={18} />
             </TouchableOpacity>
 
-            <TouchableOpacity onPress={handleTogglePlay} style={styles.playButtonBig}>
+            <TouchableOpacity onPress={handleTogglePlay} hitSlop={{ top: 16, bottom: 16, left: 16, right: 16 }} style={styles.playButtonBig}>
               {isPlaying ? <Pause color="#000" fill="#000" size={24} /> : <Play color="#000" fill="#000" size={24} />}
             </TouchableOpacity>
 
-            <TouchableOpacity onPress={() => handleStep('forward', currentTime)} style={styles.stepButton}>
+            <TouchableOpacity onPress={() => handleStep('forward', currentTime)} hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }} style={styles.stepButton}>
               <SkipForward color="#fff" size={18} />
             </TouchableOpacity>
           </View>
@@ -1060,14 +1067,16 @@ export const KineticVideoPlayer: React.FC<KineticVideoPlayerProps> = ({
               onReadyForDisplay={handleReadyForDisplay}
               style={{ width: '100%', height: '100%' }}
             />
+          </View>
 
-            {/* Fullscreen SVG Overlay */}
-            {showSkeleton && landmarks && landmarks.length >= 29 && (
-              <Svg
-                style={[StyleSheet.absoluteFillObject, { opacity: isPastData ? 0.35 : 1 }]}
-                width={fullscreenViewport.width}
-                height={fullscreenViewport.height}
-              >
+          {/* Fullscreen SVG Overlay */}
+          {showSkeleton && landmarks && landmarks.length >= 17 && (
+            <Svg
+              pointerEvents="none"
+              style={[StyleSheet.absoluteFillObject, { opacity: isPastData ? 0.35 : 1 }]}
+              width={curW}
+              height={curH}
+            >
               {/* Torso */}
               {landmarks[11] && landmarks[12] && landmarks[24] && landmarks[23] && (() => {
                 const p1 = getScreenCoords(landmarks[11]);
@@ -1242,7 +1251,6 @@ export const KineticVideoPlayer: React.FC<KineticVideoPlayerProps> = ({
               })}
             </Svg>
           )}
-          </View>
 
           {/* Fullscreen Diagnostic Overlay */}
           <View 
@@ -1286,6 +1294,7 @@ export const KineticVideoPlayer: React.FC<KineticVideoPlayerProps> = ({
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
               <TouchableOpacity
                 onPress={() => setIsFullscreenModal(false)}
+                hitSlop={{ top: 20, bottom: 20, left: 20, right: 20 }}
                 style={styles.exitFullscreenBtn}
               >
                 <Minimize2 color="#ffffff" size={14} />
@@ -1348,15 +1357,15 @@ export const KineticVideoPlayer: React.FC<KineticVideoPlayerProps> = ({
                   <RefreshCw color={isMirrored ? "#eab308" : "#ffffff"} size={16} />
                 </TouchableOpacity>
 
-                <TouchableOpacity onPress={() => handleStep('back', currentTime)} style={styles.stepButton}>
+                <TouchableOpacity onPress={() => handleStep('back', currentTime)} hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }} style={styles.stepButton}>
                   <SkipBack color="#fff" size={18} />
                 </TouchableOpacity>
 
-                <TouchableOpacity onPress={handleTogglePlay} style={styles.playButtonBig}>
+                <TouchableOpacity onPress={handleTogglePlay} hitSlop={{ top: 16, bottom: 16, left: 16, right: 16 }} style={styles.playButtonBig}>
                   {isPlaying ? <Pause color="#000" fill="#000" size={24} /> : <Play color="#000" fill="#000" size={24} />}
                 </TouchableOpacity>
 
-                <TouchableOpacity onPress={() => handleStep('forward', currentTime)} style={styles.stepButton}>
+                <TouchableOpacity onPress={() => handleStep('forward', currentTime)} hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }} style={styles.stepButton}>
                   <SkipForward color="#fff" size={18} />
                 </TouchableOpacity>
               </View>
