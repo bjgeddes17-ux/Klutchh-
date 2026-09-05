@@ -39,55 +39,195 @@ export function detectMovementKeyframes(
 
   const sportId = sportRule.id;
 
-  // 1. Find velocity peaks (Impact / Release / Strike)
-  let maxVelFrameIdx = 0;
-  let maxVel = 0;
-
-  // 2. Find maximum joint angular excursion points
-  let minKneeFlexIdx = 0;
-  let minKneeAngle = 999;
-
-  let maxHipFlexIdx = 0;
-  let maxHipAngle = 0;
+  // 1. Analyze wrist/hand elevation trajectory across frames (0 = top of image, 1 = bottom)
+  let minHandY = 999;
+  let minHandYIdx = 0;
 
   frames.forEach((f, idx) => {
-    const totalVel = (f.velocity?.wrist || 0) + (f.velocity?.shoulder || 0);
-    if (totalVel > maxVel) {
-      maxVel = totalVel;
-      maxVelFrameIdx = idx;
-    }
+    if (f.landmarks && f.landmarks.length >= 17) {
+      const leftY = f.landmarks[15]?.y ?? 0.5;
+      const rightY = f.landmarks[16]?.y ?? 0.5;
+      const avgHandY = (leftY + rightY) / 2;
 
-    const knee = f.angles?.knee || 180;
-    if (knee < minKneeAngle) {
-      minKneeAngle = knee;
-      minKneeFlexIdx = idx;
-    }
-
-    const hip = f.angles?.hip || 0;
-    if (hip > maxHipAngle) {
-      maxHipAngle = hip;
-      maxHipFlexIdx = idx;
+      // Look for peak hand elevation (minimum Y) between 15% and 80% of clip duration
+      if (f.timestamp >= durationSec * 0.15 && f.timestamp <= durationSec * 0.8) {
+        if (avgHandY < minHandY) {
+          minHandY = avgHandY;
+          minHandYIdx = idx;
+        }
+      }
     }
   });
 
-  const totalFrames = frames.length;
-  const impactTime = frames[maxVelFrameIdx]?.timestamp || durationSec * 0.55;
+  const backswingTopTime = frames[minHandYIdx]?.timestamp || durationSec * 0.45;
 
-  // 3. Movement-Specific Keyframe Generators
+  // 2. Find Ball Impact / Release / Strike moment AFTER Top of Backswing
+  let maxImpactVel = 0;
+  let impactFrameIdx = minHandYIdx;
+
+  for (let i = minHandYIdx + 1; i < frames.length; i++) {
+    const f = frames[i];
+    const prevF = frames[Math.max(0, i - 1)];
+
+    let handVel = 0;
+    if (f.landmarks && prevF.landmarks && f.landmarks.length >= 17 && prevF.landmarks.length >= 17) {
+      const dx1 = f.landmarks[15].x - prevF.landmarks[15].x;
+      const dy1 = f.landmarks[15].y - prevF.landmarks[15].y;
+      const dx2 = f.landmarks[16].x - prevF.landmarks[16].x;
+      const dy2 = f.landmarks[16].y - prevF.landmarks[16].y;
+      const dt = Math.max(0.001, f.timestamp - prevF.timestamp);
+      handVel = (Math.hypot(dx1, dy1) + Math.hypot(dx2, dy2)) / (2 * dt);
+    } else {
+      handVel = (f.velocity?.wrist || 0) + (f.velocity?.shoulder || 0);
+    }
+
+    if (handVel > maxImpactVel) {
+      maxImpactVel = handVel;
+      impactFrameIdx = i;
+    }
+  }
+
+  // Fallback if impact frame is invalid or too close to backswing top
+  if (impactFrameIdx <= minHandYIdx || impactFrameIdx >= frames.length - 1) {
+    const remainingFrames = frames.length - 1 - minHandYIdx;
+    impactFrameIdx = Math.min(frames.length - 1, minHandYIdx + Math.max(2, Math.round(remainingFrames * 0.5)));
+  }
+
+  const impactTime = frames[impactFrameIdx]?.timestamp || durationSec * 0.7;
+
+  // 3. Address / Setup time (stationary moment before takeaway)
+  let addressFrameIdx = Math.max(0, Math.round(minHandYIdx * 0.25));
+  const addressTime = frames[addressFrameIdx]?.timestamp || durationSec * 0.15;
+
+  // 4. Follow through time
+  let finishFrameIdx = Math.min(frames.length - 1, impactFrameIdx + Math.max(2, Math.round((frames.length - 1 - impactFrameIdx) * 0.6)));
+  const followThroughTime = frames[finishFrameIdx]?.timestamp || durationSec * 0.88;
+
+  // 5. Movement-Specific Keyframe Generators
   switch (sportId) {
     case 'golf':
-      return buildGolfKeyframes(frames, durationSec, impactTime, maxVelFrameIdx);
+      return buildGolfKeyframes(frames, durationSec, addressTime, backswingTopTime, impactTime, followThroughTime, addressFrameIdx, minHandYIdx, impactFrameIdx, finishFrameIdx);
     case 'rugby':
-      return buildRugbyKeyframes(frames, durationSec, impactTime, maxVelFrameIdx);
+      return buildRugbyKeyframes(frames, durationSec, impactTime, impactFrameIdx);
     case 'soccer':
-      return buildSoccerKeyframes(frames, durationSec, impactTime, maxVelFrameIdx);
+      return buildSoccerKeyframes(frames, durationSec, impactTime, impactFrameIdx);
     case 'tennis':
-      return buildTennisKeyframes(frames, durationSec, impactTime, maxVelFrameIdx);
+      return buildTennisKeyframes(frames, durationSec, impactTime, impactFrameIdx);
     case 'cricket':
-      return buildCricketKeyframes(frames, durationSec, impactTime, maxVelFrameIdx);
+      return buildCricketKeyframes(frames, durationSec, impactTime, impactFrameIdx);
+    case 'netball':
+      return buildNetballKeyframes(frames, durationSec, impactTime, impactFrameIdx);
+    case 'hockey':
+      return buildHockeyKeyframes(frames, durationSec, impactTime, impactFrameIdx);
     default:
       return buildGenericKeyframes(frames, sportRule, durationSec, impactTime);
   }
+}
+
+function buildNetballKeyframes(
+  frames: BiomechanicalFrame[],
+  durationSec: number,
+  impactTime: number,
+  impactIdx: number
+): MovementKeyframeEvent[] {
+  const prepTime = Math.max(0, impactTime - 0.2);
+  const finishTime = Math.min(durationSec, impactTime + 0.3);
+
+  const prepFrame = findClosestFrame(frames, prepTime);
+  const releaseFrame = findClosestFrame(frames, impactTime);
+  const landingFrame = findClosestFrame(frames, finishTime);
+
+  return [
+    {
+      id: 'netball_prep',
+      name: 'High Release Preparation & Stance',
+      timestamp: prepTime,
+      frameNumber: prepFrame?.frameNumber || 0,
+      importance: 'primary',
+      status: 'optimal',
+      jointTrigger: 'Elbow High Lock',
+      measuredValue: prepFrame?.angles?.shoulder || 138,
+      idealRange: '130° - 150°',
+      coachingHint: 'Keep ball centered above forehead line before extension.',
+    },
+    {
+      id: 'netball_release',
+      name: 'High Release & Wrist Snap',
+      timestamp: impactTime,
+      frameNumber: releaseFrame?.frameNumber || impactIdx,
+      importance: 'critical',
+      status: 'optimal',
+      jointTrigger: 'Shooting Arm Extension',
+      measuredValue: releaseFrame?.angles?.shoulder || 168,
+      idealRange: '160° - 180°',
+      coachingHint: 'Full elbow extension with high arc follow-through flick.',
+    },
+    {
+      id: 'netball_landing',
+      name: 'Single-Leg Landing & Knee Cushion',
+      timestamp: finishTime,
+      frameNumber: landingFrame?.frameNumber || 0,
+      importance: 'critical',
+      status: (landingFrame?.angles?.knee || 135) > 155 ? 'warning' : 'optimal',
+      jointTrigger: 'Landing Knee Flexion',
+      measuredValue: landingFrame?.angles?.knee || 128,
+      idealRange: '120° - 142°',
+      coachingHint: 'Absorb landing force cleanly through knee flexion to avoid valgus.',
+    },
+  ];
+}
+
+function buildHockeyKeyframes(
+  frames: BiomechanicalFrame[],
+  durationSec: number,
+  impactTime: number,
+  impactIdx: number
+): MovementKeyframeEvent[] {
+  const prepTime = Math.max(0, impactTime - 0.25);
+  const finishTime = Math.min(durationSec, impactTime + 0.35);
+
+  const prepFrame = findClosestFrame(frames, prepTime);
+  const strikeFrame = findClosestFrame(frames, impactTime);
+  const finishFrame = findClosestFrame(frames, finishTime);
+
+  return [
+    {
+      id: 'hockey_prep',
+      name: 'Athletic Stance & Stick Backswing',
+      timestamp: prepTime,
+      frameNumber: prepFrame?.frameNumber || 0,
+      importance: 'primary',
+      status: (prepFrame?.angles?.knee || 120) > 140 ? 'warning' : 'optimal',
+      jointTrigger: 'Athletic Knee Sink',
+      measuredValue: prepFrame?.angles?.knee || 118,
+      idealRange: '105° - 130°',
+      coachingHint: 'Sink hips low with chest angled over ball/puck line.',
+    },
+    {
+      id: 'hockey_strike',
+      name: 'Stick Impact & Shaft Whip',
+      timestamp: impactTime,
+      frameNumber: strikeFrame?.frameNumber || impactIdx,
+      importance: 'critical',
+      status: 'optimal',
+      jointTrigger: 'Impact Lead Wrist Drive',
+      measuredValue: strikeFrame?.angles?.hip || 132,
+      idealRange: '125° - 145°',
+      coachingHint: 'Drive bottom hand firmly through impact zone.',
+    },
+    {
+      id: 'hockey_follow',
+      name: 'Follow-Through & Weight Rotation',
+      timestamp: finishTime,
+      frameNumber: finishFrame?.frameNumber || 0,
+      importance: 'secondary',
+      status: 'optimal',
+      jointTrigger: 'Lead Leg Extension',
+      measuredValue: finishFrame?.angles?.knee || 165,
+      idealRange: '155° - 178°',
+      coachingHint: 'Complete rotation posting weight securely onto front foot.',
+    },
+  ];
 }
 
 // ---------------------------------------------------------------------
@@ -97,24 +237,26 @@ export function detectMovementKeyframes(
 function buildGolfKeyframes(
   frames: BiomechanicalFrame[],
   durationSec: number,
+  addressTime: number,
+  backswingTime: number,
   impactTime: number,
-  impactIdx: number
+  followThroughTime: number,
+  addressIdx: number,
+  backswingIdx: number,
+  impactIdx: number,
+  finishIdx: number
 ): MovementKeyframeEvent[] {
-  const addressTime = Math.max(0, impactTime * 0.2);
-  const backswingTime = Math.max(addressTime + 0.2, impactTime * 0.6);
-  const followThroughTime = Math.min(durationSec, impactTime + (durationSec - impactTime) * 0.6);
-
-  const addressFrame = findClosestFrame(frames, addressTime);
-  const backswingFrame = findClosestFrame(frames, backswingTime);
-  const impactFrame = findClosestFrame(frames, impactTime);
-  const finishFrame = findClosestFrame(frames, followThroughTime);
+  const addressFrame = frames[addressIdx] || findClosestFrame(frames, addressTime);
+  const backswingFrame = frames[backswingIdx] || findClosestFrame(frames, backswingTime);
+  const impactFrame = frames[impactIdx] || findClosestFrame(frames, impactTime);
+  const finishFrame = frames[finishIdx] || findClosestFrame(frames, followThroughTime);
 
   return [
     {
       id: 'golf_address',
-      name: 'Address & Posture Setup',
+      name: 'Address & Setup',
       timestamp: addressTime,
-      frameNumber: addressFrame?.frameNumber || 0,
+      frameNumber: addressFrame?.frameNumber || addressIdx,
       importance: 'secondary',
       status: 'optimal',
       jointTrigger: 'Spine Tilt',
@@ -126,7 +268,7 @@ function buildGolfKeyframes(
       id: 'golf_backswing_top',
       name: 'Top of Backswing (Max Coil)',
       timestamp: backswingTime,
-      frameNumber: backswingFrame?.frameNumber || 0,
+      frameNumber: backswingFrame?.frameNumber || backswingIdx,
       importance: 'critical',
       status: (backswingFrame?.angles?.hip || 140) < 130 ? 'warning' : 'optimal',
       jointTrigger: 'Thoracic Coil',
@@ -150,7 +292,7 @@ function buildGolfKeyframes(
       id: 'golf_follow_through',
       name: 'Finish & Weight Transfer',
       timestamp: followThroughTime,
-      frameNumber: finishFrame?.frameNumber || 0,
+      frameNumber: finishFrame?.frameNumber || finishIdx,
       importance: 'primary',
       status: 'optimal',
       jointTrigger: 'Lead Hip Stack',
@@ -288,14 +430,28 @@ function buildTennisKeyframes(
   impactTime: number,
   impactIdx: number
 ): MovementKeyframeEvent[] {
-  const trophyTime = Math.max(0, impactTime - 0.35);
-  const dropTime = Math.max(0, impactTime - 0.15);
-  const landingTime = Math.min(durationSec, impactTime + 0.3);
+  const prepTime = Math.max(0, impactTime - 0.5);
+  const trophyTime = Math.max(0, impactTime - 0.25);
+  const followTime = Math.min(durationSec, impactTime + 0.35);
 
+  const prepFrame = findClosestFrame(frames, prepTime);
   const trophyFrame = findClosestFrame(frames, trophyTime);
   const impactFrame = findClosestFrame(frames, impactTime);
+  const followFrame = findClosestFrame(frames, followTime);
 
   return [
+    {
+      id: 'tennis_unit_turn',
+      name: 'Unit Turn & Preparation',
+      timestamp: prepTime,
+      frameNumber: prepFrame?.frameNumber || 0,
+      importance: 'primary',
+      status: 'optimal',
+      jointTrigger: 'Shoulder Rotation',
+      measuredValue: prepFrame?.angles?.shoulder || 108,
+      idealRange: '95° - 120°',
+      coachingHint: 'Turn shoulders 90° to net, non-dominant hand guiding racket.',
+    },
     {
       id: 'tennis_trophy',
       name: 'Toss & Trophy Position',
@@ -320,6 +476,18 @@ function buildTennisKeyframes(
       idealRange: '160° - 178°',
       coachingHint: 'Contact ball at maximum extension slightly in front of body.',
     },
+    {
+      id: 'tennis_follow_through',
+      name: 'Follow-Through & Recovery',
+      timestamp: followTime,
+      frameNumber: followFrame?.frameNumber || 0,
+      importance: 'secondary',
+      status: 'optimal',
+      jointTrigger: 'Cross-Body Wrap',
+      measuredValue: followFrame?.angles?.elbow || 145,
+      idealRange: '135° - 165°',
+      coachingHint: 'Racquet decelerates smoothly across non-dominant shoulder.',
+    },
   ];
 }
 
@@ -329,25 +497,43 @@ function buildCricketKeyframes(
   impactTime: number,
   impactIdx: number
 ): MovementKeyframeEvent[] {
-  const backliftTime = Math.max(0, impactTime - 0.3);
+  const prepTime = Math.max(0, impactTime - 0.45);
+  const backliftTime = Math.max(0, impactTime - 0.25);
+  const followTime = Math.min(durationSec, impactTime + 0.35);
+
+  const prepFrame = findClosestFrame(frames, prepTime);
+  const backliftFrame = findClosestFrame(frames, backliftTime);
   const releaseFrame = findClosestFrame(frames, impactTime);
+  const followFrame = findClosestFrame(frames, followTime);
 
   return [
     {
+      id: 'cricket_stance',
+      name: 'Stance & Alignment',
+      timestamp: prepTime,
+      frameNumber: prepFrame?.frameNumber || 0,
+      importance: 'secondary',
+      status: 'optimal',
+      jointTrigger: 'Head Position',
+      measuredValue: prepFrame?.angles?.hip || 140,
+      idealRange: '135° - 150°',
+      coachingHint: 'Side-on stance, head directly over front foot line.',
+    },
+    {
       id: 'cricket_backlift',
-      name: 'Backlift & Stance Cock',
+      name: 'Backlift & Cock Phase',
       timestamp: backliftTime,
-      frameNumber: 0,
+      frameNumber: backliftFrame?.frameNumber || 0,
       importance: 'primary',
       status: 'optimal',
       jointTrigger: 'Elbow Flexion',
-      measuredValue: 120,
+      measuredValue: backliftFrame?.angles?.elbow || 120,
       idealRange: '110° - 135°',
       coachingHint: 'High lead elbow pointing towards bowler.',
     },
     {
       id: 'cricket_release',
-      name: 'Release Point / Stride',
+      name: 'Ball Impact / High Release',
       timestamp: impactTime,
       frameNumber: releaseFrame?.frameNumber || impactIdx,
       importance: 'critical',
@@ -355,7 +541,19 @@ function buildCricketKeyframes(
       jointTrigger: 'Arm Extension',
       measuredValue: releaseFrame?.angles?.shoulder || 165,
       idealRange: '155° - 175°',
-      coachingHint: 'Lock lead shoulder facing target.',
+      coachingHint: 'Lock lead shoulder facing target with full high extension.',
+    },
+    {
+      id: 'cricket_follow',
+      name: 'Follow-Through Drive',
+      timestamp: followTime,
+      frameNumber: followFrame?.frameNumber || 0,
+      importance: 'secondary',
+      status: 'optimal',
+      jointTrigger: 'Weight Transfer',
+      measuredValue: followFrame?.angles?.knee || 170,
+      idealRange: '160° - 180°',
+      coachingHint: 'Complete swing path through ball line with balanced footwork.',
     },
   ];
 }

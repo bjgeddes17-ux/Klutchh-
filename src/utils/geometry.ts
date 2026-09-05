@@ -96,10 +96,10 @@ export function calculateKneeValgusScore(landmarks: MediaPipeLandmark[]): number
   const leftMidX = (leftHip.x + leftAnkle.x) / 2;
   const rightMidX = (rightHip.x + rightAnkle.x) / 2;
 
-  // Left knee buckling inward towards center (towards right)
-  const leftInward = leftKnee.x - leftMidX; 
-  // Right knee buckling inward towards center (towards left)
-  const rightInward = rightMidX - rightKnee.x;
+  // Check inward displacement ratio relative to centerline
+  const isLeftOnRight = leftMidX > rightMidX;
+  const leftInward = isLeftOnRight ? (leftMidX - leftKnee.x) : (leftKnee.x - leftMidX);
+  const rightInward = isLeftOnRight ? (rightKnee.x - rightMidX) : (rightMidX - rightKnee.x);
 
   const maxInward = Math.max(0, leftInward, rightInward);
   const penalty = maxInward * 300;

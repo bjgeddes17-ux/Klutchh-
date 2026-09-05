@@ -1,4 +1,9 @@
-import * as VideoThumbnails from 'expo-video-thumbnails';
+let VideoThumbnails: any = null;
+try {
+  VideoThumbnails = require('expo-video-thumbnails');
+} catch (e) {
+  // Safe fallback when running in non-native CLI / Node environment
+}
 
 export interface ExtractedFrame {
   blob?: Blob;

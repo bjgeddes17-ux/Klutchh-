@@ -49,7 +49,6 @@ import { COMPREHENSIVE_DRILL_LIBRARY, DrillItem } from '../data/drillLibrary';
 import { KineticVideoPlayer } from './Report/KineticVideoPlayer.native';
 import { GhostCorrectionVisualizer } from './Report/GhostCorrectionVisualizer.native';
 import { KineticEnergyTransfer } from './Report/KineticEnergyTransfer.native';
-import { AnimatedDrillVisualizer } from './Report/AnimatedDrillVisualizer.native';
 import { ExecutiveDashboardNative } from './Report/ExecutiveDashboard.native';
 import { DrillsTabNative } from './Report/DrillsTab.native';
 import { StrengthsTabNative } from './Report/StrengthsTab.native';

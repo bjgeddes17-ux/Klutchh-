@@ -1,5 +1,15 @@
-import { requireOptionalNativeModule } from 'expo-modules-core';
-import { NativeModules, Platform } from 'react-native';
+let requireOptionalNativeModule: any = () => null;
+try {
+  requireOptionalNativeModule = require('expo-modules-core').requireOptionalNativeModule;
+} catch (e) {}
+
+let NativeModules: any = null;
+let Platform: any = { OS: 'ios' };
+try {
+  const rn = require('react-native');
+  NativeModules = rn.NativeModules;
+  Platform = rn.Platform;
+} catch (e) {}
 
 export interface NativePoseLandmark {
   x: number;
