@@ -28,11 +28,12 @@ export const useVideoPlayback = ({
   const seekLockoutTimer = useRef<NodeJS.Timeout | null>(null);
 
   const [duration, setDuration] = useState<number>(initialDuration);
+  const hasReceivedNativeDuration = useRef(false);
   const [selectedSpeed, setSelectedSpeed] = useState<number>(initialPlaybackRate);
 
-  // Synchronize duration when initialDuration changes
+  // Synchronize duration when initialDuration changes, but ONLY if we haven't got a native one yet
   useEffect(() => {
-    if (initialDuration && initialDuration > 0.5) {
+    if (initialDuration && initialDuration > 0.5 && !hasReceivedNativeDuration.current) {
       setDuration(initialDuration);
     }
   }, [initialDuration]);
@@ -58,7 +59,8 @@ export const useVideoPlayback = ({
           const status = await ref.getStatusAsync().catch(() => null);
           if (status && status.isLoaded) {
             // If near the end of video, reset to beginning before playing
-            if (status.positionMillis >= (status.durationMillis || 3500) - 100) {
+            const currentDur = status.durationMillis || (duration * 1000);
+            if (status.positionMillis >= currentDur - 150) {
               await ref.setPositionAsync(0).catch(() => {});
             }
           }
@@ -85,14 +87,19 @@ export const useVideoPlayback = ({
       
       if (status.durationMillis && status.durationMillis > 100) {
         const durSec = status.durationMillis / 1000;
-        if (Math.abs(durSec - duration) > 0.05) {
-          setDuration(durSec);
-          onDurationChange?.(durSec);
-        }
+        hasReceivedNativeDuration.current = true;
+        // Use functional update to ensure we always have the latest duration
+        setDuration(prev => {
+          if (Math.abs(durSec - prev) > 0.05) {
+            onDurationChange?.(durSec);
+            return durSec;
+          }
+          return prev;
+        });
       }
 
-      // Handle video completion cleanly only when it actually finishes or reaches the very last milliseconds
-      if (status.didJustFinish || (status.durationMillis && status.positionMillis >= status.durationMillis - 10)) {
+      // Handle video completion cleanly
+      if (status.didJustFinish || (status.durationMillis && status.positionMillis >= status.durationMillis - 25)) {
         if (onPause) onPause();
       }
     }

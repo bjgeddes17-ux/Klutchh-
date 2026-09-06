@@ -12,7 +12,7 @@ import {
   ActivityIndicator,
   ScrollView,
 } from 'react-native';
-import Animated, { useSharedValue, useAnimatedReaction, runOnJS } from 'react-native-reanimated';
+import Animated, { useSharedValue, useAnimatedReaction, runOnJS, useFrameCallback } from 'react-native-reanimated';
 import { Video, ResizeMode, AVPlaybackStatus } from 'expo-av';
 import Svg, {
   Line,
@@ -182,6 +182,7 @@ interface KineticVideoPlayerProps {
   sortedFrames: FrameAnalysis[];
   isPlaying: boolean;
   currentTime: number;
+  duration?: number;
   onTimeUpdate: (time: number) => void;
   onDurationChange?: (duration: number) => void;
   playbackRate?: number;
@@ -204,6 +205,7 @@ export const KineticVideoPlayer: React.FC<KineticVideoPlayerProps> = ({
   sortedFrames,
   isPlaying,
   currentTime,
+  duration: propDuration,
   onTimeUpdate,
   onDurationChange,
   playbackRate = 1,
@@ -248,7 +250,7 @@ export const KineticVideoPlayer: React.FC<KineticVideoPlayerProps> = ({
   const {
     videoRef,
     fullscreenVideoRef,
-    duration,
+    duration: nativeDuration,
     selectedSpeed,
     isScrubbing,
     handlePlaybackStatusUpdate,
@@ -264,21 +266,31 @@ export const KineticVideoPlayer: React.FC<KineticVideoPlayerProps> = ({
     onTogglePlay,
     isFullscreenModal,
     initialPlaybackRate: playbackRate,
-    initialDuration: fallbackDuration,
+    initialDuration: propDuration || fallbackDuration,
   });
 
-  const handleTogglePlay = useCallback(() => {
-    if (isPlaying) {
-      if (onPause) onPause();
-    } else {
-      const maxDur = duration || fallbackDuration || 3.5;
-      if (currentTime >= maxDur - 0.12) {
-        handleSeekToTime(0, true);
+  const duration = propDuration || nativeDuration;
+
+  const handleTogglePlay = useCallback(async () => {
+    try {
+      const activeRef = isFullscreenModal ? fullscreenVideoRef.current : videoRef.current;
+      if (isPlaying) {
+        isPlayingSV.value = false;
+        if (activeRef) await activeRef.pauseAsync().catch(() => {});
+        if (onPause) onPause();
       } else {
+        const maxDur = duration || fallbackDuration || 3.5;
+        if (currentTime >= maxDur - 0.12) {
+          handleSeekToTime(0, true);
+        }
+        isPlayingSV.value = true;
+        if (activeRef) await activeRef.playAsync().catch(() => {});
         if (onTogglePlay) onTogglePlay();
       }
+    } catch (e) {
+      if (onTogglePlay) onTogglePlay();
     }
-  }, [isPlaying, onPause, onTogglePlay, currentTime, duration, fallbackDuration, handleSeekToTime]);
+  }, [isPlaying, onPause, onTogglePlay, currentTime, duration, fallbackDuration, handleSeekToTime, isFullscreenModal, videoRef, fullscreenVideoRef]);
 
   const movementKeyframes = useMemo(() => {
     return detectMovementKeyframes(sortedFrames, sportRule, duration || fallbackDuration, techniqueId);
@@ -327,9 +339,55 @@ export const KineticVideoPlayer: React.FC<KineticVideoPlayerProps> = ({
 
   // UI-Thread Reanimated Shared Value for Zero-Bridge Latency Pose Synchronization
   const currentTimeSV = useSharedValue(currentTime);
+  const isPlayingSV = useSharedValue(isPlaying);
+  const speedSV = useSharedValue(selectedSpeed);
+  const durationSV = useSharedValue(duration || fallbackDuration);
+
   useEffect(() => {
-    currentTimeSV.value = currentTime;
+    isPlayingSV.value = isPlaying;
+  }, [isPlaying]);
+
+  useEffect(() => {
+    speedSV.value = selectedSpeed;
+  }, [selectedSpeed]);
+
+  useEffect(() => {
+    durationSV.value = duration || fallbackDuration;
+  }, [duration, fallbackDuration]);
+
+  useEffect(() => {
+    if (!isScrubbing.current) {
+      currentTimeSV.value = currentTime;
+    }
   }, [currentTime]);
+
+  useFrameCallback((frameInfo) => {
+    'worklet';
+    if (isPlayingSV.value && frameInfo.timeSincePreviousFrame) {
+      const dt = frameInfo.timeSincePreviousFrame / 1000;
+      let nextTime = currentTimeSV.value + dt * speedSV.value;
+      const maxD = durationSV.value || 3.5;
+      
+      // Stop exactly at the end
+      if (nextTime >= maxD) {
+        nextTime = maxD;
+        isPlayingSV.value = false;
+      }
+      currentTimeSV.value = nextTime;
+    }
+  }, isPlaying);
+
+  useAnimatedReaction(
+    () => currentTimeSV.value,
+    (val, prev) => {
+      // Sync back to JS thread for UI (Slider, Text)
+      // Throttled to ~30fps for bridge efficiency
+      if (val !== prev && isPlayingSV.value && Math.abs(val - (prev || 0)) > 0.032) {
+        runOnJS(onTimeUpdate)(val);
+      }
+    },
+    [isPlaying]
+  );
 
   // Continuous High-Precision Pose Interpolation Engine (< 1ms drift)
   const { currentFrame, interpolatedLandmarks, isPastData, driftMs } = useMemo(() => {

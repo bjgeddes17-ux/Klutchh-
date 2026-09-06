@@ -103,6 +103,7 @@ export const AnalysisReportPage: React.FC<AnalysisReportPageProps> = ({
   const [activeTab, setActiveTab] = useState<'strengths' | 'leaks' | 'corridors' | 'drills' | 'history'>('strengths');
 
   const [currentTime, setCurrentTime] = useState<number>(0);
+  const [duration, setDuration] = useState<number>(0);
   const [isPlaying, setIsPlaying] = useState<boolean>(false);
   const [selectedPhaseFilter, setSelectedPhaseFilter] = useState<string>('All');
   const [expandedDrillIdx, setExpandedDrillIdx] = useState<number | null>(0);
@@ -478,7 +479,9 @@ export const AnalysisReportPage: React.FC<AnalysisReportPageProps> = ({
             sortedFrames={sortedFrames}
             isPlaying={isPlaying}
             currentTime={currentTime}
+            duration={duration}
             onTimeUpdate={setCurrentTime}
+            onDurationChange={setDuration}
             isDataReady={true}
             onTogglePlay={() => setIsPlaying(!isPlaying)}
             onPause={() => setIsPlaying(false)}
