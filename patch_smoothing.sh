@@ -1,0 +1,7 @@
+sed -i.bak 's/const smoothed = landmarks.map(lm => ({ ...lm }));/const smoothed = landmarks.map(lm => ({ ...lm }));\n    \n    \/\/ HYBRID APPROACH: Unleash the arms and wrists from temporal smoothing\n    \/\/ Indices 11-22 cover shoulders down to fingertips\n    const isArmOrWrist = (idx: number) => idx >= 11 \&\& idx <= 22;/g' src/utils/boneStabilizer.ts
+
+sed -i.bak 's/smoothed\[i\].x = (smoothed\[i\].x \* 0.5) + (prev\[i\].x \* 0.3) + (prev2\[i\].x \* 0.2);/if (isArmOrWrist(i)) {\n        \/\/ Zero smoothing for high-velocity extremities\n        smoothed[i].x = smoothed[i].x;\n        smoothed[i].y = smoothed[i].y;\n        if (smoothed[i].z !== undefined) smoothed[i].z = smoothed[i].z;\n      } else {\n        \/\/ Heavy smoothing for core and legs to prevent jitter\n        smoothed[i].x = (smoothed[i].x * 0.4) + (prev[i].x * 0.4) + (prev2[i].x * 0.2);\n        smoothed[i].y = (smoothed[i].y * 0.4) + (prev[i].y * 0.4) + (prev2[i].y * 0.2);\n        if (smoothed[i].z !== undefined \&\& prev[i].z !== undefined \&\& prev2[i].z !== undefined) {\n          smoothed[i].z = (smoothed[i].z! * 0.4) + (prev[i].z! * 0.4) + (prev2[i].z! * 0.2);\n        }\n      }/g' src/utils/boneStabilizer.ts
+
+sed -i.bak 's/smoothed\[i\].y = (smoothed\[i\].y \* 0.5) + (prev\[i\].y \* 0.3) + (prev2\[i\].y \* 0.2);//g' src/utils/boneStabilizer.ts
+sed -i.bak '/if (smoothed\[i\].z !== undefined && prev\[i\].z !== undefined && prev2\[i\].z !== undefined) {/,+2d' src/utils/boneStabilizer.ts
+

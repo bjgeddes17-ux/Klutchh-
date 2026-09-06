@@ -107,7 +107,7 @@ export async function analyzeNativeVideoBiometrics({
       burstWindows.push({
         startTime: Math.max(0, pStart - 0.05),
         endTime: Math.min(validDuration, pEnd + 0.05),
-        burstFps: 45,
+        burstFps: 60,
         phaseName,
         description: `High-velocity transition burst (${phaseName}) at up to 45 FPS`
       });
@@ -116,8 +116,8 @@ export async function analyzeNativeVideoBiometrics({
 
   const hw = detectHighFrameRateCapability();
   const baseFps = 12;
-  const maxBurstFps = Math.min(45, hw.maxSupportedFps || 45);
-  const MAX_FRAMES_BUDGET = 110;
+  const maxBurstFps = Math.min(60, hw.maxSupportedFps || 60);
+  const MAX_FRAMES_BUDGET = 150;
 
   const { timestamps, burstMap } = generateAdaptiveTimeline(
     0,

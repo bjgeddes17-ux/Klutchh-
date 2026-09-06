@@ -116,8 +116,8 @@ export async function analyzeNativeVideoBiometrics({
 
   const hw = detectHighFrameRateCapability();
   const baseFps = 12;
-  const maxBurstFps = Math.min(45, hw.maxSupportedFps || 45);
-  const MAX_FRAMES_BUDGET = 110;
+  const maxBurstFps = Math.min(60, hw.maxSupportedFps || 60);
+  const MAX_FRAMES_BUDGET = 150;
 
   const { timestamps, burstMap } = generateAdaptiveTimeline(
     0,
@@ -137,7 +137,8 @@ export async function analyzeNativeVideoBiometrics({
   const preRenderedFrames: { timestamp: number; dataUrl: string }[] = [];
   let realDetectionCount = 0;
   let detectedDimensions: { width: number; height: number } | undefined = undefined;
-  const boneStabilizer = new KinematicBoneStabilizer, TemporalSmoother();
+  const boneStabilizer = new KinematicBoneStabilizer();
+  const temporalSmoother = new TemporalSmoother();
 
   // Phase 1: Extract thumbnails and run native pose detection across adaptive timeline
   interface RawFrameSample {

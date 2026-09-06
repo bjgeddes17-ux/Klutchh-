@@ -37,34 +37,34 @@ export const StrengthsTabNative: React.FC<StrengthsTabNativeProps> = ({
       name: 'Kinetic Segment Acceleration',
       score: explosivePower,
       grade: getGrade(explosivePower),
-      tag: 'POWER ENGINE',
+      tag: 'KINETIC DRIVE',
       color: '#f59e0b',
-      why: explosivePower > 80 ? 'Exceptional ground reaction force generation and rapid whip transmission into the kinetic chain.' : 'Power output is developing. Focus on hip-to-shoulder separation to create more whip.',
+      why: explosivePower > 80 ? 'High ground reaction force generating early kinetic velocity.' : 'Power output is developing. Focus on hip-to-shoulder separation to create more whip.',
     },
 
     {
       name: 'Ligament & Joint Armor',
       score: jointArmor,
       grade: getGrade(jointArmor),
-      tag: 'INJURY SHIELD',
+      tag: 'JOINT STABILITY',
       color: '#22c55e',
-      why: jointArmor > 80 ? 'Knee valgus collapse and joint shear loads remain safely shielded under high deceleration.' : 'Warning: High valgus or shear loads detected on joints. Core stability drills required.',
+      why: jointArmor > 80 ? 'Knee tracking and shear loads are within safe physiological limits.' : 'Warning: High valgus or shear loads detected on joints. Core stability drills required.',
     },
 
     {
       name: 'Corridor Postural Precision',
       score: precision,
       grade: getGrade(precision),
-      tag: 'MECHANICAL ACCURACY',
+      tag: 'POSTURAL ALIGNMENT',
       color: '#38bdf8',
-      why: precision > 80 ? 'Joint alignment at peak release closely tracks professional gold-standard angular envelopes.' : 'Postural variance detected across movement. Spine angle or balance needs reinforcement.',
+      why: precision > 80 ? 'Spinal posture and joint angles are maintaining strong biomechanical corridors.' : 'Postural variance detected across movement. Spine angle or balance needs reinforcement.',
     },
 
     {
       name: 'Kinetic Energy Flow',
       score: kineticFlow,
       grade: getGrade(kineticFlow),
-      tag: 'SMOOTH TRANSFER',
+      tag: 'KINETIC SEQUENCING',
       color: '#c084fc',
       why: kineticFlow > 80 ? 'Proximal-to-distal sequencing transfers momentum smoothly from core to extremities without abrupt stalling.' : 'Kinetic stalling detected. Energy is trapped and not transferring smoothly to the extremities.',
     },
@@ -299,10 +299,10 @@ export const StrengthsTabNative: React.FC<StrengthsTabNativeProps> = ({
         </View>
       </View>
 
-      {/* Ranked Superpower Cards */}
+      {/* Key Performance Metrics */}
       <View style={styles.sectionHeader}>
-        <Text style={styles.sectionTitle}>YOUR TOP MECHANICAL ADVANTAGES</Text>
-        <Text style={styles.sectionSubtitle}>Ranked by kinematic efficiency and gold-standard benchmark alignment</Text>
+        <Text style={styles.sectionTitle}>BIOMECHANICAL EFFICIENCY PROFILE</Text>
+        <Text style={styles.sectionSubtitle}>Key performance indicators tracking kinetic transfer and stability</Text>
       </View>
 
       {superpowers.slice(0, 3).map((item, idx) => (

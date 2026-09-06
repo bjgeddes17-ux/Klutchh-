@@ -169,8 +169,14 @@ export class TemporalSmoother {
         // Heavy smoothing for core and legs to prevent jitter
         smoothed[i].x = (smoothed[i].x * 0.4) + (prev[i].x * 0.4) + (prev2[i].x * 0.2);
         smoothed[i].y = (smoothed[i].y * 0.4) + (prev[i].y * 0.4) + (prev2[i].y * 0.2);
+        if (smoothed[i].z !== undefined && prev[i].z !== undefined && prev2[i].z !== undefined) {
+          smoothed[i].z = (smoothed[i].z! * 0.4) + (prev[i].z! * 0.4) + (prev2[i].z! * 0.2);
+        }
       }
       
+      if (smoothed[i].z !== undefined && prev[i].z !== undefined && prev2[i].z !== undefined) {
+        smoothed[i].z = (smoothed[i].z! * 0.5) + (prev[i].z! * 0.3) + (prev2[i].z! * 0.2);
+      }
     }
 
     this.history.push(smoothed);
