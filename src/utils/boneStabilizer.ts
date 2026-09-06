@@ -132,3 +132,46 @@ export class KinematicBoneStabilizer {
     this.calibrationFramesCount = 0;
   }
 }
+
+export class TemporalSmoother {
+  private history: MediaPipeLandmark[][] = [];
+  private maxHistory = 3;
+
+  smooth(landmarks: MediaPipeLandmark[]): MediaPipeLandmark[] {
+    if (!landmarks || landmarks.length < 33) return landmarks;
+    
+    const smoothed = landmarks.map(lm => ({ ...lm }));
+    
+    if (this.history.length === 0) {
+      this.history.push(smoothed);
+      return smoothed;
+    }
+
+    const prev = this.history[this.history.length - 1];
+    const prev2 = this.history.length > 1 ? this.history[this.history.length - 2] : prev;
+
+    for (let i = 0; i < smoothed.length; i++) {
+      if (smoothed[i].visibility && smoothed[i].visibility! < 0.3) {
+        continue;
+      }
+      // Simple Kalman-like alpha-beta filter or Savitzky-Golay inspired
+      // Smoothed = 0.5 * current + 0.3 * prev + 0.2 * prev2
+      smoothed[i].x = (smoothed[i].x * 0.5) + (prev[i].x * 0.3) + (prev2[i].x * 0.2);
+      smoothed[i].y = (smoothed[i].y * 0.5) + (prev[i].y * 0.3) + (prev2[i].y * 0.2);
+      if (smoothed[i].z !== undefined && prev[i].z !== undefined && prev2[i].z !== undefined) {
+        smoothed[i].z = (smoothed[i].z! * 0.5) + (prev[i].z! * 0.3) + (prev2[i].z! * 0.2);
+      }
+    }
+
+    this.history.push(smoothed);
+    if (this.history.length > this.maxHistory) {
+      this.history.shift();
+    }
+
+    return smoothed;
+  }
+
+  reset() {
+    this.history = [];
+  }
+}

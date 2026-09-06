@@ -29,48 +29,55 @@ export const StrengthsTabNative: React.FC<StrengthsTabNativeProps> = ({
   overallKneeSafety,
   onExploreEnergy,
 }) => {
+  const getGrade = (score: number) => score > 90 ? 'A+' : score > 80 ? 'A' : score > 70 ? 'B+' : score > 60 ? 'B' : 'C';
+
   // Extract high-performing attributes
-  const superpowers = [
+  const dynamicPowers = [
     {
       name: 'Kinetic Segment Acceleration',
       score: explosivePower,
-      grade: explosivePower >= 90 ? 'A+' : 'A',
+      grade: getGrade(explosivePower),
       tag: 'POWER ENGINE',
       color: '#f59e0b',
-      why: 'Exceptional ground reaction force generation and rapid whip transmission into the kinetic chain.',
+      why: explosivePower > 80 ? 'Exceptional ground reaction force generation and rapid whip transmission into the kinetic chain.' : 'Power output is developing. Focus on hip-to-shoulder separation to create more whip.',
     },
     {
       name: 'Ligament & Joint Armor',
       score: jointArmor,
-      grade: jointArmor >= 90 ? 'A+' : 'A',
+      grade: getGrade(jointArmor),
       tag: 'INJURY SHIELD',
       color: '#22c55e',
-      why: 'Knee valgus collapse and joint shear loads remain safely shielded under high deceleration.',
+      why: jointArmor > 80 ? 'Knee valgus collapse and joint shear loads remain safely shielded under high deceleration.' : 'Warning: High valgus or shear loads detected on joints. Core stability drills required.',
     },
     {
       name: 'Corridor Postural Precision',
       score: precision,
-      grade: precision >= 90 ? 'A+' : 'A',
+      grade: getGrade(precision),
       tag: 'MECHANICAL ACCURACY',
       color: '#38bdf8',
-      why: 'Joint alignment at peak release closely tracks professional gold-standard angular envelopes.',
+      why: precision > 80 ? 'Joint alignment at peak release closely tracks professional gold-standard angular envelopes.' : 'Postural variance detected across movement. Spine angle or balance needs reinforcement.',
     },
     {
       name: 'Kinetic Energy Flow',
       score: kineticFlow,
-      grade: kineticFlow >= 90 ? 'A+' : 'A',
+      grade: getGrade(kineticFlow),
       tag: 'SMOOTH TRANSFER',
       color: '#c084fc',
-      why: 'Proximal-to-distal sequencing transfers momentum smoothly from core to extremities without abrupt stalling.',
+      why: kineticFlow > 80 ? 'Proximal-to-distal sequencing transfers momentum smoothly from core to extremities without abrupt stalling.' : 'Kinetic stalling detected. Energy is trapped and not transferring smoothly to the extremities.',
     },
-  ].sort((a, b) => b.score - a.score);
+  
+
+
+  // Sort them so the highest score is at the top
+  const superpowers = dynamicPowers.sort((a, b) => b.score - a.score);
 
   const keyStrengthsList = aiReport?.keyStrengths || [
     'Optimal ground reaction force generation through initial drive phase',
     'Stable spine posture preserved within safe biomechanical limits',
     'Clean proximal-to-distal segmental acceleration timing',
     'Strong bilateral kinetic symmetry during high-velocity rotation',
-  ];
+  
+
 
   // Radar Chart Geometry Setup (6 Axes)
   const radarMetrics = [
@@ -80,7 +87,8 @@ export const StrengthsTabNative: React.FC<StrengthsTabNativeProps> = ({
     { label: 'FLOW', val: kineticFlow },
     { label: 'SYMMETRY', val: overallSymmetry },
     { label: 'STABILITY', val: overallKneeSafety },
-  ];
+  
+
 
   const radarSize = 220;
   const center = radarSize / 2;
