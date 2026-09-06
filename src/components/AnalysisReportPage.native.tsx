@@ -75,6 +75,7 @@ interface AnalysisReportPageProps {
   isFallback?: boolean;
   preRenderedFrames?: { timestamp: number; dataUrl: string }[];
   sourceDimensions?: { width: number; height: number };
+  savedReports?: any[];
   onBack: () => void;
   onSaveReport?: (reportData: any) => void;
 }
@@ -96,6 +97,7 @@ export const AnalysisReportPage: React.FC<AnalysisReportPageProps> = ({
   isFallback: propIsFallback,
   preRenderedFrames = [],
   sourceDimensions,
+  savedReports = [],
   onBack,
   onSaveReport,
 }) => {
@@ -453,7 +455,8 @@ export const AnalysisReportPage: React.FC<AnalysisReportPageProps> = ({
           <Text style={styles.headerMainTitle}>{techniqueName ? `${sportRule.name} • ${techniqueName}` : `${sportRule.name} Form Analysis`}</Text>
         </View>
         <TouchableOpacity onPress={() => setSaveModalOpen(true)} style={styles.saveHeaderBtn}>
-          <Bookmark color="#eab308" size={16} />
+          <Bookmark color="#eab308" size={14} />
+          <Text style={styles.saveHeaderText}>SAVE REPORT</Text>
         </TouchableOpacity>
       </View>
 
@@ -645,6 +648,7 @@ export const AnalysisReportPage: React.FC<AnalysisReportPageProps> = ({
               currentPrecision={precision}
               currentFlow={kineticFlow}
               aiReport={aiReport}
+              savedReports={savedReports}
             />
           </View>
         )}
@@ -769,9 +773,20 @@ const styles = StyleSheet.create({
     marginTop: 1,
   },
   saveHeaderBtn: {
-    padding: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
     backgroundColor: '#18181b',
     borderRadius: 10,
+    borderWidth: 1,
+    borderColor: 'rgba(234, 179, 8, 0.3)',
+  },
+  saveHeaderText: {
+    color: '#eab308',
+    fontSize: 12,
+    fontWeight: '800',
   },
   contentScroll: {
     flex: 1,

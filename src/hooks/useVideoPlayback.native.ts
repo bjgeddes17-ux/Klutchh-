@@ -164,14 +164,14 @@ export const useVideoPlayback = ({
         lastNativeSeekTimestamp.current = now;
         if (videoRef.current) {
           videoRef.current.setPositionAsync(seekTime, {
-            toleranceMillisBefore: 80,
-            toleranceMillisAfter: 80,
+            toleranceMillisBefore: 0,
+            toleranceMillisAfter: 0,
           }).catch(() => {});
         }
         if (fullscreenVideoRef.current) {
           fullscreenVideoRef.current.setPositionAsync(seekTime, {
-            toleranceMillisBefore: 80,
-            toleranceMillisAfter: 80,
+            toleranceMillisBefore: 0,
+            toleranceMillisAfter: 0,
           }).catch(() => {});
         }
       } else if (!nativeSeekTimeout.current) {
@@ -182,14 +182,14 @@ export const useVideoPlayback = ({
             lastNativeSeekTimestamp.current = Date.now();
             if (videoRef.current) {
               videoRef.current.setPositionAsync(st, {
-                toleranceMillisBefore: 80,
-                toleranceMillisAfter: 80,
+                toleranceMillisBefore: 0,
+                toleranceMillisAfter: 0,
               }).catch(() => {});
             }
             if (fullscreenVideoRef.current) {
               fullscreenVideoRef.current.setPositionAsync(st, {
-                toleranceMillisBefore: 80,
-                toleranceMillisAfter: 80,
+                toleranceMillisBefore: 0,
+                toleranceMillisAfter: 0,
               }).catch(() => {});
             }
           }

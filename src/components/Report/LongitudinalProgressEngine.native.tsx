@@ -26,6 +26,7 @@ interface LongitudinalProgressEngineProps {
   currentPrecision: number;
   currentFlow: number;
   aiReport: AICoachingReport | null;
+  savedReports?: any[];
   onSelectSession?: (session: HistoricalSession) => void;
 }
 
@@ -37,68 +38,50 @@ export const LongitudinalProgressEngineNative: React.FC<LongitudinalProgressEngi
   currentPrecision,
   currentFlow,
   aiReport,
+  savedReports = [],
   onSelectSession,
 }) => {
-  const [selectedSessionIdx, setSelectedSessionIdx] = useState<number>(3); // Default to current
 
-  // Simulated / Stored Longitudinal Session History
-  const historySessions: HistoricalSession[] = [
-    {
-      id: 'sess_1',
-      date: '4 WEEKS AGO',
-      sportName: sportRule.name,
-      titanRating: 6.4,
-      overallGrade: 'B-',
-      explosivePower: 62,
-      jointArmor: 68,
-      precision: 65,
-      kineticFlow: 60,
-      resolvedLeaksCount: 0,
-      topFixedLeak: 'Initial Baseline Assessment',
-    },
-    {
-      id: 'sess_2',
-      date: '3 WEEKS AGO',
-      sportName: sportRule.name,
-      titanRating: 7.1,
-      overallGrade: 'B+',
-      explosivePower: 71,
-      jointArmor: 74,
-      precision: 72,
-      kineticFlow: 68,
-      resolvedLeaksCount: 1,
-      topFixedLeak: 'Spine Angle Stabilization',
-    },
-    {
-      id: 'sess_3',
-      date: '1 WEEK AGO',
-      sportName: sportRule.name,
-      titanRating: 7.8,
-      overallGrade: 'A-',
-      explosivePower: 79,
-      jointArmor: 81,
-      precision: 78,
-      kineticFlow: 75,
-      resolvedLeaksCount: 2,
-      topFixedLeak: 'Lead Knee Valgus Correction',
-    },
-    {
-      id: 'sess_curr',
-      date: 'TODAY (CURRENT)',
-      sportName: sportRule.name,
-      titanRating: currentTitanRating || 8.4,
-      overallGrade: aiReport?.overallGrade || 'A+',
-      explosivePower: currentPower || 86,
-      jointArmor: currentArmor || 88,
-      precision: currentPrecision || 84,
-      kineticFlow: currentFlow || 82,
-      resolvedLeaksCount: 3,
-      topFixedLeak: 'Proximal-to-Distal Whip Acceleration',
-    },
-  ];
+  // Stored Longitudinal Session History integrated with real saved data
+  const parsedSaved: HistoricalSession[] = (savedReports || []).map((r: any) => ({
+    id: r.id || Math.random().toString(),
+    date: r.date || 'PREVIOUS',
+    sportName: r.sportName || sportRule.name,
+    titanRating: r.score || 7.0,
+    overallGrade: r.grade || 'B',
+    explosivePower: r.dynamicMetrics?.explosivePower || 70,
+    jointArmor: r.overallKneeSafety || 70,
+    precision: r.dynamicMetrics?.precision || 70,
+    kineticFlow: r.dynamicMetrics?.kineticFlow || 70,
+    resolvedLeaksCount: 1,
+    topFixedLeak: r.notes ? r.notes.substring(0, 30) + '...' : 'Biomechanical correction',
+  })).reverse(); // Reverse if newer is at the start of savedReports
+
+  const currentSess: HistoricalSession = {
+    id: 'sess_curr',
+    date: 'TODAY (CURRENT)',
+    sportName: sportRule.name,
+    titanRating: currentTitanRating || 8.4,
+    overallGrade: aiReport?.overallGrade || 'A+',
+    explosivePower: currentPower || 86,
+    jointArmor: currentArmor || 88,
+    precision: currentPrecision || 84,
+    kineticFlow: currentFlow || 82,
+    resolvedLeaksCount: 3,
+    topFixedLeak: 'Current Session Assessment',
+  };
+
+  const allSessions = [...parsedSaved, currentSess];
+  const historySessions = allSessions.slice(-4);
+  
+  const [selectedSessionIdx, setSelectedSessionIdx] = useState<number>(historySessions.length - 1); // Default to current
+
+  useEffect(() => {
+    setSelectedSessionIdx(historySessions.length - 1);
+  }, [historySessions.length]);
 
   const firstSession = historySessions[0];
-  const currentSession = historySessions[selectedSessionIdx] || historySessions[3];
+  const currentSession = historySessions[selectedSessionIdx] || historySessions[historySessions.length - 1];
   const totalGain = Math.max(0, currentSession.titanRating - firstSession.titanRating).toFixed(1);
   const powerGain = Math.max(0, currentSession.explosivePower - firstSession.explosivePower);
 

@@ -363,6 +363,7 @@ export default function App() {
         isFallback={analysisResult.isFallback}
         preRenderedFrames={analysisResult.preRenderedFrames}
         sourceDimensions={analysisResult.sourceDimensions}
+        savedReports={savedReports}
         onBack={() => {
           setAnalysisResult(null);
           handleClearSelectedVideo();

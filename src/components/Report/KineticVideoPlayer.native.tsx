@@ -271,27 +271,6 @@ export const KineticVideoPlayer: React.FC<KineticVideoPlayerProps> = ({
 
   const duration = propDuration || nativeDuration;
 
-  const handleTogglePlay = useCallback(async () => {
-    try {
-      const activeRef = isFullscreenModal ? fullscreenVideoRef.current : videoRef.current;
-      if (isPlaying) {
-        isPlayingSV.value = false;
-        if (activeRef) await activeRef.pauseAsync().catch(() => {});
-        if (onPause) onPause();
-      } else {
-        const maxDur = duration || fallbackDuration || 3.5;
-        if (currentTime >= maxDur - 0.12) {
-          handleSeekToTime(0, true);
-        }
-        isPlayingSV.value = true;
-        if (activeRef) await activeRef.playAsync().catch(() => {});
-        if (onTogglePlay) onTogglePlay();
-      }
-    } catch (e) {
-      if (onTogglePlay) onTogglePlay();
-    }
-  }, [isPlaying, onPause, onTogglePlay, currentTime, duration, fallbackDuration, handleSeekToTime, isFullscreenModal, videoRef, fullscreenVideoRef]);
-
   const movementKeyframes = useMemo(() => {
     return detectMovementKeyframes(sortedFrames, sportRule, duration || fallbackDuration, techniqueId);
   }, [sortedFrames, sportRule, duration, fallbackDuration, techniqueId]);
@@ -1019,19 +998,6 @@ export const KineticVideoPlayer: React.FC<KineticVideoPlayerProps> = ({
             </TouchableOpacity>
 
             <TouchableOpacity
-              onPress={handleTogglePlay}
-              hitSlop={{ top: 16, bottom: 16, left: 16, right: 16 }}
-              style={styles.playButtonBig}
-              accessibilityLabel={isPlaying ? 'Pause' : 'Play'}
-            >
-              {isPlaying ? (
-                <Pause color="#000" fill="#000" size={20} />
-              ) : (
-                <Play color="#000" fill="#000" size={20} style={{ marginLeft: 2 }} />
-              )}
-            </TouchableOpacity>
-
-            <TouchableOpacity
               onPress={() => handleStep('forward', currentTime)}
               hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
               style={styles.stepButton}
@@ -1039,29 +1005,6 @@ export const KineticVideoPlayer: React.FC<KineticVideoPlayerProps> = ({
             >
               <SkipForward color="#fff" size={16} />
             </TouchableOpacity>
-          </View>
-
-          {/* Speed Selector Pills */}
-          <View style={styles.speedSelectorGrid}>
-            {[0.25, 0.5, 1].map((spd) => (
-              <TouchableOpacity
-                key={spd}
-                onPress={() => handleChangeSpeed(spd)}
-                style={[
-                  styles.speedPillLarge,
-                  selectedSpeed === spd && styles.speedPillActive,
-                ]}
-              >
-                <Text
-                  style={[
-                    styles.speedTextLarge,
-                    selectedSpeed === spd && styles.speedTextActive,
-                  ]}
-                >
-                  {spd === 1 ? '1x' : `${spd}x`}
-                </Text>
-              </TouchableOpacity>
-            ))}
           </View>
 
           {/* Digital Clock */}
@@ -1450,10 +1393,6 @@ export const KineticVideoPlayer: React.FC<KineticVideoPlayerProps> = ({
                   <SkipBack color="#fff" size={18} />
                 </TouchableOpacity>
 
-                <TouchableOpacity onPress={handleTogglePlay} hitSlop={{ top: 16, bottom: 16, left: 16, right: 16 }} style={styles.playButtonBig}>
-                  {isPlaying ? <Pause color="#000" fill="#000" size={24} /> : <Play color="#000" fill="#000" size={24} />}
-                </TouchableOpacity>
-
                 <TouchableOpacity onPress={() => handleStep('forward', currentTime)} hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }} style={styles.stepButton}>
                   <SkipForward color="#fff" size={18} />
                 </TouchableOpacity>
@@ -1463,30 +1402,6 @@ export const KineticVideoPlayer: React.FC<KineticVideoPlayerProps> = ({
                 <Text style={styles.mainTimeText}>{currentTime.toFixed(2)}s</Text>
                 <Text style={styles.slashText}>/</Text>
                 <Text style={styles.durationTimeText}>{duration.toFixed(2)}s</Text>
-              </View>
-            </View>
-
-            <View style={styles.secondaryControlsRow}>
-              <View style={styles.speedSelectorGrid}>
-                {[0.25, 0.5, 1].map((spd) => (
-                  <TouchableOpacity
-                    key={spd}
-                    onPress={() => handleChangeSpeed(spd)}
-                    style={[
-                      styles.speedPillLarge,
-                      selectedSpeed === spd && styles.speedPillActive,
-                    ]}
-                  >
-                    <Text
-                      style={[
-                        styles.speedTextLarge,
-                        selectedSpeed === spd && styles.speedTextActive,
-                      ]}
-                    >
-                      {spd === 1 ? 'NORMAL' : `${spd}x`}
-                    </Text>
-                  </TouchableOpacity>
-                ))}
               </View>
             </View>
 
