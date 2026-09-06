@@ -68,7 +68,9 @@ export const StrengthsTabNative: React.FC<StrengthsTabNativeProps> = ({
       color: '#c084fc',
       why: kineticFlow > 80 ? 'Proximal-to-distal sequencing transfers momentum smoothly from core to extremities without abrupt stalling.' : 'Kinetic stalling detected. Energy is trapped and not transferring smoothly to the extremities.',
     },
-  ];
+
+  
+
 
   // Sort them so the highest score is at the top
   const superpowers = dynamicPowers.sort((a, b) => b.score - a.score);
@@ -78,7 +80,9 @@ export const StrengthsTabNative: React.FC<StrengthsTabNativeProps> = ({
     'Stable spine posture preserved within safe biomechanical limits',
     'Clean proximal-to-distal segmental acceleration timing',
     'Strong bilateral kinetic symmetry during high-velocity rotation',
-  ];
+
+  
+
 
   // Radar Chart Geometry Setup (6 Axes)
   const radarMetrics = [
@@ -88,7 +92,9 @@ export const StrengthsTabNative: React.FC<StrengthsTabNativeProps> = ({
     { label: 'FLOW', val: kineticFlow },
     { label: 'SYMMETRY', val: overallSymmetry },
     { label: 'STABILITY', val: overallKneeSafety },
-  ];
+
+  
+
 
   const radarSize = 220;
   const center = radarSize / 2;

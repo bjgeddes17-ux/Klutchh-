@@ -137,7 +137,8 @@ export async function analyzeNativeVideoBiometrics({
   const preRenderedFrames: { timestamp: number; dataUrl: string }[] = [];
   let realDetectionCount = 0;
   let detectedDimensions: { width: number; height: number } | undefined = undefined;
-  const boneStabilizer = new KinematicBoneStabilizer, TemporalSmoother();
+  const boneStabilizer = new KinematicBoneStabilizer();
+  const temporalSmoother = new TemporalSmoother();
 
   // Phase 1: Extract thumbnails and run native pose detection across adaptive timeline
   interface RawFrameSample {

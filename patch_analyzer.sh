@@ -1,0 +1,1 @@
+sed -i.bak 's/const boneStabilizer = new KinematicBoneStabilizer, TemporalSmoother();/const boneStabilizer = new KinematicBoneStabilizer();\n  const temporalSmoother = new TemporalSmoother();/' src/services/nativeVideoAnalyzer.ts
