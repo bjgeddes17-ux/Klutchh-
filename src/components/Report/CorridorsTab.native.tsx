@@ -17,12 +17,6 @@ export const CorridorsTabNative: React.FC<CorridorsTabNativeProps> = ({
   currentTime,
   onSeek,
 }) => {
-  const currentFrame = allFrames.find(
-    (f) => Math.abs(f.timestamp - currentTime) < 0.15
-  ) || allFrames[0];
-
-  const currentAngles = currentFrame?.angles || {};
-
   return (
     <View style={styles.container}>
       {/* Header Explainer */}
@@ -34,16 +28,16 @@ export const CorridorsTabNative: React.FC<CorridorsTabNativeProps> = ({
           <View style={{ flex: 1 }}>
             <View style={styles.badgeRow}>
               <View style={styles.proBadge}>
-                <Text style={styles.proBadgeText}>PRO BENCHMARKS</Text>
+                <Text style={styles.proBadgeText}>PRO BIOMECHANICAL ENVELOPE</Text>
               </View>
               <Text style={styles.frameTimestampText}>SCRUB TIME: {currentTime.toFixed(2)}s</Text>
             </View>
-            <Text style={styles.heroTitle}>Tour Gold Corridors</Text>
+            <Text style={styles.heroTitle}>Understanding the Corridor Envelope</Text>
           </View>
         </View>
 
         <Text style={styles.heroDesc}>
-          Every elite athlete operates inside tight angular boundaries. If your joints are in the green corridor, energy flows seamlessly. If in red, power is bleeding.
+          The green shaded band represents the elite Tour Gold Standard range (min/max joint angles required for peak explosive power). The blue line is your actual recorded motion. When your blue line stays inside the green corridor, energy transfer is 100% efficient. When it breaches the envelope, kinetic energy leaks out.
         </Text>
       </View>
 
@@ -58,7 +52,7 @@ export const CorridorsTabNative: React.FC<CorridorsTabNativeProps> = ({
         </View>
 
         <View style={{ paddingVertical: 6 }}>
-          <Svg width="100%" height={120} viewBox="0 0 320 100">
+          <Svg width="100%" height={140} viewBox="0 0 320 100">
             <Defs>
               <LinearGradient id="corridorGrad" x1="0" y1="0" x2="0" y2="1">
                 <Stop offset="0%" stopColor="#22c55e" stopOpacity="0.25" />
@@ -74,7 +68,7 @@ export const CorridorsTabNative: React.FC<CorridorsTabNativeProps> = ({
               d="M 15 25 Q 100 20, 160 15 T 305 25 L 305 65 Q 160 55, 100 60 T 15 65 Z"
               fill="url(#corridorGrad)"
               stroke="#22c55e"
-              strokeWidth="1"
+              strokeWidth="1.5"
               strokeDasharray="2,2"
             />
 
@@ -83,7 +77,7 @@ export const CorridorsTabNative: React.FC<CorridorsTabNativeProps> = ({
               d="M 15 45 Q 80 50, 130 18 T 220 72 T 305 50"
               fill="none"
               stroke="#38bdf8"
-              strokeWidth="2.5"
+              strokeWidth="3"
             />
 
             {/* Scrub Time Vertical Marker */}
@@ -91,8 +85,8 @@ export const CorridorsTabNative: React.FC<CorridorsTabNativeProps> = ({
               const scrubX = 15 + Math.min(290, Math.max(0, (currentTime / 3.25) * 290));
               return (
                 <G>
-                  <Line x1={scrubX} y1="10" x2={scrubX} y2="90" stroke="#eab308" strokeWidth="2" />
-                  <Circle cx={scrubX} cy="45" r="5" fill="#eab308" stroke="#ffffff" strokeWidth="1.5" />
+                  <Line x1={scrubX} y1="10" x2={scrubX} y2="90" stroke="#eab308" strokeWidth="2.5" />
+                  <Circle cx={scrubX} cy={45} r="5" fill="#eab308" stroke="#ffffff" strokeWidth="1.5" />
                   <SvgText x={scrubX} y="8" fill="#eab308" fontSize="8" fontWeight="900" textAnchor="middle">
                     {currentTime.toFixed(2)}s
                   </SvgText>
@@ -104,126 +98,25 @@ export const CorridorsTabNative: React.FC<CorridorsTabNativeProps> = ({
           <View style={styles.graphFooterRow}>
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
               <View style={{ width: 8, height: 8, borderRadius: 2, backgroundColor: 'rgba(34, 197, 94, 0.4)' }} />
-              <Text style={{ color: '#a1a1aa', fontSize: 9 }}>Tour Gold Standard Range</Text>
+              <Text style={{ color: '#a1a1aa', fontSize: 10 }}>Tour Gold Standard Envelope</Text>
             </View>
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
               <View style={{ width: 8, height: 2, backgroundColor: '#38bdf8' }} />
-              <Text style={{ color: '#38bdf8', fontSize: 9, fontWeight: 'bold' }}>Athlete Measured Trajectory</Text>
+              <Text style={{ color: '#38bdf8', fontSize: 10, fontWeight: 'bold' }}>Your Motion Trajectory</Text>
             </View>
           </View>
         </View>
       </View>
 
-      {/* Joint Angle Corridor Gauges */}
-      <View style={styles.sectionHeader}>
-        <Text style={styles.sectionTitle}>DYNAMIC JOINT TOLERANCE GAUGES</Text>
-        <Text style={styles.sectionSubtitle}>Scrub the video above to see how your joint angles track against ideal ranges</Text>
+      {/* Educational Breakdown Card */}
+      <View style={styles.heroCard}>
+        <Text style={[styles.heroTitle, { fontSize: 14, marginBottom: 8 }]}>How to Read Your Envelope</Text>
+        <Text style={[styles.heroDesc, { fontSize: 11, lineHeight: 16 }]}>
+          • <Text style={{ color: '#22c55e', fontWeight: 'bold' }}>The Green Band:</Text> Formulated from professional motion capture databases. Staying within this corridor ensures maximum kinetic energy transfer with zero wasted torque.{'\n'}
+          • <Text style={{ color: '#38bdf8', fontWeight: 'bold' }}>The Blue Line:</Text> Your body's exact angular path across the entire movement sequence.{'\n'}
+          • <Text style={{ color: '#eab308', fontWeight: 'bold' }}>The Yellow Scrubber:</Text> Instantly links the graph timeline to your video scrubber position so you can inspect form breaks frame-by-frame.
+        </Text>
       </View>
-
-      {sportRule.jointRules.map((rule, idx) => {
-        // Find measured angle for this joint
-        let measuredVal = 0;
-        const jName = rule.name.toLowerCase();
-        const idealAngle = (rule.idealMin + rule.idealMax) / 2;
-
-        if (jName.includes('knee') || rule.id.includes('knee')) {
-          measuredVal = currentAngles.knee || currentAngles.leadKnee || 148;
-        } else if (jName.includes('hip') || rule.id.includes('hip')) {
-          measuredVal = currentAngles.hip || currentAngles.trailHip || 155;
-        } else if (jName.includes('spine') || jName.includes('torso') || rule.id.includes('spine')) {
-          measuredVal = currentAngles.shoulder || currentAngles.spineAngle || 34;
-        } else if (jName.includes('elbow') || rule.id.includes('elbow')) {
-          measuredVal = currentAngles.elbow || currentAngles.leadElbow || 162;
-        } else {
-          measuredVal = idealAngle;
-        }
-
-        const min = rule.idealMin;
-        const max = rule.idealMax;
-        const isInRange = measuredVal >= min && measuredVal <= max;
-        const deviation = isInRange
-          ? 0
-          : measuredVal < min
-          ? min - measuredVal
-          : measuredVal - max;
-
-        const statusColor = isInRange ? '#22c55e' : deviation < 12 ? '#eab308' : '#ef4444';
-
-        // Calculate needle position in percentage (0 to 100) across an expanded window [min-25, max+25]
-        const displayMin = Math.max(0, min - 25);
-        const displayMax = max + 25;
-        const totalSpan = displayMax - displayMin;
-        const currentPct = Math.min(100, Math.max(0, ((measuredVal - displayMin) / totalSpan) * 100));
-        const minPct = Math.min(100, Math.max(0, ((min - displayMin) / totalSpan) * 100));
-        const maxPct = Math.min(100, Math.max(0, ((max - displayMin) / totalSpan) * 100));
-
-        return (
-          <View key={rule.id || idx} style={[styles.corridorCard, { borderColor: statusColor }]}>
-            <View style={styles.cardTopRow}>
-              <View style={{ flex: 1 }}>
-                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                  <Text style={styles.jointName}>{rule.name}</Text>
-                  {rule.phase && (
-                    <View style={styles.phasePill}>
-                      <Text style={styles.phasePillText}>{rule.phase}</Text>
-                    </View>
-                  )}
-                </View>
-                <Text style={styles.jointDesc}>{rule.description}</Text>
-              </View>
-
-              <View style={styles.measureBox}>
-                <Text style={[styles.measuredAngleText, { color: statusColor }]}>
-                  {Math.round(measuredVal)}°
-                </Text>
-                <Text style={[styles.statusText, { color: statusColor }]}>
-                  {isInRange ? 'INSIDE CORRIDOR' : `OFF BY ${Math.round(deviation)}°`}
-                </Text>
-              </View>
-            </View>
-
-            {/* Visual Corridor Bar Gauge */}
-            <View style={styles.gaugeContainer}>
-              <View style={styles.gaugeTrack}>
-                {/* Safe Green Zone */}
-                <View
-                  style={[
-                    styles.greenCorridorZone,
-                    {
-                      left: `${minPct}%`,
-                      width: `${Math.max(8, maxPct - minPct)}%`,
-                    },
-                  ]}
-                />
-
-                {/* Current Angle Needle */}
-                <View style={[styles.needle, { left: `${currentPct}%`, backgroundColor: statusColor }]} />
-              </View>
-
-              {/* Gauge Boundary Labels */}
-              <View style={styles.gaugeLabelsRow}>
-                <Text style={styles.gaugeMinLabel}>{Math.round(displayMin)}°</Text>
-                <Text style={styles.gaugeTargetLabel}>
-                  TARGET: {min}° - {max}°
-                </Text>
-                <Text style={styles.gaugeMaxLabel}>{Math.round(displayMax)}°</Text>
-              </View>
-            </View>
-
-            {/* Biomechanical Rule Feedback */}
-            <View style={styles.ruleFooter}>
-              <View style={[styles.statusIndicatorDot, { backgroundColor: statusColor }]} />
-              <Text style={styles.feedbackText}>
-                {isInRange
-                  ? `Gold standard posture preserved. Joint angle is within optimal ${Math.round((rule.idealMin + rule.idealMax) / 2)}° target.`
-                  : measuredVal < min
-                  ? `Under-rotated by ${Math.round(deviation)}°. Extend joint further to hit ideal torque.`
-                  : `Over-extended by ${Math.round(deviation)}°. Pull back into target corridor to avoid energy leak.`}
-              </Text>
-            </View>
-          </View>
-        );
-      })}
     </View>
   );
 };

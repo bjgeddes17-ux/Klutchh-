@@ -168,53 +168,43 @@ export async function analyzeNativeVideoBiometrics({
     let area = 0;
     let root: { x: number; y: number } | null = null;
 
-    if (nativeDetectorActive && Platform.OS !== 'web' && videoUri) {
+    if (Platform.OS !== 'web' && videoUri) {
       try {
-        const thumbnail = await VideoThumbnails.getThumbnailAsync(videoUri, {
+        const thumbnail = VideoThumbnails ? await VideoThumbnails.getThumbnailAsync(videoUri, {
           time: timestampMs,
           quality: 0.5,
-        });
+        }).catch(() => null) : null;
 
         if (thumbnail?.uri) {
           frameImageUri = thumbnail.uri;
           if (thumbnail.width && thumbnail.height && !detectedDimensions) {
             detectedDimensions = { width: thumbnail.width, height: thumbnail.height };
           }
+        }
 
-          // --- Advanced CV Pipeline Intercept ---
-          // Hook 1: Dynamic Contrast Normalization (Native OpenCV stub)
-          // CVPipeline.applyHistogramEqualization(thumbnail.uri);
-          // Hook 2: Grayscale & Luminance Stripping (Native OpenCV stub)
-          // CVPipeline.applyLuminanceGrayscale(thumbnail.uri);
-          
-          // Hook 3: Attention Cropping (2-Pass Sniper Approach)
+        if (nativeDetectorActive && frameImageUri) {
           const cvResult = await CVPipeline.executeAttentionCrop(
-            thumbnail.uri,
-            thumbnail.width,
-            thumbnail.height
-          );
+            frameImageUri,
+            detectedDimensions?.width || 1080,
+            detectedDimensions?.height || 1920
+          ).catch(() => ({ enhancedUri: frameImageUri, offsetX: 0, offsetY: 0, scaleX: 1, scaleY: 1 }));
           
-          // Run the High-Res Pass 2 scan on the cropped image
-          let detected = await detectPoseFromUri(cvResult.enhancedUri);
+          let detected = await detectPoseFromUri(cvResult.enhancedUri).catch(() => null);
           
           if (detected && detected.length >= 29) {
-            // Remap coordinates back to the original 1080p canvas space
             detected = CVPipeline.remapCoordinates(
               detected,
               cvResult.offsetX,
               cvResult.offsetY,
               cvResult.scaleX,
               cvResult.scaleY,
-              thumbnail.width,
-              thumbnail.height
+              detectedDimensions?.width || 1080,
+              detectedDimensions?.height || 1920
             ) as any;
           }
-          // --- End CV Pipeline ---
 
           if (detected && detected.length >= 29) {
             rawLandmarks = detected;
-            
-            // Calculate spatial dimensions to distinguish foreground athlete from background bystanders
             const allY = detected.filter(lm => (lm.visibility ?? 1) >= 0.25).map(lm => lm.y);
             const allX = detected.filter(lm => (lm.visibility ?? 1) >= 0.25).map(lm => lm.x);
             if (allY.length >= 10 && allX.length >= 10) {
@@ -224,24 +214,6 @@ export async function analyzeNativeVideoBiometrics({
               const maxX = Math.max(...allX);
               spanY = maxY - minY;
               area = (maxX - minX) * (maxY - minY);
-            }
-
-            // Multi-Person Rejection (Identity lock based on spatial continuity)
-            let isIdentityMatch = true;
-            if (lastValidAthleteRoot && detected[23] && detected[24]) {
-              const prevRootX = lastValidAthleteRoot.x;
-              const prevRootY = lastValidAthleteRoot.y;
-              const newRootX = (detected[23].x + detected[24].x) / 2;
-              const newRootY = (detected[23].y + detected[24].y) / 2;
-              const dist = Math.sqrt(Math.pow(newRootX - prevRootX, 2) + Math.pow(newRootY - prevRootY, 2));
-              // If the skeleton jumps more than 15% of the screen in a single frame (~16-30ms), it is physically impossible and must be a different person (e.g. the coach)
-              if (dist > 0.15) {
-                isIdentityMatch = false;
-              }
-            }
-            if (!isIdentityMatch) {
-              detected = null;
-              rawLandmarks = null;
             }
 
             if (detected && detected[23] && detected[24]) {
