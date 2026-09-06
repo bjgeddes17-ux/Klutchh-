@@ -82,6 +82,7 @@ export interface FrameAnalysis {
   phaseConstraintScore?: number;
   isBurst?: boolean;
   effectiveFps?: number;
+  imageUri?: string;
 }
 
 export type BiomechanicalFrame = FrameAnalysis;

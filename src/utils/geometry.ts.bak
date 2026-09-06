@@ -846,11 +846,6 @@ export function smoothLandmarkTimeSeries(
       return curr;
     }
 
-    // Arm/Wrist landmarks (13-22) need to be completely responsive (0 lag)
-    if (idx >= 11 && idx <= 22) {
-      return curr;
-    }
-
     // Adaptive alpha based on speed/displacement
     const dx = curr.x - prev.x;
     const dy = curr.y - prev.y;

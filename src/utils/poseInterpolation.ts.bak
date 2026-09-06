@@ -89,7 +89,7 @@ export function interpolatePoseAtTime(
     const x = lm1.x + (lm2.x - lm1.x) * subAlpha;
     const y = lm1.y + (lm2.y - lm1.y) * subAlpha;
     const z = (lm1.z || 0) + ((lm2.z || 0) - (lm1.z || 0)) * subAlpha;
-    const visibility = (lm1.visibility ?? 1) + ((lm2.visibility ?? 1) - (lm1.visibility ?? 1)) * subAlpha;
+    const visibility = Math.min(lm1.visibility ?? 1, lm2.visibility ?? 1);
     return { x, y, z, visibility };
   });
 

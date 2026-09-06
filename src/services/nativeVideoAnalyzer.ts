@@ -136,6 +136,8 @@ export async function analyzeNativeVideoBiometrics({
   const frames: FrameAnalysis[] = [];
   const preRenderedFrames: { timestamp: number; dataUrl: string }[] = [];
   let realDetectionCount = 0;
+  let lastValidAthleteRoot: { x: number; y: number } | null = null;
+
   let detectedDimensions: { width: number; height: number } | undefined = undefined;
   const boneStabilizer = new KinematicBoneStabilizer();
   const temporalSmoother = new TemporalSmoother();
@@ -187,28 +189,28 @@ export async function analyzeNativeVideoBiometrics({
           
           // Hook 3: Attention Cropping (2-Pass Sniper Approach)
           const cvResult = await CVPipeline.executeAttentionCrop(
-            thumbnail.uri, 
-            thumbnail.width, 
+            thumbnail.uri,
+            thumbnail.width,
             thumbnail.height
           );
           
           // Run the High-Res Pass 2 scan on the cropped image
-          const detectedCropped = await detectPoseFromUri(cvResult.enhancedUri);
+          let detected = await detectPoseFromUri(cvResult.enhancedUri);
           
-          let detected = detectedCropped;
-          if (detectedCropped && detectedCropped.length >= 29 && cvResult.scaleX !== 1) {
+          if (detected && detected.length >= 29) {
             // Remap coordinates back to the original 1080p canvas space
             detected = CVPipeline.remapCoordinates(
-              detectedCropped, 
-              cvResult.offsetX, 
-              cvResult.offsetY, 
-              cvResult.scaleX, 
+              detected,
+              cvResult.offsetX,
+              cvResult.offsetY,
+              cvResult.scaleX,
               cvResult.scaleY,
               thumbnail.width,
               thumbnail.height
             ) as any;
           }
           // --- End CV Pipeline ---
+
           if (detected && detected.length >= 29) {
             rawLandmarks = detected;
             
@@ -224,11 +226,30 @@ export async function analyzeNativeVideoBiometrics({
               area = (maxX - minX) * (maxY - minY);
             }
 
-            if (detected[23] && detected[24]) {
+            // Multi-Person Rejection (Identity lock based on spatial continuity)
+            let isIdentityMatch = true;
+            if (lastValidAthleteRoot && detected[23] && detected[24]) {
+              const prevRootX = lastValidAthleteRoot.x;
+              const prevRootY = lastValidAthleteRoot.y;
+              const newRootX = (detected[23].x + detected[24].x) / 2;
+              const newRootY = (detected[23].y + detected[24].y) / 2;
+              const dist = Math.sqrt(Math.pow(newRootX - prevRootX, 2) + Math.pow(newRootY - prevRootY, 2));
+              // If the skeleton jumps more than 15% of the screen in a single frame (~16-30ms), it is physically impossible and must be a different person (e.g. the coach)
+              if (dist > 0.15) {
+                isIdentityMatch = false;
+              }
+            }
+            if (!isIdentityMatch) {
+              detected = null;
+              rawLandmarks = null;
+            }
+
+            if (detected && detected[23] && detected[24]) {
               root = {
                 x: (detected[23].x + detected[24].x) / 2,
                 y: (detected[23].y + detected[24].y) / 2,
               };
+              lastValidAthleteRoot = root;
             }
           }
         }
@@ -357,7 +378,7 @@ export async function analyzeNativeVideoBiometrics({
               x: lm1.x + (lm2.x - lm1.x) * blend,
               y: lm1.y + (lm2.y - lm1.y) * blend,
               z: (lm1.z || 0) + ((lm2.z || 0) - (lm1.z || 0)) * blend,
-              visibility: Math.min(lm1.visibility || 1, lm2.visibility || 1),
+              visibility: (lm1.visibility ?? 1) + ((lm2.visibility ?? 1) - (lm1.visibility ?? 1)) * blend,
             };
           });
           isReal = false;
@@ -394,7 +415,7 @@ export async function analyzeNativeVideoBiometrics({
       isReal = false;
     } else {
       // Stabilize real / interpolated landmarks to prevent anatomical limbs stretching or detaching
-      landmarks = boneStabilizer.stabilize(landmarks);
+      // landmarks = boneStabilizer.stabilize(landmarks); // Disabled to prevent Inverse Kinematics from warping limbs
       landmarks = temporalSmoother.smooth(landmarks);
     }
 
@@ -556,6 +577,7 @@ export async function analyzeNativeVideoBiometrics({
       phaseConstraintScore: validation.score,
       isBurst: burstInfo.isBurst,
       effectiveFps: burstInfo.currentFps,
+      imageUri: frameImageUri || undefined,
     });
 
     updateProgress(60 + Math.round((i / totalFrames) * 30));
