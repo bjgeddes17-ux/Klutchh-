@@ -23,7 +23,7 @@ class PoseDetectorModule : Module() {
 
   private val detector by lazy {
     val options = AccuratePoseDetectorOptions.Builder()
-      .setDetectorMode(AccuratePoseDetectorOptions.SINGLE_IMAGE_MODE)
+      .setDetectorMode(AccuratePoseDetectorOptions.STREAM_MODE)
       .setPreferredHardwareConfigs(AccuratePoseDetectorOptions.CPU_GPU)
       .build()
     PoseDetection.getClient(options)
@@ -78,7 +78,7 @@ class PoseDetectorModule : Module() {
 
     AsyncFunction("detectPose") { imageUriString: String ->
       try {
-        val bitmap = loadBitmapFromUri(imageUriString)
+        val bitmap = loadBitmapFromUri(imageUriString, 1280)
           ?: return@AsyncFunction mapOf("detected" to false, "error" to "Failed to load bitmap from: $imageUriString")
         
         val width = bitmap.width.toFloat()
@@ -94,7 +94,7 @@ class PoseDetectorModule : Module() {
 
     AsyncFunction("detectPoseFromUri") { imageUriString: String ->
       try {
-        val bitmap = loadBitmapFromUri(imageUriString)
+        val bitmap = loadBitmapFromUri(imageUriString, 1280)
           ?: return@AsyncFunction mapOf("detected" to false, "error" to "Failed to load bitmap from: $imageUriString")
         
         val width = bitmap.width.toFloat()
@@ -105,6 +105,31 @@ class PoseDetectorModule : Module() {
         return@AsyncFunction formatPoseResult(pose, width, height)
       } catch (e: Exception) {
         return@AsyncFunction mapOf("detected" to false, "error" to (e.message ?: "Pose detection failed"))
+      }
+    }
+
+    AsyncFunction("detectPosesBatch") { imageUriStrings: List<String> ->
+      try {
+        val results = mutableListOf<Map<String, Any?>>()
+        for (uriString in imageUriStrings) {
+          try {
+            val bitmap = loadBitmapFromUri(uriString, 960)
+            if (bitmap != null) {
+              val width = bitmap.width.toFloat()
+              val height = bitmap.height.toFloat()
+              val inputImage = InputImage.fromBitmap(bitmap, 0)
+              val pose = Tasks.await(detector.process(inputImage))
+              results.add(formatPoseResult(pose, width, height))
+            } else {
+              results.add(mapOf("detected" to false, "error" to "Failed to load bitmap"))
+            }
+          } catch (ex: Exception) {
+            results.add(mapOf("detected" to false, "error" to (ex.message ?: "Frame error")))
+          }
+        }
+        return@AsyncFunction mapOf("success" to true, "frames" to results)
+      } catch (e: Exception) {
+        return@AsyncFunction mapOf("success" to false, "error" to (e.message ?: "Batch detection failed"))
       }
     }
 
@@ -131,18 +156,22 @@ class PoseDetectorModule : Module() {
     }
   }
 
-  private fun loadBitmapFromUri(uriString: String): Bitmap? {
+  private fun loadBitmapFromUri(uriString: String, maxDimension: Int = 1280): Bitmap? {
     return try {
       val context = appContext.reactContext
       val uri = Uri.parse(uriString)
       var bitmap: Bitmap? = null
       var orientation = ExifInterface.ORIENTATION_NORMAL
 
-      // 1. Try opening via ContentResolver first (handles file://, content://, cache URIs)
+      // 1. Decode bounds first for smart downsampling (inSampleSize)
+      val options = BitmapFactory.Options().apply {
+        inJustDecodeBounds = true
+      }
+
       if (context != null) {
         try {
           context.contentResolver.openInputStream(uri)?.use { stream ->
-            bitmap = BitmapFactory.decodeStream(stream)
+            BitmapFactory.decodeStream(stream, null, options)
           }
           context.contentResolver.openInputStream(uri)?.use { stream ->
             val exif = ExifInterface(stream)
@@ -151,12 +180,11 @@ class PoseDetectorModule : Module() {
         } catch (_: Exception) {}
       }
 
-      // 2. Try direct File path
-      if (bitmap == null) {
+      if (options.outWidth == -1 || options.outHeight == -1) {
         val path = if (uri.scheme == "file") uri.path ?: uriString else uriString
         val file = File(path)
         if (file.exists()) {
-          bitmap = BitmapFactory.decodeFile(file.absolutePath)
+          BitmapFactory.decodeFile(file.absolutePath, options)
           try {
             val exif = ExifInterface(file.absolutePath)
             orientation = exif.getAttributeInt(ExifInterface.TAG_ORIENTATION, ExifInterface.ORIENTATION_NORMAL)
@@ -164,9 +192,41 @@ class PoseDetectorModule : Module() {
         }
       }
 
-      // 3. Fallback to direct decode
+      // Calculate inSampleSize
+      var inSampleSize = 1
+      val height = options.outHeight
+      val width = options.outWidth
+      if (height > maxDimension || width > maxDimension) {
+        val halfHeight = height / 2
+        val halfWidth = width / 2
+        while ((halfHeight / inSampleSize) >= maxDimension && (halfWidth / inSampleSize) >= maxDimension) {
+          inSampleSize *= 2
+        }
+      }
+
+      val decodeOptions = BitmapFactory.Options().apply {
+        this.inSampleSize = inSampleSize
+      }
+
+      // 2. Load actual downsampled bitmap
+      if (context != null) {
+        try {
+          context.contentResolver.openInputStream(uri)?.use { stream ->
+            bitmap = BitmapFactory.decodeStream(stream, null, decodeOptions)
+          }
+        } catch (_: Exception) {}
+      }
+
       if (bitmap == null) {
-        bitmap = BitmapFactory.decodeFile(uriString)
+        val path = if (uri.scheme == "file") uri.path ?: uriString else uriString
+        val file = File(path)
+        if (file.exists()) {
+          bitmap = BitmapFactory.decodeFile(file.absolutePath, decodeOptions)
+        }
+      }
+
+      if (bitmap == null) {
+        bitmap = BitmapFactory.decodeFile(uriString, decodeOptions)
       }
 
       if (bitmap != null) {
@@ -180,6 +240,9 @@ class PoseDetectorModule : Module() {
           val matrix = Matrix()
           matrix.postRotate(rotationDegrees.toFloat())
           val rotated = Bitmap.createBitmap(bitmap!!, 0, 0, bitmap!!.width, bitmap!!.height, matrix, true)
+          if (rotated != bitmap) {
+            bitmap!!.recycle()
+          }
           return rotated
         }
       }
