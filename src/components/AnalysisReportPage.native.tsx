@@ -489,7 +489,7 @@ export const AnalysisReportPage: React.FC<AnalysisReportPageProps> = ({
             onTogglePlay={() => setIsPlaying(!isPlaying)}
             onPause={() => setIsPlaying(false)}
             initialSkeletonScale={1.0}
-            filmstripFrames={preRenderedFrames}
+            filmstripFrames={preRenderedFrames && preRenderedFrames.length > 0 ? preRenderedFrames : sortedFrames.filter(f => !!f.imageUri).map(f => ({ timestamp: f.timestamp, dataUrl: f.imageUri! }))}
             sourceDimensions={sourceDimensions}
           />
         </View>

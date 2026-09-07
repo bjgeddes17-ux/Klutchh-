@@ -26,7 +26,7 @@ import {
 } from '../types';
 import { calculateAngle, calculateSymmetry } from '../utils/geometry';
 import { generateSyntheticSportsPose } from '../utils/mediapipePose.native';
-import { detectPoseFromUri, isNativePoseDetectorAvailable } from '../../modules/pose-detector';
+import { detectPoseFromUri, isNativePoseDetectorAvailable, analyzeVideoDirectNative } from '../../modules/pose-detector';
 import { CVPipeline } from "../utils/cvPipeline";
 import { validateBiomechanicalFrame } from '../utils/biomechanicalValidation';
 import { KinematicBoneStabilizer, TemporalSmoother } from '../utils/boneStabilizer';
@@ -157,6 +157,24 @@ export async function analyzeNativeVideoBiometrics({
 
   const rawSamples: RawFrameSample[] = [];
 
+  // Try direct in-memory native video frame extraction first (zero disk I/O)
+  let directNativeFrames: (MediaPipeLandmark[] | null)[] | null = null;
+  if (nativeDetectorActive && Platform.OS !== 'web' && videoUri) {
+    try {
+      const timestampsMs = timestamps.map(t => Math.round(t * 1000));
+      const directRes = await analyzeVideoDirectNative(videoUri, timestampsMs);
+      if (directRes.success && directRes.landmarks.length === totalFrames) {
+        const validLandmarkCount = directRes.landmarks.filter(l => l && l.length >= 29).length;
+        if (validLandmarkCount > 0) {
+          directNativeFrames = directRes.landmarks as any;
+          console.log(`[NativeBiometrics] Direct in-memory native pipeline succeeded: ${validLandmarkCount}/${totalFrames} frames detected`);
+        }
+      }
+    } catch (directErr) {
+      console.warn('[NativeBiometrics] Direct native video pipeline warning, using adaptive fallback:', directErr);
+    }
+  }
+
   for (let i = 0; i < totalFrames; i++) {
     const timestampSec = timestamps[i];
     const timestampMs = Math.round(timestampSec * 1000);
@@ -168,7 +186,46 @@ export async function analyzeNativeVideoBiometrics({
     let area = 0;
     let root: { x: number; y: number } | null = null;
 
-    if (nativeDetectorActive && Platform.OS !== 'web' && videoUri) {
+    if (directNativeFrames && directNativeFrames[i] && directNativeFrames[i]!.length >= 29) {
+      let detected = directNativeFrames[i]!;
+      rawLandmarks = detected;
+
+      const allY = detected.filter(lm => (lm.visibility ?? 1) >= 0.25).map(lm => lm.y);
+      const allX = detected.filter(lm => (lm.visibility ?? 1) >= 0.25).map(lm => lm.x);
+      if (allY.length >= 10 && allX.length >= 10) {
+        const minY = Math.min(...allY);
+        const maxY = Math.max(...allY);
+        const minX = Math.min(...allX);
+        const maxX = Math.max(...allX);
+        spanY = maxY - minY;
+        area = (maxX - minX) * (maxY - minY);
+      }
+
+      // Multi-Person Rejection (Identity lock based on spatial continuity)
+      let isIdentityMatch = true;
+      if (lastValidAthleteRoot && detected[23] && detected[24]) {
+        const prevRootX = lastValidAthleteRoot.x;
+        const prevRootY = lastValidAthleteRoot.y;
+        const newRootX = (detected[23].x + detected[24].x) / 2;
+        const newRootY = (detected[23].y + detected[24].y) / 2;
+        const dist = Math.sqrt(Math.pow(newRootX - prevRootX, 2) + Math.pow(newRootY - prevRootY, 2));
+        if (dist > 0.15) {
+          isIdentityMatch = false;
+        }
+      }
+      if (!isIdentityMatch) {
+        detected = null as any;
+        rawLandmarks = null;
+      }
+
+      if (detected && detected[23] && detected[24]) {
+        root = {
+          x: (detected[23].x + detected[24].x) / 2,
+          y: (detected[23].y + detected[24].y) / 2,
+        };
+        lastValidAthleteRoot = root;
+      }
+    } else if (nativeDetectorActive && Platform.OS !== 'web' && videoUri) {
       try {
         const thumbnail = await VideoThumbnails.getThumbnailAsync(videoUri, {
           time: timestampMs,

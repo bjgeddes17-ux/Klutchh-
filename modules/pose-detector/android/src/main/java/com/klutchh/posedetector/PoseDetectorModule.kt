@@ -4,6 +4,7 @@ import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.graphics.Matrix
 import android.media.ExifInterface
+import android.media.MediaMetadataRetriever
 import android.net.Uri
 import android.util.Base64
 import com.google.android.gms.tasks.Tasks
@@ -77,8 +78,9 @@ class PoseDetectorModule : Module() {
     }
 
     AsyncFunction("detectPose") { imageUriString: String ->
+      var bitmap: Bitmap? = null
       try {
-        val bitmap = loadBitmapFromUri(imageUriString, 1280)
+        bitmap = loadBitmapFromUri(imageUriString, 1280)
           ?: return@AsyncFunction mapOf("detected" to false, "error" to "Failed to load bitmap from: $imageUriString")
         
         val width = bitmap.width.toFloat()
@@ -89,12 +91,17 @@ class PoseDetectorModule : Module() {
         return@AsyncFunction formatPoseResult(pose, width, height)
       } catch (e: Exception) {
         return@AsyncFunction mapOf("detected" to false, "error" to (e.message ?: "Pose detection failed"))
+      } finally {
+        try {
+          bitmap?.recycle()
+        } catch (_: Exception) {}
       }
     }
 
     AsyncFunction("detectPoseFromUri") { imageUriString: String ->
+      var bitmap: Bitmap? = null
       try {
-        val bitmap = loadBitmapFromUri(imageUriString, 1280)
+        bitmap = loadBitmapFromUri(imageUriString, 1280)
           ?: return@AsyncFunction mapOf("detected" to false, "error" to "Failed to load bitmap from: $imageUriString")
         
         val width = bitmap.width.toFloat()
@@ -105,6 +112,10 @@ class PoseDetectorModule : Module() {
         return@AsyncFunction formatPoseResult(pose, width, height)
       } catch (e: Exception) {
         return@AsyncFunction mapOf("detected" to false, "error" to (e.message ?: "Pose detection failed"))
+      } finally {
+        try {
+          bitmap?.recycle()
+        } catch (_: Exception) {}
       }
     }
 
@@ -112,8 +123,9 @@ class PoseDetectorModule : Module() {
       try {
         val results = mutableListOf<Map<String, Any?>>()
         for (uriString in imageUriStrings) {
+          var bitmap: Bitmap? = null
           try {
-            val bitmap = loadBitmapFromUri(uriString, 960)
+            bitmap = loadBitmapFromUri(uriString, 960)
             if (bitmap != null) {
               val width = bitmap.width.toFloat()
               val height = bitmap.height.toFloat()
@@ -125,6 +137,10 @@ class PoseDetectorModule : Module() {
             }
           } catch (ex: Exception) {
             results.add(mapOf("detected" to false, "error" to (ex.message ?: "Frame error")))
+          } finally {
+            try {
+              bitmap?.recycle()
+            } catch (_: Exception) {}
           }
         }
         return@AsyncFunction mapOf("success" to true, "frames" to results)
@@ -133,7 +149,74 @@ class PoseDetectorModule : Module() {
       }
     }
 
+    AsyncFunction("analyzeVideoDirect") { videoUriString: String, timestampsMs: List<Double> ->
+      val retriever = MediaMetadataRetriever()
+      val results = mutableListOf<Map<String, Any?>>()
+      try {
+        val context = appContext.reactContext
+        val uri = Uri.parse(videoUriString)
+        if (uri.scheme == "file" || uri.scheme == null) {
+          retriever.setDataSource(uri.path ?: videoUriString)
+        } else if (context != null) {
+          retriever.setDataSource(context, uri)
+        } else {
+          retriever.setDataSource(videoUriString)
+        }
+
+        for (timeMs in timestampsMs) {
+          var rawFrame: Bitmap? = null
+          var scaledFrame: Bitmap? = null
+          try {
+            val timeMicros = (timeMs * 1000).toLong()
+            rawFrame = retriever.getFrameAtTime(timeMicros, MediaMetadataRetriever.OPTION_CLOSEST_SYNC)
+              ?: retriever.getFrameAtTime(timeMicros)
+
+            if (rawFrame != null) {
+              val w = rawFrame.width
+              val h = rawFrame.height
+              val maxDim = 960
+              val (targetW, targetH) = if (w > maxDim || h > maxDim) {
+                if (w > h) maxDim to ((h * maxDim) / w) else ((w * maxDim) / h) to maxDim
+              } else {
+                w to h
+              }
+
+              scaledFrame = if (targetW != w || targetH != h) {
+                Bitmap.createScaledBitmap(rawFrame, targetW, targetH, true)
+              } else {
+                rawFrame
+              }
+
+              val inputImage = InputImage.fromBitmap(scaledFrame, 0)
+              val pose = Tasks.await(detector.process(inputImage))
+              val poseResult = formatPoseResult(pose, scaledFrame.width.toFloat(), scaledFrame.height.toFloat())
+              results.add(poseResult)
+            } else {
+              results.add(mapOf("detected" to false, "error" to "Frame extraction null at $timeMs ms"))
+            }
+          } catch (frameEx: Exception) {
+            results.add(mapOf("detected" to false, "error" to (frameEx.message ?: "Frame error")))
+          } finally {
+            try {
+              if (scaledFrame != null && scaledFrame != rawFrame) {
+                scaledFrame.recycle()
+              }
+              rawFrame?.recycle()
+            } catch (_: Exception) {}
+          }
+        }
+        return@AsyncFunction mapOf("success" to true, "frames" to results)
+      } catch (e: Exception) {
+        return@AsyncFunction mapOf("success" to false, "error" to (e.message ?: "Direct video analysis failed"))
+      } finally {
+        try {
+          retriever.release()
+        } catch (_: Exception) {}
+      }
+    }
+
     AsyncFunction("detectPoseFromBase64") { base64String: String ->
+      var bitmap: Bitmap? = null
       try {
         val cleanBase64 = if (base64String.contains(",")) {
           base64String.substringAfter(",")
@@ -141,7 +224,7 @@ class PoseDetectorModule : Module() {
           base64String
         }
         val decodedBytes = Base64.decode(cleanBase64, Base64.DEFAULT)
-        val bitmap = BitmapFactory.decodeByteArray(decodedBytes, 0, decodedBytes.size)
+        bitmap = BitmapFactory.decodeByteArray(decodedBytes, 0, decodedBytes.size)
           ?: return@AsyncFunction mapOf("detected" to false, "error" to "Failed to decode Base64 image")
 
         val width = bitmap.width.toFloat()
@@ -152,6 +235,10 @@ class PoseDetectorModule : Module() {
         return@AsyncFunction formatPoseResult(pose, width, height)
       } catch (e: Exception) {
         return@AsyncFunction mapOf("detected" to false, "error" to (e.message ?: "Base64 pose detection failed"))
+      } finally {
+        try {
+          bitmap?.recycle()
+        } catch (_: Exception) {}
       }
     }
   }

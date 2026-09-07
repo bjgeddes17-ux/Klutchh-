@@ -266,6 +266,7 @@ export async function analyzeVideoBiometrics(
             isFlaggedForManualReview: validation.isFlaggedForReview,
             isDiscardedOutlier: validation.isDiscarded,
             phaseConstraintScore: validation.score,
+            imageUri: frameData.uri,
           };
 
           allSampledFrames.push(frame);
@@ -286,6 +287,9 @@ export async function analyzeVideoBiometrics(
       const { frameCount, duration } = await extractFramesPipelined(
         videoUrl,
         async (frameData) => {
+          if (frameData.uri) {
+            preRenderedFrames.push({ timestamp: frameData.timestamp, dataUrl: frameData.uri });
+          }
           const task = processFrameTask(frameData);
           pendingTasks.push(task);
 
@@ -337,7 +341,8 @@ export async function analyzeVideoBiometrics(
         useOptionBPipeline,
         startTime,
         endTime,
-        cropBox
+        cropBox,
+        preRenderedFrames
       );
       
       onProgress?.(100);
@@ -366,7 +371,8 @@ async function synthesizeAnalysis(
   useOptionBPipeline: boolean,
   startTime?: number,
   endTime?: number,
-  cropBox?: { x: number; y: number; width: number; height: number }
+  cropBox?: { x: number; y: number; width: number; height: number },
+  preRenderedFrames?: { timestamp: number; dataUrl: string }[]
 ): Promise<AnalysisResult> {
   // Logic removed for cloud/server calls
   
@@ -641,6 +647,10 @@ async function synthesizeAnalysis(
   const discardedOutliersCount = allSampledFrames.filter(f => f.validationStatus === 'discarded_outlier').length;
   const validFramesCount = allSampledFrames.filter(f => f.validationStatus === 'valid').length;
 
+  const resolvedPreRenderedFrames = (preRenderedFrames && preRenderedFrames.length > 0)
+    ? preRenderedFrames
+    : allSampledFrames.filter(f => !!f.imageUri).map(f => ({ timestamp: f.timestamp, dataUrl: f.imageUri! }));
+
   return {
     startTime,
     endTime,
@@ -665,6 +675,7 @@ async function synthesizeAnalysis(
       kineticFlowScore: kineticFlow,
       jointArmorScore: jointArmor
     },
+    preRenderedFrames: resolvedPreRenderedFrames,
     isPro30FpsPipeline: useOptionBPipeline,
     processingMode: useOptionBPipeline ? 'pro_30fps_cloud' : 'standard_client',
     flaggedFramesCount,
@@ -985,6 +996,7 @@ export async function generateFallbackAnalysisResult(
       estimatedPeakTorque: Math.round(Math.max(...Object.values(averageTorques), 45) * 10) / 10,
       explosivenessScore: 88
     },
+    preRenderedFrames: [],
     isFallback: true,
     isSynthetic: true,
     isLowConfidence: true,
@@ -998,6 +1010,7 @@ export function buildBareFallbackResult(sportRule: SportRule, skillLevel: SkillL
 
   return {
     keyframes: rawKeyframes,
+    preRenderedFrames: [],
     isFallback: true,
     isSynthetic: true,
     isLowConfidence: true,

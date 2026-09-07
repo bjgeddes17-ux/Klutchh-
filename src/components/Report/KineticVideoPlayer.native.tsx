@@ -14,6 +14,17 @@ import {
 } from 'react-native';
 import Animated, { useSharedValue, useAnimatedReaction, runOnJS, useFrameCallback } from 'react-native-reanimated';
 import { Video, ResizeMode, AVPlaybackStatus } from 'expo-av';
+let SkiaCanvas: any = null;
+let SkiaCircle: any = null;
+let SkiaLine: any = null;
+let vec: any = null;
+try {
+  const skia = require('@shopify/react-native-skia');
+  SkiaCanvas = skia.Canvas;
+  SkiaCircle = skia.Circle;
+  SkiaLine = skia.Line;
+  vec = skia.vec;
+} catch (_) {}
 import Svg, {
   Line,
   Circle,
@@ -670,19 +681,23 @@ export const KineticVideoPlayer: React.FC<KineticVideoPlayerProps> = ({
 
   // Filmstrip Playback Logic: 15 FPS timer-based playback when in Filmstrip mode
   const currentFilmstripFrame = useMemo(() => {
-    if (!filmstripFrames || filmstripFrames.length === 0) return null;
-    // Find the closest image frame for the current timestamp
-    let closestIdx = 0;
-    let minDiff = Infinity;
-    for (let i = 0; i < filmstripFrames.length; i++) {
-      const diff = Math.abs(filmstripFrames[i].timestamp - currentTime);
-      if (diff < minDiff) {
-        minDiff = diff;
-        closestIdx = i;
+    if (filmstripFrames && filmstripFrames.length > 0) {
+      let closestIdx = 0;
+      let minDiff = Infinity;
+      for (let i = 0; i < filmstripFrames.length; i++) {
+        const diff = Math.abs(filmstripFrames[i].timestamp - currentTime);
+        if (diff < minDiff) {
+          minDiff = diff;
+          closestIdx = i;
+        }
       }
+      return filmstripFrames[closestIdx];
     }
-    return filmstripFrames[closestIdx];
-  }, [filmstripFrames, currentTime]);
+    if (currentFrame?.imageUri) {
+      return { timestamp: currentFrame.timestamp, dataUrl: currentFrame.imageUri };
+    }
+    return null;
+  }, [filmstripFrames, currentFrame, currentTime]);
 
   return (
     <View 
@@ -710,7 +725,95 @@ export const KineticVideoPlayer: React.FC<KineticVideoPlayerProps> = ({
         style={styles.video}
       />
 
-      {/* Svg Biomechanical Overlay */}
+      {/* 
+          UNIFIED FILMSTRIP FRAME BITMAP LAYER (PAUSED / SCRUBBING / STEPPING)
+          Directly binds the extracted frame thumbnail to the video render rect
+          to ensure zero-drift, zero-latency, frame-perfect skeletal alignment.
+      */}
+      {!isPlaying && currentFilmstripFrame?.dataUrl && (
+        <View
+          pointerEvents="none"
+          style={StyleSheet.absoluteFillObject}
+        >
+          {(() => {
+            const rect = renderedRect || getVideoRenderRect(
+              curW,
+              curH,
+              videoDimensions.width > 0 ? videoDimensions.width : 9,
+              videoDimensions.height > 0 ? videoDimensions.height : 16
+            );
+            return (
+              <Image
+                source={{ uri: currentFilmstripFrame.dataUrl }}
+                style={{
+                  position: 'absolute',
+                  left: rect.x,
+                  top: rect.y,
+                  width: rect.width,
+                  height: rect.height,
+                }}
+                resizeMode="contain"
+              />
+            );
+          })()}
+        </View>
+      )}
+
+      {/* High-Performance Skia Hardware Layer (120Hz Hardware Accelerated Skeleton) */}
+      {SkiaCanvas && showSkeleton && landmarks && landmarks.length >= 17 && (
+        <View pointerEvents="none" style={[styles.svgOverlay, { opacity: isPastData ? 0.35 : 1 }]}>
+          <SkiaCanvas style={{ width: curW, height: curH }}>
+            {(() => {
+              const allBonePairs = [
+                [11, 13], [13, 15], [15, 19], [15, 21], // Left Arm
+                [12, 14], [14, 16], [16, 20], [16, 22], // Right Arm
+                [23, 25], [25, 27], [27, 31], [27, 29], // Left Leg & Foot
+                [24, 26], [26, 28], [28, 32], [28, 30], // Right Leg & Foot
+                [11, 23], [12, 24], // Spine/Sides
+                [11, 12], [23, 24]  // Clavicle & Pelvis Bridges
+              ];
+              const activePhase = currentFrame?.detectedPhase || activeTechnique?.phases?.[0] || sportRule.phases?.[0];
+              return allBonePairs.map(([i1, i2], idx) => {
+                const lm1 = landmarks[i1];
+                const lm2 = landmarks[i2];
+                if (!lm1 || !lm2 || (lm1.visibility ?? 1) < 0.10 || (lm2.visibility ?? 1) < 0.10) return null;
+                const distNorm = Math.hypot(lm1.x - lm2.x, lm1.y - lm2.y);
+                if (distNorm > 0.75) return null;
+                const p1 = getScreenCoords(lm1);
+                const p2 = getScreenCoords(lm2);
+                if (!p1.visible || !p2.visible) return null;
+                const { color, strokeWidth } = getSegmentColor(i1, i2, landmarks, sportRule, activePhase, activeTechniqueRules);
+                return (
+                  <SkiaLine
+                    key={`skia-bone-${i1}-${i2}-${idx}`}
+                    p1={vec(p1.x, p1.y)}
+                    p2={vec(p2.x, p2.y)}
+                    color={color}
+                    strokeWidth={strokeWidth}
+                    style="stroke"
+                    strokeCap="round"
+                  />
+                );
+              });
+            })()}
+            {landmarks.map((lm, i) => {
+              if (!lm || (i > 0 && i < 11)) return null;
+              const p = getScreenCoords(lm);
+              if (!p.visible) return null;
+              const activePhase = currentFrame?.detectedPhase || activeTechnique?.phases?.[0] || sportRule.phases?.[0];
+              const ringColor = getJointColor(i, landmarks, sportRule, activePhase, activeTechniqueRules);
+              return (
+                <React.Fragment key={`skia-joint-${i}`}>
+                  <SkiaCircle cx={p.x} cy={p.y} r={3.2} color={ringColor} />
+                  <SkiaCircle cx={p.x} cy={p.y} r={1.2} color="#ffffff" />
+                </React.Fragment>
+              );
+            })}
+          </SkiaCanvas>
+        </View>
+      )}
+
+      {/* Svg Biomechanical Overlay (Polygons, Callouts, and Non-Skia Fallback) */}
       {showSkeleton && landmarks && landmarks.length >= 17 && (
         <Svg pointerEvents="none" style={[styles.svgOverlay, { opacity: isPastData ? 0.35 : 1 }]} width={curW} height={curH}>
           {/* 1. Torso Volume Polygon */}
@@ -1033,7 +1136,10 @@ export const KineticVideoPlayer: React.FC<KineticVideoPlayerProps> = ({
                 return (
                   <TouchableOpacity
                     key={kf.id}
-                    onPress={() => handleSeekToTime(kf.timestamp)}
+                    onPress={() => {
+                      if (onPause) onPause();
+                      handleSeekToTime(kf.timestamp);
+                    }}
                     style={[
                       styles.keyframeChip,
                       isActive ? styles.keyframeChipActive : styles.keyframeChipInactive,
@@ -1119,7 +1225,70 @@ export const KineticVideoPlayer: React.FC<KineticVideoPlayerProps> = ({
               onReadyForDisplay={handleReadyForDisplay}
               style={{ width: '100%', height: '100%' }}
             />
+
+            {/* Fullscreen Unified Filmstrip Frame Bitmap Layer */}
+            {!isPlaying && currentFilmstripFrame?.dataUrl && (
+              <Image
+                source={{ uri: currentFilmstripFrame.dataUrl }}
+                style={StyleSheet.absoluteFillObject}
+                resizeMode="contain"
+              />
+            )}
           </View>
+
+          {/* Fullscreen Skia Hardware Layer */}
+          {SkiaCanvas && showSkeleton && landmarks && landmarks.length >= 17 && (
+            <View pointerEvents="none" style={[StyleSheet.absoluteFillObject, { opacity: isPastData ? 0.35 : 1 }]}>
+              <SkiaCanvas style={{ width: curW, height: curH }}>
+                {(() => {
+                  const allBonePairs = [
+                    [11, 13], [13, 15], [15, 19], [15, 21], // Left Arm
+                    [12, 14], [14, 16], [16, 20], [16, 22], // Right Arm
+                    [23, 25], [25, 27], [27, 31], [27, 29], // Left Leg & Foot
+                    [24, 26], [26, 28], [28, 32], [28, 30], // Right Leg & Foot
+                    [11, 23], [12, 24], // Spine/Sides
+                    [11, 12], [23, 24]  // Clavicle & Pelvis Bridges
+                  ];
+                  const activePhase = currentFrame?.detectedPhase || sportRule.phases?.[0];
+                  return allBonePairs.map(([i1, i2], idx) => {
+                    const lm1 = landmarks[i1];
+                    const lm2 = landmarks[i2];
+                    if (!lm1 || !lm2 || (lm1.visibility ?? 1) < 0.10 || (lm2.visibility ?? 1) < 0.10) return null;
+                    const distNorm = Math.hypot(lm1.x - lm2.x, lm1.y - lm2.y);
+                    if (distNorm > 0.75) return null;
+                    const p1 = getScreenCoords(lm1);
+                    const p2 = getScreenCoords(lm2);
+                    if (!p1.visible || !p2.visible) return null;
+                    const { color, strokeWidth } = getSegmentColor(i1, i2, landmarks, sportRule, activePhase);
+                    return (
+                      <SkiaLine
+                        key={`fs-skia-bone-${i1}-${i2}-${idx}`}
+                        p1={vec(p1.x, p1.y)}
+                        p2={vec(p2.x, p2.y)}
+                        color={color}
+                        strokeWidth={strokeWidth}
+                        style="stroke"
+                        strokeCap="round"
+                      />
+                    );
+                  });
+                })()}
+                {landmarks.map((lm, i) => {
+                  if (!lm || (i > 0 && i < 11)) return null;
+                  const p = getScreenCoords(lm);
+                  if (!p.visible) return null;
+                  const activePhase = currentFrame?.detectedPhase || sportRule.phases?.[0];
+                  const ringColor = getJointColor(i, landmarks, sportRule, activePhase);
+                  return (
+                    <React.Fragment key={`fs-skia-joint-${i}`}>
+                      <SkiaCircle cx={p.x} cy={p.y} r={3.8} color={ringColor} />
+                      <SkiaCircle cx={p.x} cy={p.y} r={1.2} color="#ffffff" />
+                    </React.Fragment>
+                  );
+                })}
+              </SkiaCanvas>
+            </View>
+          )}
 
           {/* Fullscreen SVG Overlay */}
           {showSkeleton && landmarks && landmarks.length >= 17 && (
@@ -1423,7 +1592,10 @@ export const KineticVideoPlayer: React.FC<KineticVideoPlayerProps> = ({
                     return (
                       <TouchableOpacity
                         key={`fs-chip-${kf.id}`}
-                        onPress={() => handleSeekToTime(kf.timestamp)}
+                        onPress={() => {
+                          if (onPause) onPause();
+                          handleSeekToTime(kf.timestamp);
+                        }}
                         style={[
                           styles.keyframeChip,
                           isActive ? styles.keyframeChipActive : styles.keyframeChipInactive,

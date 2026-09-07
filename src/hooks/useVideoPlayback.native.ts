@@ -208,8 +208,8 @@ export const useVideoPlayback = ({
     if (videoRef.current) {
       promises.push(
         videoRef.current.setPositionAsync(seekTime, {
-          toleranceMillisBefore: 10,
-          toleranceMillisAfter: 10,
+          toleranceMillisBefore: 0,
+          toleranceMillisAfter: 0,
         }).then(() => {
           if (resumePlay && !isFullscreenModal) {
             return videoRef.current?.playAsync();
@@ -220,8 +220,8 @@ export const useVideoPlayback = ({
     if (fullscreenVideoRef.current) {
       promises.push(
         fullscreenVideoRef.current.setPositionAsync(seekTime, {
-          toleranceMillisBefore: 10,
-          toleranceMillisAfter: 10,
+          toleranceMillisBefore: 0,
+          toleranceMillisAfter: 0,
         }).then(() => {
           if (resumePlay && isFullscreenModal) {
             return fullscreenVideoRef.current?.playAsync();

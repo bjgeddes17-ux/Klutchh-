@@ -130,7 +130,7 @@ function buildNetballKeyframes(
     {
       id: 'netball_prep',
       name: 'High Release Preparation & Stance',
-      timestamp: prepTime,
+      timestamp: prepFrame ? prepFrame.timestamp : prepTime,
       frameNumber: prepFrame?.frameNumber || 0,
       importance: 'primary',
       status: 'optimal',
@@ -142,7 +142,7 @@ function buildNetballKeyframes(
     {
       id: 'netball_release',
       name: 'High Release & Wrist Snap',
-      timestamp: impactTime,
+      timestamp: releaseFrame ? releaseFrame.timestamp : impactTime,
       frameNumber: releaseFrame?.frameNumber || impactIdx,
       importance: 'critical',
       status: 'optimal',
@@ -154,7 +154,7 @@ function buildNetballKeyframes(
     {
       id: 'netball_landing',
       name: 'Single-Leg Landing & Knee Cushion',
-      timestamp: finishTime,
+      timestamp: landingFrame ? landingFrame.timestamp : finishTime,
       frameNumber: landingFrame?.frameNumber || 0,
       importance: 'critical',
       status: (landingFrame?.angles?.knee || 135) > 155 ? 'warning' : 'optimal',
@@ -183,7 +183,7 @@ function buildHockeyKeyframes(
     {
       id: 'hockey_prep',
       name: 'Athletic Stance & Stick Backswing',
-      timestamp: prepTime,
+      timestamp: prepFrame ? prepFrame.timestamp : prepTime,
       frameNumber: prepFrame?.frameNumber || 0,
       importance: 'primary',
       status: (prepFrame?.angles?.knee || 120) > 140 ? 'warning' : 'optimal',
@@ -195,7 +195,7 @@ function buildHockeyKeyframes(
     {
       id: 'hockey_strike',
       name: 'Stick Impact & Shaft Whip',
-      timestamp: impactTime,
+      timestamp: strikeFrame ? strikeFrame.timestamp : impactTime,
       frameNumber: strikeFrame?.frameNumber || impactIdx,
       importance: 'critical',
       status: 'optimal',
@@ -207,7 +207,7 @@ function buildHockeyKeyframes(
     {
       id: 'hockey_follow',
       name: 'Follow-Through & Weight Rotation',
-      timestamp: finishTime,
+      timestamp: finishFrame ? finishFrame.timestamp : finishTime,
       frameNumber: finishFrame?.frameNumber || 0,
       importance: 'secondary',
       status: 'optimal',
@@ -244,7 +244,7 @@ function buildGolfKeyframes(
     {
       id: 'golf_address',
       name: 'Address & Setup',
-      timestamp: addressTime,
+      timestamp: addressFrame ? addressFrame.timestamp : addressTime,
       frameNumber: addressFrame?.frameNumber || addressIdx,
       importance: 'secondary',
       status: 'optimal',
@@ -256,7 +256,7 @@ function buildGolfKeyframes(
     {
       id: 'golf_backswing_top',
       name: 'Top of Backswing (Max Coil)',
-      timestamp: backswingTime,
+      timestamp: backswingFrame ? backswingFrame.timestamp : backswingTime,
       frameNumber: backswingFrame?.frameNumber || backswingIdx,
       importance: 'critical',
       status: (backswingFrame?.angles?.hip || 140) < 130 ? 'warning' : 'optimal',
@@ -268,7 +268,7 @@ function buildGolfKeyframes(
     {
       id: 'golf_impact',
       name: 'Ball Impact & Whip Release',
-      timestamp: impactTime,
+      timestamp: impactFrame ? impactFrame.timestamp : impactTime,
       frameNumber: impactFrame?.frameNumber || impactIdx,
       importance: 'critical',
       status: 'optimal',
@@ -280,7 +280,7 @@ function buildGolfKeyframes(
     {
       id: 'golf_follow_through',
       name: 'Finish & Weight Transfer',
-      timestamp: followThroughTime,
+      timestamp: finishFrame ? finishFrame.timestamp : followThroughTime,
       frameNumber: finishFrame?.frameNumber || finishIdx,
       importance: 'primary',
       status: 'optimal',
@@ -300,7 +300,6 @@ function buildRugbyKeyframes(
 ): MovementKeyframeEvent[] {
   const prepTime = Math.max(0, impactTime * 0.3);
   const wrapTime = Math.min(durationSec, impactTime + 0.25);
-  const finishTime = Math.min(durationSec, impactTime + 0.6);
 
   const prepFrame = findClosestFrame(frames, prepTime);
   const impactFrame = findClosestFrame(frames, impactTime);
@@ -310,7 +309,7 @@ function buildRugbyKeyframes(
     {
       id: 'rugby_approach',
       name: 'Contact Prep & Base Sink',
-      timestamp: prepTime,
+      timestamp: prepFrame ? prepFrame.timestamp : prepTime,
       frameNumber: prepFrame?.frameNumber || 0,
       importance: 'primary',
       status: (prepFrame?.angles?.knee || 130) > 145 ? 'warning' : 'optimal',
@@ -322,7 +321,7 @@ function buildRugbyKeyframes(
     {
       id: 'rugby_impact',
       name: 'Peak Collision & Shoulder Strike',
-      timestamp: impactTime,
+      timestamp: impactFrame ? impactFrame.timestamp : impactTime,
       frameNumber: impactFrame?.frameNumber || impactIdx,
       importance: 'critical',
       status: (impactFrame?.angles?.hip || 135) < 120 ? 'error' : 'optimal',
@@ -334,7 +333,7 @@ function buildRugbyKeyframes(
     {
       id: 'rugby_wrap_drive',
       name: 'Arm Wrap & Triple Leg Drive',
-      timestamp: wrapTime,
+      timestamp: wrapFrame ? wrapFrame.timestamp : wrapTime,
       frameNumber: wrapFrame?.frameNumber || 0,
       importance: 'critical',
       status: 'optimal',
@@ -365,7 +364,7 @@ function buildSoccerKeyframes(
     {
       id: 'soccer_backswing',
       name: 'Kicking Leg Backswing Cock',
-      timestamp: backswingTime,
+      timestamp: backswingFrame ? backswingFrame.timestamp : backswingTime,
       frameNumber: backswingFrame?.frameNumber || 0,
       importance: 'primary',
       status: 'optimal',
@@ -377,7 +376,7 @@ function buildSoccerKeyframes(
     {
       id: 'soccer_plant',
       name: 'Plant Foot Ground Impulse',
-      timestamp: plantTime,
+      timestamp: plantFrame ? plantFrame.timestamp : plantTime,
       frameNumber: plantFrame?.frameNumber || 0,
       importance: 'critical',
       status: (plantFrame?.angles?.knee || 130) > 150 ? 'warning' : 'optimal',
@@ -389,7 +388,7 @@ function buildSoccerKeyframes(
     {
       id: 'soccer_strike',
       name: 'Ball Strike & Ankle Lock',
-      timestamp: impactTime,
+      timestamp: strikeFrame ? strikeFrame.timestamp : impactTime,
       frameNumber: strikeFrame?.frameNumber || impactIdx,
       importance: 'critical',
       status: 'optimal',
@@ -401,7 +400,7 @@ function buildSoccerKeyframes(
     {
       id: 'soccer_follow',
       name: 'Follow-Through High Elevation',
-      timestamp: followThroughTime,
+      timestamp: followFrame ? followFrame.timestamp : followThroughTime,
       frameNumber: followFrame?.frameNumber || 0,
       importance: 'secondary',
       status: 'optimal',
@@ -432,7 +431,7 @@ function buildTennisKeyframes(
     {
       id: 'tennis_unit_turn',
       name: 'Unit Turn & Preparation',
-      timestamp: prepTime,
+      timestamp: prepFrame ? prepFrame.timestamp : prepTime,
       frameNumber: prepFrame?.frameNumber || 0,
       importance: 'primary',
       status: 'optimal',
@@ -444,7 +443,7 @@ function buildTennisKeyframes(
     {
       id: 'tennis_trophy',
       name: 'Toss & Trophy Position',
-      timestamp: trophyTime,
+      timestamp: trophyFrame ? trophyFrame.timestamp : trophyTime,
       frameNumber: trophyFrame?.frameNumber || 0,
       importance: 'critical',
       status: 'optimal',
@@ -456,7 +455,7 @@ function buildTennisKeyframes(
     {
       id: 'tennis_impact',
       name: 'Peak Reach Ball Contact',
-      timestamp: impactTime,
+      timestamp: impactFrame ? impactFrame.timestamp : impactTime,
       frameNumber: impactFrame?.frameNumber || impactIdx,
       importance: 'critical',
       status: 'optimal',
@@ -468,7 +467,7 @@ function buildTennisKeyframes(
     {
       id: 'tennis_follow_through',
       name: 'Follow-Through & Recovery',
-      timestamp: followTime,
+      timestamp: followFrame ? followFrame.timestamp : followTime,
       frameNumber: followFrame?.frameNumber || 0,
       importance: 'secondary',
       status: 'optimal',
@@ -504,7 +503,7 @@ function buildCricketKeyframes(
       {
         id: 'cricket_bound_gather',
         name: 'Bound & Coil Gather',
-        timestamp: Math.round(gatherTime * 100) / 100,
+        timestamp: gatherFrame ? gatherFrame.timestamp : Math.round(gatherTime * 100) / 100,
         frameNumber: gatherFrame?.frameNumber || 0,
         importance: 'secondary',
         status: 'optimal',
@@ -516,7 +515,7 @@ function buildCricketKeyframes(
       {
         id: 'cricket_back_foot_contact',
         name: 'Back-Foot Plant & Thoracic Load',
-        timestamp: Math.round(backFootTime * 100) / 100,
+        timestamp: backFootFrame ? backFootFrame.timestamp : Math.round(backFootTime * 100) / 100,
         frameNumber: backFootFrame?.frameNumber || 0,
         importance: 'primary',
         status: 'optimal',
@@ -528,7 +527,7 @@ function buildCricketKeyframes(
       {
         id: 'cricket_front_brace_release',
         name: 'Front-Knee Brace & High Arm Release',
-        timestamp: Math.round(releaseTime * 100) / 100,
+        timestamp: releaseFrame ? releaseFrame.timestamp : Math.round(releaseTime * 100) / 100,
         frameNumber: releaseFrame?.frameNumber || impactIdx,
         importance: 'critical',
         status: (releaseFrame?.angles?.knee || 170) < 162 ? 'warning' : 'optimal',
@@ -540,7 +539,7 @@ function buildCricketKeyframes(
       {
         id: 'cricket_follow_through',
         name: 'Follow-Through Deceleration',
-        timestamp: Math.round(followTime * 100) / 100,
+        timestamp: followFrame ? followFrame.timestamp : Math.round(followTime * 100) / 100,
         frameNumber: followFrame?.frameNumber || 0,
         importance: 'secondary',
         status: 'optimal',
@@ -567,7 +566,7 @@ function buildCricketKeyframes(
     {
       id: 'cricket_stance',
       name: 'Stance & Head Alignment',
-      timestamp: Math.round(stanceTime * 100) / 100,
+      timestamp: stanceFrame ? stanceFrame.timestamp : Math.round(stanceTime * 100) / 100,
       frameNumber: stanceFrame?.frameNumber || 0,
       importance: 'secondary',
       status: 'optimal',
@@ -579,7 +578,7 @@ function buildCricketKeyframes(
     {
       id: 'cricket_backlift',
       name: 'High Backlift & Stride',
-      timestamp: Math.round(backliftTime * 100) / 100,
+      timestamp: backliftFrame ? backliftFrame.timestamp : Math.round(backliftTime * 100) / 100,
       frameNumber: backliftFrame?.frameNumber || 0,
       importance: 'primary',
       status: 'optimal',
@@ -591,7 +590,7 @@ function buildCricketKeyframes(
     {
       id: 'cricket_impact',
       name: 'Ball Impact Under Eyes',
-      timestamp: Math.round(impactMoment * 100) / 100,
+      timestamp: impactFrame ? impactFrame.timestamp : Math.round(impactMoment * 100) / 100,
       frameNumber: impactFrame?.frameNumber || impactIdx,
       importance: 'critical',
       status: 'optimal',
@@ -603,7 +602,7 @@ function buildCricketKeyframes(
     {
       id: 'cricket_follow',
       name: 'High Extension Finish',
-      timestamp: Math.round(finishTime * 100) / 100,
+      timestamp: finishFrame ? finishFrame.timestamp : Math.round(finishTime * 100) / 100,
       frameNumber: finishFrame?.frameNumber || 0,
       importance: 'secondary',
       status: 'optimal',
@@ -629,7 +628,7 @@ function buildGenericKeyframes(
     return {
       id: `keyframe_${pIdx}`,
       name: pName,
-      timestamp: Math.round(t * 100) / 100,
+      timestamp: f ? f.timestamp : Math.round(t * 100) / 100,
       frameNumber: f?.frameNumber || pIdx * 10,
       importance: pIdx === 2 ? 'critical' : 'primary',
       status: 'optimal',
